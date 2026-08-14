@@ -1,0 +1,7 @@
+{
+  "name": "LabBridge",
+  "description": "Interactive 3D virtual science laboratory simulator with first-person exploration, realistic laboratory benches for Biology, Chemistry, Physics, and an authentic interactive microscope practical.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
