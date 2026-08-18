@@ -1,22 +1,24 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import LandingPage from '@/components/LandingPage';
-import Lab3DScene from '@/components/Lab3DScene';
-import MicroscopeViewer from '@/components/MicroscopeViewer';
-import ChemistryStationModal from '@/components/ChemistryStationModal';
-import PhysicsStationModal from '@/components/PhysicsStationModal';
-import ResearchStationModal from '@/components/ResearchStationModal';
+import dynamic from 'next/dynamic';
 import LabNotebookModal, { SnapshotItem } from '@/components/LabNotebookModal';
 import AILabAssistantModal from '@/components/AILabAssistantModal';
+import LandscapeOrientationPrompt from '@/components/LandscapeOrientationPrompt';
 import { soundFx } from '@/lib/soundEffects';
 
-type ViewMode = 'landing' | 'simulator';
-type ActiveStation = 'biology' | 'chemistry' | 'physics' | 'research' | null;
+// Dynamically import Three.js 3D canvas with SSR disabled
+const Lab3DScene = dynamic(() => import('@/components/Lab3DScene'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-screen bg-slate-900 flex flex-col items-center justify-center text-slate-300 gap-3">
+      <div className="w-10 h-10 border-3 border-teal-500 border-t-transparent rounded-full animate-spin" />
+      <p className="text-sm font-mono text-teal-400">Entering University Science Laboratory (10:00 AM Daylight)...</p>
+    </div>
+  ),
+});
 
 export default function Home() {
-  const [viewMode, setViewMode] = useState<ViewMode>('landing');
-  const [activeStation, setActiveStation] = useState<ActiveStation>(null);
   const [isNotebookOpen, setIsNotebookOpen] = useState<boolean>(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState<boolean>(false);
   const [aiContextPrompt, setAiContextPrompt] = useState<{ prompt: string; context: string } | null>(null);
@@ -24,14 +26,11 @@ export default function Home() {
   // Logged snapshots for Electronic Lab Notebook
   const [snapshots, setSnapshots] = useState<SnapshotItem[]>([]);
 
-  // Keyboard shortcut ESC to exit active modal
+  // Keyboard shortcut ESC to exit active tool drawer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (activeStation) {
-          setActiveStation(null);
-          soundFx.playClick();
-        } else if (isNotebookOpen) {
+        if (isNotebookOpen) {
           setIsNotebookOpen(false);
           soundFx.playClick();
         } else if (isAIAssistantOpen) {
@@ -42,7 +41,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeStation, isNotebookOpen, isAIAssistantOpen]);
+  }, [isNotebookOpen, isAIAssistantOpen]);
 
   const handleCaptureSnapshot = (snapshot: SnapshotItem) => {
     setSnapshots((prev) => [snapshot, ...prev]);
@@ -55,89 +54,47 @@ export default function Home() {
 
   return (
     <main className="w-full min-h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      {viewMode === 'landing' ? (
-        <LandingPage
-          onEnterLab={() => {
-            setViewMode('simulator');
-            setActiveStation(null);
+      <div className="relative w-full h-screen">
+        {/* Mobile Landscape Orientation Prompt / Guidance */}
+        <LandscapeOrientationPrompt />
+
+        {/* 3D Lab Simulation - Direct In-World Physical Equipment Interaction & Seating */}
+        <Lab3DScene
+          onOpenNotebook={() => {
+            setIsNotebookOpen(true);
+            soundFx.playClick();
           }}
-          onDirectOpenMicroscope={() => {
-            setViewMode('simulator');
-            setActiveStation('biology');
+          onOpenAssistant={() => {
+            setAiContextPrompt(null);
+            setIsAIAssistantOpen(true);
+            soundFx.playClick();
           }}
+          onExitToLanding={() => {
+            // Re-centers player at laboratory entrance threshold
+            soundFx.playClick();
+          }}
+          onSaveSnapshot={handleCaptureSnapshot}
+          onAskAI={handleOpenAIAssistantWithContext}
+          snapshots={snapshots}
         />
-      ) : (
-        <div className="relative w-full h-screen">
-          {/* 3D Lab Simulation Background */}
-          <Lab3DScene
-            onOpenStation={(station) => setActiveStation(station)}
-            onOpenNotebook={() => {
-              setIsNotebookOpen(true);
-              soundFx.playClick();
-            }}
-            onOpenAssistant={() => {
-              setAiContextPrompt(null);
-              setIsAIAssistantOpen(true);
-              soundFx.playClick();
-            }}
-            onExitToLanding={() => {
-              setViewMode('landing');
-              setActiveStation(null);
-              soundFx.playClick();
-            }}
+
+        {/* Electronic Lab Notebook Side Drawer / Overlay */}
+        {isNotebookOpen && (
+          <LabNotebookModal
+            snapshots={snapshots}
+            onClose={() => setIsNotebookOpen(false)}
           />
+        )}
 
-          {/* Biology Microscope Modal */}
-          {activeStation === 'biology' && (
-            <MicroscopeViewer
-              onExit={() => setActiveStation(null)}
-              onSaveSnapshot={handleCaptureSnapshot}
-              onAskAI={handleOpenAIAssistantWithContext}
-            />
-          )}
-
-          {/* Chemistry Workstation Modal */}
-          {activeStation === 'chemistry' && (
-            <ChemistryStationModal
-              onExit={() => setActiveStation(null)}
-              onAskAI={handleOpenAIAssistantWithContext}
-            />
-          )}
-
-          {/* Physics Workstation Modal */}
-          {activeStation === 'physics' && (
-            <PhysicsStationModal
-              onExit={() => setActiveStation(null)}
-              onAskAI={handleOpenAIAssistantWithContext}
-            />
-          )}
-
-          {/* Analytical Science Research Modal */}
-          {activeStation === 'research' && (
-            <ResearchStationModal
-              onExit={() => setActiveStation(null)}
-              onAskAI={handleOpenAIAssistantWithContext}
-            />
-          )}
-
-          {/* Electronic Lab Notebook */}
-          {isNotebookOpen && (
-            <LabNotebookModal
-              snapshots={snapshots}
-              onClose={() => setIsNotebookOpen(false)}
-            />
-          )}
-
-          {/* Dr. Curie AI Laboratory Assistant */}
-          {isAIAssistantOpen && (
-            <AILabAssistantModal
-              initialPrompt={aiContextPrompt?.prompt}
-              initialContext={aiContextPrompt?.context}
-              onClose={() => setIsAIAssistantOpen(false)}
-            />
-          )}
-        </div>
-      )}
+        {/* Dr. Curie AI Laboratory Assistant */}
+        {isAIAssistantOpen && (
+          <AILabAssistantModal
+            initialPrompt={aiContextPrompt?.prompt}
+            initialContext={aiContextPrompt?.context}
+            onClose={() => setIsAIAssistantOpen(false)}
+          />
+        )}
+      </div>
     </main>
   );
 }

@@ -256,36 +256,102 @@ class SoundEffectsManager {
     });
   }
 
-  public startLabAmbience() {
-    if (this.isAmbientPlaying) return;
+  public playSitDown() {
+    if (this.isMuted) return;
     const ctx = this.initCtx();
     if (!ctx) return;
 
-    this.ambientGain = ctx.createGain();
-    this.ambientGain.gain.setValueAtTime(this.isMuted ? 0 : 0.02, ctx.currentTime);
-
-    // Low frequency HVAC hum
-    this.ambientOsc1 = ctx.createOscillator();
-    this.ambientOsc1.type = 'sine';
-    this.ambientOsc1.frequency.setValueAtTime(60, ctx.currentTime);
-
-    // Subtle electrical resonance
-    this.ambientOsc2 = ctx.createOscillator();
-    this.ambientOsc2.type = 'triangle';
-    this.ambientOsc2.frequency.setValueAtTime(120, ctx.currentTime);
-
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
     const filter = ctx.createBiquadFilter();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(45, ctx.currentTime + 0.25);
+
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(150, ctx.currentTime);
+    filter.frequency.setValueAtTime(300, ctx.currentTime);
 
-    this.ambientOsc1.connect(filter);
-    this.ambientOsc2.connect(filter);
-    filter.connect(this.ambientGain);
-    this.ambientGain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
 
-    this.ambientOsc1.start();
-    this.ambientOsc2.start();
-    this.isAmbientPlaying = true;
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.26);
+  }
+
+  public playStandUp() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(70, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.2);
+
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.21);
+  }
+
+  public playGlassSlide() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(3200, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1600, ctx.currentTime + 0.04);
+
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.05);
+  }
+
+  public playCentrifugeSpin() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 1.2);
+
+    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.25);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 1.3);
+  }
+
+  public startLabAmbience() {
+    // Disabled continuous ambient drone per user preference
+    this.isAmbientPlaying = false;
   }
 
   public stopLabAmbience() {

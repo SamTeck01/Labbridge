@@ -626,19 +626,19 @@ export default function MicroscopeViewer({ onExit, onSaveSnapshot, onAskAI }: Mi
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-100 select-none overflow-hidden font-sans">
       {/* Top Bar Header */}
-      <header className="h-16 px-6 bg-slate-900/90 backdrop-blur border-b border-slate-800 flex items-center justify-between z-20">
-        <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold">
+      <header className="h-12 md:h-16 px-3 md:px-6 bg-slate-900/90 backdrop-blur border-b border-slate-800 flex items-center justify-between z-20">
+        <div className="flex items-center space-x-2 md:space-x-3">
+          <div className="w-7 h-7 md:w-9 md:h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs md:text-base">
             🔬
           </div>
           <div>
-            <h2 className="text-base font-semibold text-white tracking-tight flex items-center gap-2">
-              Optical Compound Microscope
-              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Live View
+            <h2 className="text-xs md:text-base font-semibold text-white tracking-tight flex items-center gap-1.5">
+              Compound Microscope
+              <span className="hidden sm:inline text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Live
               </span>
             </h2>
-            <p className="text-xs text-slate-400">
+            <p className="text-[10px] md:text-xs text-slate-400">
               {selectedSpecimen.title} &bull; <span className="text-slate-300 italic">{selectedSpecimen.scientificName}</span>
             </p>
           </div>
@@ -670,36 +670,38 @@ export default function MicroscopeViewer({ onExit, onSaveSnapshot, onAskAI }: Mi
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-1.5 md:space-x-3">
           <button
             onClick={() => {
               const muted = soundFx.toggleMute();
               setIsMuted(muted);
             }}
-            className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors border border-slate-700"
+            className="p-1.5 md:p-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors border border-slate-700"
             title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
           >
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            {isMuted ? <VolumeX className="w-3.5 h-3.5 md:w-4 md:h-4" /> : <Volume2 className="w-3.5 h-3.5 md:w-4 md:h-4" />}
           </button>
 
           <button
             onClick={() => setIsSlideDrawerOpen(!isSlideDrawerOpen)}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
+            className={`px-2.5 md:px-3.5 py-1 md:py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
               isSlideDrawerOpen
                 ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
             }`}
           >
-            <Layers className="w-4 h-4" />
-            <span>Slide Box ({SPECIMENS.length})</span>
+            <Layers className="w-3.5 h-3.5 md:w-4 md:h-4" />
+            <span className="hidden sm:inline">Slide Box ({SPECIMENS.length})</span>
+            <span className="sm:hidden">Slides</span>
           </button>
 
           <button
             onClick={onExit}
-            className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/30 hover:text-rose-300 hover:border-rose-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all flex items-center gap-1.5"
+            className="px-2.5 md:px-4 py-1 md:py-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/30 hover:text-rose-300 hover:border-rose-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all flex items-center gap-1.5"
           >
-            <X className="w-4 h-4" />
-            <span>Exit Microscope [ESC]</span>
+            <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+            <span className="hidden sm:inline">Exit [ESC]</span>
+            <span className="sm:hidden">Exit</span>
           </button>
         </div>
       </header>

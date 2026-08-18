@@ -4,1101 +4,1222 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import {
   Compass,
-  Maximize2,
-  Minimize2,
-  Volume2,
-  VolumeX,
-  Sparkles,
-  HelpCircle,
   Footprints,
   Eye,
-  Info,
-  Layers,
   Zap,
   FlaskConical,
-  Scale
+  Scale,
+  Smartphone,
+  RotateCw,
+  Sparkles,
+  BookOpen,
+  Volume2,
+  VolumeX,
+  X,
+  Play,
+  Pause,
+  LogOut,
+  Hand
 } from 'lucide-react';
 import { soundFx } from '@/lib/soundEffects';
+import { isMobileOrTouchDevice } from '@/lib/orientation';
+import {
+  createLabStool,
+  createFumeHood,
+  createSafetyShower,
+  createLabWhiteboard,
+  createReagentShelf,
+  tagInteractive
+} from '@/lib/lab3dEquipment';
+import {
+  createReadyMadeMicroscope,
+  createReadyMadeChemistryStation,
+  createReadyMadePhysicsBench,
+  createReadyMadeAnalyticalBench,
+} from '@/lib/gltfLabEquipment';
+import { createFirstPersonScientistRig, updateScientistRig } from '@/lib/scientistCharacter';
+import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
+import SeatedStationToolbar from '@/components/SeatedStationToolbar';
+import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
+import MiniMapRadar from '@/components/MiniMapRadar';
+import VirtualJoystick from '@/components/VirtualJoystick';
+import { SnapshotItem } from '@/components/LabNotebookModal';
+import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
 
 interface Lab3DSceneProps {
-  onOpenStation: (station: 'biology' | 'chemistry' | 'physics' | 'research') => void;
   onOpenNotebook: () => void;
   onOpenAssistant: () => void;
   onExitToLanding: () => void;
+  onSaveSnapshot: (snapshot: SnapshotItem) => void;
+  onAskAI?: (prompt: string, context: string) => void;
+  snapshots?: SnapshotItem[];
+}
+
+// Exact human biomechanical eye heights (meters)
+const EYE_HEIGHT_STANDING = 1.68;
+const EYE_HEIGHT_SITTING = 1.28;
+
+interface CameraTransition {
+  active: boolean;
+  type: 'sit' | 'stand';
+  station?: 'biology' | 'chemistry' | 'physics' | 'research';
+  startPos: THREE.Vector3;
+  targetPos: THREE.Vector3;
+  startYXZ: { pitch: number; yaw: number };
+  targetYXZ: { pitch: number; yaw: number };
+  progress: number;
+  duration: number;
 }
 
 export default function Lab3DScene({
-  onOpenStation,
   onOpenNotebook,
   onOpenAssistant,
   onExitToLanding,
+  onSaveSnapshot,
+  onAskAI,
+  snapshots = [],
 }: Lab3DSceneProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
 
-  // Interaction & HUD State
-  const [activeStationPrompt, setActiveStationPrompt] = useState<{
-    station: 'biology' | 'chemistry' | 'physics' | 'research';
-    title: string;
-    action: string;
-    icon: string;
-    color: string;
-  } | null>(null);
+  // Seating & Interaction State
+  const [isSeated, setIsSeated] = useState<boolean>(false);
+  const [seatedStation, setSeatedStation] = useState<'biology' | 'chemistry' | 'physics' | 'research' | null>(null);
+  const [isViewingEyepieces, setIsViewingEyepieces] = useState<boolean>(false);
 
-  const [playerPosition, setPlayerPosition] = useState<{ x: number; z: number; angle: number }>({
+  // Phone State
+  const [isPhoneOpen, setIsPhoneOpen] = useState<boolean>(false);
+  const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
+  const [phoneAIPrompt, setPhoneAIPrompt] = useState<string | undefined>(undefined);
+  const [phoneAIContext, setPhoneAIContext] = useState<string | undefined>(undefined);
+
+  // Live Player Coordinates for Radar Mini-Map
+  const [playerCoords, setPlayerCoords] = useState<{ x: number; z: number; yaw: number }>({
     x: 0,
-    z: 6,
-    angle: Math.PI,
+    z: 5.5,
+    yaw: Math.PI,
   });
 
-  const [isPointerLocked, setIsPointerLocked] = useState<boolean>(false);
-  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [controlsHintVisible, setControlsHintVisible] = useState<boolean>(true);
+  // Center Reticle Hover Target
+  const [hoveredAction, setHoveredAction] = useState<{
+    id: string;
+    label: string;
+    action: string;
+    station: 'biology' | 'chemistry' | 'physics' | 'research';
+    category: string;
+  } | null>(null);
 
-  // References for Three.js state
+  // 3D Equipment Live States
+  const [biologyState, setBiologyState] = useState({
+    slideIndex: 0,
+    objective: '10x' as '4x' | '10x' | '40x' | '100x',
+    coarseFocus: 0.5,
+    fineFocus: 0.5,
+    stageX: 0,
+    stageY: 0,
+    lightIntensity: 1.0,
+  });
+
+  const [chemistryState, setChemistryState] = useState({
+    buretteOpen: false,
+    dispensedML: 0,
+    stirrerRPM: 0,
+    indicatorAdded: false,
+    phValue: 2.8,
+  });
+  const chemistryStateRef = useRef(chemistryState);
+
+  const [physicsState, setPhysicsState] = useState({
+    switchClosed: false,
+    resistance: 25,
+    voltage: 12.0,
+  });
+
+  const [analyticalState, setAnalyticalState] = useState({
+    doorsOpen: false,
+    balanceWeight: 0.0,
+    centrifugeRunning: false,
+  });
+
+  const [isTouch] = useState<boolean>(() => (typeof window !== 'undefined' ? isMobileOrTouchDevice() : false));
+
+  // Three.js Core Refs
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const scientistRigRef = useRef<THREE.Group | null>(null);
   const animationFrameId = useRef<number | null>(null);
-  const activeStationPromptRef = useRef<{
-    station: 'biology' | 'chemistry' | 'physics' | 'research';
-    title: string;
-    action: string;
-    icon: string;
-    color: string;
-  } | null>(null);
 
-  // Movement State
+  // Interactive 3D Equipment Refs
+  const microEquipmentRef = useRef<THREE.Group | null>(null);
+  const chemEquipmentRef = useRef<THREE.Group | null>(null);
+  const physEquipmentRef = useRef<THREE.Group | null>(null);
+  const resEquipmentRef = useRef<THREE.Group | null>(null);
+  const interactiveObjectsRef = useRef<THREE.Object3D[]>([]);
+
+  // Movement & Camera State
   const keysPressed = useRef<{ [key: string]: boolean }>({});
+  const touchMoveVector = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
+  const touchLookId = useRef<number | null>(null);
+  const touchLookLastPos = useRef<{ x: number; y: number } | null>(null);
   const playerVelocity = useRef<THREE.Vector3>(new THREE.Vector3());
   const cameraEuler = useRef<THREE.Euler>(new THREE.Euler(0, Math.PI, 0, 'YXZ'));
   const isWalkingRef = useRef<boolean>(false);
   const stepTimerRef = useRef<number>(0);
-  const headBobTimer = useRef<number>(0);
+  const walkTimerRef = useRef<number>(0);
+  const idleTimerRef = useRef<number>(0);
 
-  // Station Positions in 3D Space
-  const stationPositions = useRef<{ [key: string]: { x: number; z: number; name: string; type: 'biology' | 'chemistry' | 'physics' | 'research' } }>({
-    biology: { x: -4.5, z: -3.5, name: 'Biology & Microscopy', type: 'biology' },
-    chemistry: { x: 4.5, z: -3.5, name: 'Chemistry & Titration', type: 'chemistry' },
-    physics: { x: -4.5, z: 3.5, name: 'Physics & Circuits', type: 'physics' },
-    research: { x: 4.5, z: 3.5, name: 'Analytical Science', type: 'research' },
+  // Camera Smooth Cinematic Transition Ref
+  const transitionRef = useRef<CameraTransition | null>(null);
+
+  // Bench Seating Anchor Coordinates (Eye-Level 1st-Person Operating Vantage)
+  const seatAnchors = useRef<{
+    [key in 'biology' | 'chemistry' | 'physics' | 'research']: {
+      pos: THREE.Vector3;
+      lookAt: THREE.Vector3;
+      baseYaw: number;
+    };
+  }>({
+    biology: {
+      pos: new THREE.Vector3(-4.5, EYE_HEIGHT_SITTING, -2.35),
+      lookAt: new THREE.Vector3(-4.5, 1.10, -3.5),
+      baseYaw: 0,
+    },
+    chemistry: {
+      pos: new THREE.Vector3(4.5, EYE_HEIGHT_SITTING, -2.35),
+      lookAt: new THREE.Vector3(4.5, 1.10, -3.5),
+      baseYaw: 0,
+    },
+    physics: {
+      pos: new THREE.Vector3(-4.5, EYE_HEIGHT_SITTING, 4.75),
+      lookAt: new THREE.Vector3(-4.5, 1.10, 3.5),
+      baseYaw: Math.PI,
+    },
+    research: {
+      pos: new THREE.Vector3(4.5, EYE_HEIGHT_SITTING, 4.75),
+      lookAt: new THREE.Vector3(4.5, 1.10, 3.5),
+      baseYaw: Math.PI,
+    },
   });
 
+  // Sitting down mechanic with smooth transition
+  const sitDownAt = useCallback((station: 'biology' | 'chemistry' | 'physics' | 'research') => {
+    soundFx.playSitDown();
+    const anchor = seatAnchors.current[station];
+    if (anchor && cameraRef.current) {
+      const startPos = cameraRef.current.position.clone();
+      const lookDir = new THREE.Vector3().subVectors(anchor.lookAt, anchor.pos).normalize();
+      const targetYaw = Math.atan2(-lookDir.x, -lookDir.z);
+      const targetPitch = -0.22; // Natural angle looking slightly down at bench apparatus
+
+      transitionRef.current = {
+        active: true,
+        type: 'sit',
+        station,
+        startPos,
+        targetPos: anchor.pos.clone(),
+        startYXZ: { pitch: cameraEuler.current.x, yaw: cameraEuler.current.y },
+        targetYXZ: { pitch: targetPitch, yaw: targetYaw },
+        progress: 0,
+        duration: 0.55,
+      };
+
+      setIsSeated(true);
+      setSeatedStation(station);
+    }
+  }, []);
+
+  // Standing up mechanic with smooth step-back
+  const standUp = useCallback(() => {
+    soundFx.playStandUp();
+    setIsSeated(false);
+    setSeatedStation(null);
+    setIsViewingEyepieces(false);
+
+    if (cameraRef.current) {
+      const curr = cameraRef.current.position.clone();
+      // Step back from the stool into the laboratory aisle
+      const standZ = curr.z < 0 ? curr.z + 0.85 : curr.z - 0.85;
+      const targetPos = new THREE.Vector3(curr.x, EYE_HEIGHT_STANDING, standZ);
+
+      transitionRef.current = {
+        active: true,
+        type: 'stand',
+        startPos: curr,
+        targetPos,
+        startYXZ: { pitch: cameraEuler.current.x, yaw: cameraEuler.current.y },
+        targetYXZ: { pitch: 0, yaw: cameraEuler.current.y },
+        progress: 0,
+        duration: 0.55,
+      };
+    }
+  }, []);
+
+  // Handle direct 3D raycast click
+  const handleObjectClick = useCallback((obj: THREE.Object3D) => {
+    const data = obj.userData;
+    if (!data) return;
+
+    if (data.category === 'stool') {
+      sitDownAt(data.station);
+      return;
+    }
+
+    if (data.station === 'biology') {
+      if (data.interactId === 'micro_eyepieces') {
+        soundFx.playClick();
+        setIsViewingEyepieces(true);
+      } else if (data.interactId === 'micro_turret') {
+        soundFx.playLensTurretClick();
+        setBiologyState((prev) => {
+          const objs: ('4x' | '10x' | '40x' | '100x')[] = ['4x', '10x', '40x', '100x'];
+          const nextIdx = (objs.indexOf(prev.objective) + 1) % objs.length;
+          return { ...prev, objective: objs[nextIdx] };
+        });
+      } else if (data.interactId === 'micro_slide') {
+        soundFx.playGlassSlide();
+        setBiologyState((prev) => ({
+          ...prev,
+          slideIndex: (prev.slideIndex + 1) % SPECIMEN_CATALOG.length,
+        }));
+      } else if (data.interactId === 'micro_coarse_focus') {
+        soundFx.playKnobTick();
+        setBiologyState((prev) => ({
+          ...prev,
+          coarseFocus: (prev.coarseFocus + 0.1) % 1.0,
+        }));
+      } else if (data.interactId === 'micro_fine_focus') {
+        soundFx.playKnobTick();
+        setBiologyState((prev) => ({
+          ...prev,
+          fineFocus: (prev.fineFocus + 0.05) % 1.0,
+        }));
+      } else if (data.interactId === 'micro_light_switch') {
+        soundFx.playClick();
+        setBiologyState((prev) => ({
+          ...prev,
+          lightIntensity: prev.lightIntensity > 0.5 ? 0.3 : 1.0,
+        }));
+      }
+    } else if (data.station === 'chemistry') {
+      if (data.interactId === 'chem_stopcock' || data.interactId === 'chem_burette_valve') {
+        soundFx.playClick();
+        setChemistryState((prev) => ({ ...prev, buretteOpen: !prev.buretteOpen }));
+      } else if (data.interactId === 'chem_stirrer_knob') {
+        soundFx.playKnobTick();
+        setChemistryState((prev) => ({
+          ...prev,
+          stirrerRPM: prev.stirrerRPM === 0 ? 400 : prev.stirrerRPM === 400 ? 800 : 0,
+        }));
+      } else if (data.interactId === 'chem_indicator' || data.interactId === 'chem_flask' || data.interactId === 'chem_beaker') {
+        soundFx.playDropLiquid();
+        setChemistryState((prev) => ({ ...prev, indicatorAdded: true }));
+      }
+    } else if (data.station === 'physics') {
+      if (data.interactId === 'phys_knife_switch') {
+        soundFx.playSwitchToggle(!physicsState.switchClosed);
+        setPhysicsState((prev) => ({ ...prev, switchClosed: !prev.switchClosed }));
+      } else if (data.interactId === 'phys_potentiometer') {
+        soundFx.playKnobTick();
+        setPhysicsState((prev) => ({
+          ...prev,
+          resistance: prev.resistance >= 90 ? 10 : prev.resistance + 20,
+        }));
+      }
+    } else if (data.station === 'research') {
+      if (data.interactId === 'res_balance_door') {
+        soundFx.playClick();
+        setAnalyticalState((prev) => ({ ...prev, doorsOpen: !prev.doorsOpen }));
+      } else if (data.interactId === 'res_tare_btn') {
+        soundFx.playBeep();
+        setAnalyticalState((prev) => ({ ...prev, balanceWeight: 0.0 }));
+      } else if (data.interactId === 'res_centrifuge_start' || data.interactId === 'res_centrifuge_lid') {
+        soundFx.playCentrifugeSpin();
+        setAnalyticalState((prev) => ({ ...prev, centrifugeRunning: !prev.centrifugeRunning }));
+      }
+    }
+  }, [sitDownAt, physicsState.switchClosed]);
+
   // Teleport helper
-  const handleTeleport = (dest: 'center' | 'biology' | 'chemistry' | 'physics' | 'research') => {
+  const handleTeleport = useCallback((dest: 'center' | 'biology' | 'chemistry' | 'physics' | 'research') => {
     if (!cameraRef.current) return;
     soundFx.playClick();
     if (dest === 'center') {
-      cameraRef.current.position.set(0, 1.7, 5.5);
+      standUp();
+      cameraRef.current.position.set(0, EYE_HEIGHT_STANDING, 5.5);
       cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
-    } else if (dest === 'biology') {
-      cameraRef.current.position.set(-4.5, 1.7, -1.8);
-      cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
-    } else if (dest === 'chemistry') {
-      cameraRef.current.position.set(4.5, 1.7, -1.8);
-      cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
-    } else if (dest === 'physics') {
-      cameraRef.current.position.set(-4.5, 1.7, 5.2);
-      cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
-    } else if (dest === 'research') {
-      cameraRef.current.position.set(4.5, 1.7, 5.2);
-      cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
+    } else {
+      sitDownAt(dest);
     }
+  }, [sitDownAt, standUp]);
+
+  // Open Scientist Phone helper
+  const handleOpenPhoneWithTab = (tab: PhoneAppTab, prompt?: string, context?: string) => {
+    soundFx.playClick();
+    setPhoneInitialTab(tab);
+    setPhoneAIPrompt(prompt);
+    setPhoneAIContext(context);
+    setIsPhoneOpen(true);
   };
 
+  // Keyboard listeners
   useEffect(() => {
-    const timer = setTimeout(() => setControlsHintVisible(false), 8000);
-    return () => clearTimeout(timer);
-  }, []);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      keysPressed.current[e.code] = true;
 
-  // Initialize Three.js 3D Virtual Lab Scene
+      // Space or Escape stands up if seated
+      if ((e.code === 'Space' || e.code === 'Escape') && isSeated) {
+        standUp();
+      }
+
+      // 'F' key looks through eyepieces if seated at biology
+      if (e.code === 'KeyF' && isSeated && seatedStation === 'biology') {
+        setIsViewingEyepieces((prev) => !prev);
+      }
+
+      // 'P' or 'M' key opens Scientist Phone
+      if (e.code === 'KeyP' || e.code === 'KeyM') {
+        setIsPhoneOpen((prev) => !prev);
+        soundFx.playClick();
+      }
+
+      // 'E' key interacts with hovered action
+      if (e.code === 'KeyE' && hoveredAction) {
+        if (hoveredAction.category === 'stool') {
+          sitDownAt(hoveredAction.station);
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysPressed.current[e.code] = false;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isSeated, seatedStation, hoveredAction, sitDownAt, standUp]);
+
+  // Main Three.js Scene Setup & Render Loop
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
 
-    soundFx.startLabAmbience();
-
     // Scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color('#0c1017');
-    scene.fog = new THREE.FogExp2('#0c1017', 0.025);
+    scene.background = new THREE.Color('#f8fafc');
+    scene.fog = new THREE.FogExp2('#f8fafc', 0.005);
 
     // Camera
     const width = container.clientWidth;
     const height = container.clientHeight;
     const camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 100);
-    camera.position.set(0, 1.7, 6);
+    camera.position.set(0, EYE_HEIGHT_STANDING, 5.5);
     cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
     camera.quaternion.setFromEuler(cameraEuler.current);
     cameraRef.current = camera;
 
-    // WebGL Renderer with High-Fidelity Tone Mapping & Soft Shadows
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    // Attach Scientist Character 1st-Person Rig
+    const scientistRig = createFirstPersonScientistRig();
+    scientistRigRef.current = scientistRig;
+    camera.add(scientistRig);
+    scene.add(camera);
+
+    // WebGL Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    rendererRef.current = renderer;
+    renderer.toneMappingExposure = 1.3;
     container.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
-    // ----------------------------------------------------
-    // LIGHTING SYSTEM
-    // ----------------------------------------------------
-    // Soft Ambient Light
-    const ambientLight = new THREE.AmbientLight('#c8d6e5', 0.85);
+    // Bright Ambient & Hemisphere Illumination (Daylight White 6000K)
+    const ambientLight = new THREE.AmbientLight('#ffffff', 1.35);
     scene.add(ambientLight);
 
-    // Ceiling Fluorescent Overhead Panel Lights
-    const ceilingLights = [
-      { x: -5, z: -3.5 },
-      { x: 5, z: -3.5 },
-      { x: -5, z: 3.5 },
-      { x: 5, z: 3.5 },
-      { x: 0, z: 0 },
+    const hemiLight = new THREE.HemisphereLight('#ffffff', '#cbd5e1', 0.65);
+    scene.add(hemiLight);
+
+    const mainCeilingLight = new THREE.DirectionalLight('#ffffff', 1.8);
+    mainCeilingLight.position.set(0, 8, 0);
+    mainCeilingLight.castShadow = true;
+    mainCeilingLight.shadow.mapSize.width = 2048;
+    mainCeilingLight.shadow.mapSize.height = 2048;
+    scene.add(mainCeilingLight);
+
+    // Realistic Overhead Fluorescent Troffers with Bright Downlights
+    const trofferPositions = [
+      [-4.5, 4.8, -3.5],
+      [4.5, 4.8, -3.5],
+      [-4.5, 4.8, 3.5],
+      [4.5, 4.8, 3.5],
+      [0, 4.8, 0],
     ];
 
-    ceilingLights.forEach((pos, idx) => {
-      const pLight = new THREE.PointLight('#f1f2f6', 1.1, 14, 1.5);
-      pLight.position.set(pos.x, 3.8, pos.z);
-      pLight.castShadow = true;
-      pLight.shadow.mapSize.width = 1024;
-      pLight.shadow.mapSize.height = 1024;
-      pLight.shadow.bias = -0.001;
-      scene.add(pLight);
+    trofferPositions.forEach(([tx, ty, tz]) => {
+      const troffer = new THREE.Mesh(
+        new THREE.BoxGeometry(2.4, 0.08, 0.6),
+        new THREE.MeshStandardMaterial({
+          color: '#ffffff',
+          emissive: '#ffffff',
+          emissiveIntensity: 1.0,
+          roughness: 0.1,
+        })
+      );
+      troffer.position.set(tx, ty, tz);
+      scene.add(troffer);
 
-      // Light Fixture Model on Ceiling
-      const fixtureGeo = new THREE.BoxGeometry(2.4, 0.08, 1.2);
-      const fixtureMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
-      const fixtureMesh = new THREE.Mesh(fixtureGeo, fixtureMat);
-      fixtureMesh.position.set(pos.x, 3.96, pos.z);
-      scene.add(fixtureMesh);
-
-      const frameGeo = new THREE.BoxGeometry(2.5, 0.1, 1.3);
-      const frameMat = new THREE.MeshStandardMaterial({ color: '#475569', roughness: 0.5 });
-      const frameMesh = new THREE.Mesh(frameGeo, frameMat);
-      frameMesh.position.set(pos.x, 3.98, pos.z);
-      scene.add(frameMesh);
+      const downLight = new THREE.PointLight('#ffffff', 1.6, 7.5);
+      downLight.position.set(tx, ty - 0.2, tz);
+      scene.add(downLight);
     });
 
-    // ----------------------------------------------------
-    // ROOM ARCHITECTURE (Floor, Ceiling, Walls)
-    // ----------------------------------------------------
-    // Floor Canvas Texture (Epoxy Lab Tile Grid)
-    const floorCanvas = document.createElement('canvas');
-    floorCanvas.width = 512;
-    floorCanvas.height = 512;
-    const fCtx = floorCanvas.getContext('2d')!;
-    fCtx.fillStyle = '#e2e8f0';
-    fCtx.fillRect(0, 0, 512, 512);
-    fCtx.strokeStyle = '#cbd5e1';
-    fCtx.lineWidth = 4;
-    fCtx.strokeRect(0, 0, 512, 512);
-    fCtx.strokeRect(256, 0, 256, 256);
-    fCtx.strokeRect(0, 256, 256, 256);
-
-    const floorTex = new THREE.CanvasTexture(floorCanvas);
-    floorTex.wrapS = THREE.RepeatWrapping;
-    floorTex.wrapT = THREE.RepeatWrapping;
-    floorTex.repeat.set(10, 10);
-
-    const floorGeo = new THREE.PlaneGeometry(24, 24);
+    // Laboratory Room Floor (High-Gloss White/Light-Gray Chemical Epoxy Resin)
+    const floorGeo = new THREE.PlaneGeometry(24, 24, 32, 32);
     const floorMat = new THREE.MeshStandardMaterial({
-      map: floorTex,
-      roughness: 0.25,
-      metalness: 0.05,
+      color: '#f8fafc',
+      roughness: 0.14,
+      metalness: 0.18,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // Ceiling
-    const ceilingGeo = new THREE.PlaneGeometry(24, 24);
-    const ceilingMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.9 });
-    const ceiling = new THREE.Mesh(ceilingGeo, ceilingMat);
-    ceiling.position.y = 4.0;
-    ceiling.rotation.x = Math.PI / 2;
-    scene.add(ceiling);
+    // Epoxy floor grid demarcation lines
+    const gridHelper = new THREE.GridHelper(24, 24, '#0284c7', '#cbd5e1');
+    gridHelper.position.y = 0.01;
+    scene.add(gridHelper);
 
-    // Wall Material
-    const wallMat = new THREE.MeshStandardMaterial({ color: '#f1f5f9', roughness: 0.7 });
-    const wallTrimMat = new THREE.MeshStandardMaterial({ color: '#334155', roughness: 0.5 });
+    // Realistic Clean Antimicrobial Laboratory Walls
+    const wallMat = new THREE.MeshStandardMaterial({ color: '#f1f5f9', roughness: 0.45, metalness: 0.05 });
+    const backWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
+    backWall.position.set(0, 4, -12);
+    scene.add(backWall);
 
-    // Build Walls helper
-    const buildWall = (w: number, h: number, x: number, y: number, z: number, rotY: number) => {
-      const wGeo = new THREE.PlaneGeometry(w, h);
-      const wMesh = new THREE.Mesh(wGeo, wallMat);
-      wMesh.position.set(x, y, z);
-      wMesh.rotation.y = rotY;
-      wMesh.receiveShadow = true;
-      scene.add(wMesh);
+    const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
+    frontWall.position.set(0, 4, 12);
+    frontWall.rotation.y = Math.PI;
+    scene.add(frontWall);
 
-      // Baseboard trim
-      const trimGeo = new THREE.BoxGeometry(w, 0.25, 0.05);
-      const trimMesh = new THREE.Mesh(trimGeo, wallTrimMat);
-      trimMesh.position.set(x, 0.125, z);
-      trimMesh.rotation.y = rotY;
-      scene.add(trimMesh);
-    };
+    const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
+    rightWall.position.set(12, 4, 0);
+    rightWall.rotation.y = -Math.PI / 2;
+    scene.add(rightWall);
 
-    buildWall(24, 4, 0, 2, -12, 0); // North Wall
-    buildWall(24, 4, 0, 2, 12, Math.PI); // South Wall
-    buildWall(24, 4, -12, 2, 0, Math.PI / 2); // West Wall
-    buildWall(24, 4, 12, 2, 0, -Math.PI / 2); // East Wall
+    const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
+    leftWall.position.set(-12, 4, 0);
+    leftWall.rotation.y = Math.PI / 2;
+    scene.add(leftWall);
 
-    // ----------------------------------------------------
-    // WALL POSTERS & SCIENTIFIC SIGNAGE
-    // ----------------------------------------------------
-    const createPoster = (
-      title: string,
-      subtitle: string,
-      color: string,
-      symbol: string,
-      w: number,
-      h: number,
-      x: number,
-      y: number,
-      z: number,
-      rotY: number
-    ) => {
-      const pCanvas = document.createElement('canvas');
-      pCanvas.width = 512;
-      pCanvas.height = 360;
-      const ctx = pCanvas.getContext('2d')!;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 512, 360);
-
-      // Header Banner
-      ctx.fillStyle = color;
-      ctx.fillRect(0, 0, 512, 70);
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 24px sans-serif';
-      ctx.fillText(title, 24, 44);
-
-      ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText(subtitle, 24, 110);
-
-      // Poster Graphic / Decorative lines
-      ctx.font = '80px sans-serif';
-      ctx.fillText(symbol, 40, 240);
-
-      ctx.fillStyle = '#64748b';
-      ctx.font = '13px monospace';
-      ctx.fillText('LabBridge Practical Standards Protocol', 24, 320);
-      ctx.fillText('Authorized Lab Personnel Only', 24, 340);
-
-      // Border
-      ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 8;
-      ctx.strokeRect(0, 0, 512, 360);
-
-      const pTex = new THREE.CanvasTexture(pCanvas);
-      const pGeo = new THREE.PlaneGeometry(w, h);
-      const pMat = new THREE.MeshBasicMaterial({ map: pTex });
-      const pMesh = new THREE.Mesh(pGeo, pMat);
-      pMesh.position.set(x, y, z);
-      pMesh.rotation.y = rotY;
-      scene.add(pMesh);
-    };
-
-    // North Wall Posters (Periodic Table & Chemistry Safety)
-    createPoster('PERIODIC TABLE OF ELEMENTS', 'IUPAC Standard Chemical Series', '#0284c7', '🧪', 3.2, 2.2, 4.5, 2.4, -11.9, 0);
-    createPoster('CELL BIOLOGY & GENETICS', 'Eukaryotic Structure & Organelles', '#059669', '🧬', 3.2, 2.2, -4.5, 2.4, -11.9, 0);
-
-    // West Wall Posters (Physics & Electronics)
-    createPoster("CIRCUIT LAWS & OPTICS", "Maxwell & Snell's Dispersion", '#d97706', '⚡', 3.0, 2.0, -11.9, 2.4, -2.0, Math.PI / 2);
-    createPoster('LAB SAFETY & EYEWASH', 'Emergency Station & PPE Guidelines', '#dc2626', '🛡️', 2.2, 1.8, -11.9, 2.4, 4.0, Math.PI / 2);
-
-    // East Wall Posters (Research Protocols)
-    createPoster('ANALYTICAL SCIENCE PROTOCOL', 'Standard Operating Procedures', '#4f46e5', '🔬', 3.0, 2.0, 11.9, 2.4, 0, -Math.PI / 2);
-
-    // ----------------------------------------------------
-    // FUME HOOD & LAB SINK ENVIRONMENT FIXTURES
-    // ----------------------------------------------------
-    // Fume Hood on North Wall
-    const fumeHoodGroup = new THREE.Group();
-    const fhBody = new THREE.Mesh(
-      new THREE.BoxGeometry(2.4, 2.6, 1.2),
-      new THREE.MeshStandardMaterial({ color: '#e2e8f0', metalness: 0.2, roughness: 0.4 })
-    );
-    fhBody.position.set(0, 1.3, 0);
-    fumeHoodGroup.add(fhBody);
-
-    // Glass Sash
-    const sash = new THREE.Mesh(
-      new THREE.BoxGeometry(2.1, 1.2, 0.05),
-      new THREE.MeshStandardMaterial({ color: '#7dd3fc', transparent: true, opacity: 0.45, roughness: 0.1 })
-    );
-    sash.position.set(0, 1.5, 0.58);
-    fumeHoodGroup.add(sash);
-
-    fumeHoodGroup.position.set(0, 0, -11.3);
-    scene.add(fumeHoodGroup);
-
-    // Wall Cabinets on East Wall
-    for (let c = -3; c <= 3; c += 2) {
-      const cab = new THREE.Mesh(
-        new THREE.BoxGeometry(1.6, 1.2, 0.5),
-        new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.1, roughness: 0.6 })
+    // Sunlit Panoramic Windows on Left Wall
+    [-6, 0, 6].forEach((wz) => {
+      const skyPane = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.0, 3.8),
+        new THREE.MeshBasicMaterial({ color: '#bae6fd' })
       );
-      cab.position.set(11.7, 2.6, c * 2);
-      scene.add(cab);
-    }
+      skyPane.position.set(-11.92, 4.0, wz);
+      skyPane.rotation.y = Math.PI / 2;
+      scene.add(skyPane);
 
-    // ----------------------------------------------------
-    // 4 CENTRAL LABORATORY WORKSTATIONS
-    // ----------------------------------------------------
-    const createLabBench = (x: number, z: number, accentColor: string, title: string) => {
-      const benchGroup = new THREE.Group();
-
-      // Heavy Granite Countertop
-      const topGeo = new THREE.BoxGeometry(3.6, 0.15, 2.2);
-      const topMat = new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.2, metalness: 0.3 });
-      const topMesh = new THREE.Mesh(topGeo, topMat);
-      topMesh.position.y = 0.95;
-      topMesh.castShadow = true;
-      topMesh.receiveShadow = true;
-      benchGroup.add(topMesh);
-
-      // Stainless Steel / Epoxy Cabinet Base
-      const baseGeo = new THREE.BoxGeometry(3.4, 0.88, 2.0);
-      const baseMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.5 });
-      const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-      baseMesh.position.y = 0.44;
-      baseMesh.castShadow = true;
-      benchGroup.add(baseMesh);
-
-      // Discipline Accent Trim Line
-      const trimGeo = new THREE.BoxGeometry(3.42, 0.06, 2.02);
-      const trimMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.3, emissive: accentColor, emissiveIntensity: 0.2 });
-      const trimMesh = new THREE.Mesh(trimGeo, trimMat);
-      trimMesh.position.y = 0.88;
-      benchGroup.add(trimMesh);
-
-      // 3D Floating Discipline Hologram Label above table
-      const holoCanvas = document.createElement('canvas');
-      holoCanvas.width = 512;
-      holoCanvas.height = 160;
-      const hCtx = holoCanvas.getContext('2d')!;
-      hCtx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-      hCtx.roundRect(10, 10, 492, 140, 24);
-      hCtx.fill();
-      hCtx.strokeStyle = accentColor;
-      hCtx.lineWidth = 6;
-      hCtx.stroke();
-
-      hCtx.fillStyle = '#ffffff';
-      hCtx.font = 'bold 36px sans-serif';
-      hCtx.textAlign = 'center';
-      hCtx.fillText(title, 256, 75);
-
-      hCtx.fillStyle = accentColor;
-      hCtx.font = 'bold 22px monospace';
-      hCtx.fillText('[E] Step Up to Interact', 256, 118);
-
-      const holoTex = new THREE.CanvasTexture(holoCanvas);
-      const holoMat = new THREE.SpriteMaterial({ map: holoTex, transparent: true });
-      const holoSprite = new THREE.Sprite(holoMat);
-      holoSprite.scale.set(2.4, 0.75, 1);
-      holoSprite.position.set(0, 2.3, 0);
-      benchGroup.add(holoSprite);
-
-      benchGroup.position.set(x, 0, z);
-      scene.add(benchGroup);
-      return benchGroup;
-    };
-
-    // 1. BIOLOGY BENCH
-    const bioBench = createLabBench(-4.5, -3.5, '#10b981', '🧬 BIOLOGY STATION');
-
-    // 3D Optical Compound Microscope Model on Biology Table
-    const microGroup = new THREE.Group();
-    // Heavy Cast Iron Horseshoe Base
-    const mBase = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24, 0.28, 0.08, 24),
-      new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.3, metalness: 0.7 })
-    );
-    mBase.position.y = 1.05;
-    microGroup.add(mBase);
-
-    // Curved Arm Pillar
-    const mPillar = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.45, 0.12),
-      new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.4, metalness: 0.6 })
-    );
-    mPillar.position.set(0, 1.28, -0.1);
-    microGroup.add(mPillar);
-
-    // Mechanical Stage (Square plate)
-    const mStage = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.04, 0.36),
-      new THREE.MeshStandardMaterial({ color: '#090d16', roughness: 0.2, metalness: 0.8 })
-    );
-    mStage.position.set(0, 1.25, 0.04);
-    microGroup.add(mStage);
-
-    // Glass Specimen Slide on stage
-    const mSlide = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 0.015, 0.08),
-      new THREE.MeshStandardMaterial({ color: '#a7f3d0', transparent: true, opacity: 0.8 })
-    );
-    mSlide.position.set(0, 1.28, 0.04);
-    microGroup.add(mSlide);
-
-    // Revolving Nosepiece Turret with 4 Objective Lenses
-    const mTurret = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.14, 0.14, 0.06, 16),
-      new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.9, roughness: 0.2 })
-    );
-    mTurret.position.set(0, 1.45, 0.04);
-    microGroup.add(mTurret);
-
-    // Lenses
-    [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2].forEach((rot, i) => {
-      const lens = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.025, 0.03, 0.1, 12),
-        new THREE.MeshStandardMaterial({
-          color: i === 0 ? '#ef4444' : i === 1 ? '#eab308' : i === 2 ? '#3b82f6' : '#f8fafc',
-          metalness: 0.8,
-          roughness: 0.2,
-        })
+      const winFrame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 4.0, 3.2),
+        new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.5, roughness: 0.2 })
       );
-      lens.position.set(Math.sin(rot) * 0.08, 1.39, 0.04 + Math.cos(rot) * 0.08);
-      microGroup.add(lens);
+      winFrame.position.set(-11.9, 4.0, wz);
+      scene.add(winFrame);
     });
 
-    // Dual Binocular Eyepiece Tubes
-    [-0.06, 0.06].forEach((eyeX) => {
-      const eyeTube = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.03, 0.03, 0.25, 12),
-        new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.6 })
+    // Add Chemical Fume Hood at Center Back Wall
+    const fumeHood = createFumeHood();
+    fumeHood.position.set(0, 0, -11.3);
+    scene.add(fumeHood);
+
+    // Add Emergency Safety Shower & Eye Wash Station
+    const safetyShower = createSafetyShower();
+    safetyShower.position.set(11.2, 0, 4.0);
+    safetyShower.rotation.y = -Math.PI / 2;
+    scene.add(safetyShower);
+
+    // Add Science Whiteboard on Front Wall
+    const whiteboard = createLabWhiteboard();
+    whiteboard.position.set(0, 2.5, 11.85);
+    whiteboard.rotation.y = Math.PI;
+    scene.add(whiteboard);
+
+    // 4 Workstation Benches with Overhead Shelves & Swivel Stools
+    const interactiveList: THREE.Object3D[] = [];
+
+    const benchConfigs: Array<{
+      station: 'biology' | 'chemistry' | 'physics' | 'research';
+      x: number;
+      z: number;
+      label: string;
+      stoolZ: number;
+    }> = [
+      { station: 'biology', x: -4.5, z: -3.5, label: 'Biology & Microscopy', stoolZ: -2.3 },
+      { station: 'chemistry', x: 4.5, z: -3.5, label: 'Chemistry & Titration', stoolZ: -2.3 },
+      { station: 'physics', x: -4.5, z: 3.5, label: 'Physics & Circuits', stoolZ: 4.7 },
+      { station: 'research', x: 4.5, z: 3.5, label: 'Analytical Science', stoolZ: 4.7 },
+    ];
+
+    benchConfigs.forEach((cfg) => {
+      // Table group
+      const bench = new THREE.Group();
+      bench.position.set(cfg.x, 0, cfg.z);
+
+      // Clean Solid White Chemical-Grade Resin Tabletop (Height 0.88m, Depth 1.8m)
+      const tableTop = new THREE.Mesh(
+        new THREE.BoxGeometry(3.6, 0.12, 1.8),
+        new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.18, metalness: 0.15 })
       );
-      eyeTube.position.set(eyeX, 1.62, 0.02);
-      eyeTube.rotation.x = -0.3;
-      microGroup.add(eyeTube);
+      tableTop.position.y = 0.88;
+      tableTop.castShadow = true;
+      tableTop.receiveShadow = true;
+      bench.add(tableTop);
+
+      // Brushed Stainless Steel Frame Legs
+      const legMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.9, roughness: 0.15 });
+      [
+        [-1.6, -0.7],
+        [1.6, -0.7],
+        [-1.6, 0.7],
+        [1.6, 0.7],
+      ].forEach(([lx, lz]) => {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.88, 16), legMat);
+        leg.position.set(lx, 0.44, lz);
+        leg.castShadow = true;
+        bench.add(leg);
+      });
+
+      scene.add(bench);
+
+      // Add Overhead Reagent Shelf above each bench
+      const shelf = createReagentShelf();
+      shelf.position.set(cfg.x, 2.1, cfg.z + (cfg.z < 0 ? -0.6 : 0.6));
+      scene.add(shelf);
+
+      // Add Swivel Lab Stool (Seat cushion at 0.62m)
+      const stool = createLabStool(cfg.station, cfg.x, cfg.stoolZ, cfg.stoolZ > 0 ? Math.PI : 0);
+      scene.add(stool);
+      stool.traverse((c) => {
+        if (c.userData && c.userData.isInteractive) {
+          interactiveList.push(c);
+        }
+      });
     });
 
-    // Slide box beside microscope
-    const slideBox = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35, 0.08, 0.24),
-      new THREE.MeshStandardMaterial({ color: '#78350f', roughness: 0.7 })
-    );
-    slideBox.position.set(0.6, 1.07, 0.2);
-    microGroup.add(slideBox);
-
-    // Petri Dishes
-    [-0.5, -0.7].forEach((px, idx) => {
-      const petri = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.12, 0.12, 0.03, 20),
-        new THREE.MeshStandardMaterial({ color: idx === 0 ? '#fde68a' : '#bae6fd', transparent: true, opacity: 0.7 })
-      );
-      petri.position.set(px, 1.05, 0.1 * idx);
-      microGroup.add(petri);
+    // 1. Biology 3D Microscope Setup (Ready-Made High-Fidelity GLB Model)
+    createReadyMadeMicroscope('biology').then((microscope) => {
+      microscope.position.set(-4.5, 0.94, -3.5);
+      scene.add(microscope);
+      microEquipmentRef.current = microscope;
+      microscope.traverse((c) => {
+        if (c.userData && c.userData.isInteractive) interactiveList.push(c);
+      });
+      interactiveObjectsRef.current = [...interactiveList];
     });
 
-    bioBench.add(microGroup);
-
-    // 2. CHEMISTRY BENCH
-    const chemBench = createLabBench(4.5, -3.5, '#06b6d4', '🧪 CHEMISTRY STATION');
-
-    // 3D Chemistry Equipment
-    const chemGroup = new THREE.Group();
-
-    // Bunsen Burner
-    const burnerBase = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.14, 0.04, 16),
-      new THREE.MeshStandardMaterial({ color: '#475569', metalness: 0.8 })
-    );
-    burnerBase.position.set(-0.6, 1.05, 0);
-    chemGroup.add(burnerBase);
-
-    const burnerChimney = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 0.25, 16),
-      new THREE.MeshStandardMaterial({ color: '#94a3b8', metalness: 0.9, roughness: 0.1 })
-    );
-    burnerChimney.position.set(-0.6, 1.18, 0);
-    chemGroup.add(burnerChimney);
-
-    // Dynamic Flame Light
-    const flameLight = new THREE.PointLight('#38bdf8', 0.8, 2);
-    flameLight.position.set(-0.6, 1.38, 0);
-    chemGroup.add(flameLight);
-
-    // Erlenmeyer Flask with blue solution
-    const flaskGeo = new THREE.ConeGeometry(0.16, 0.28, 16);
-    const flaskMat = new THREE.MeshStandardMaterial({ color: '#38bdf8', transparent: true, opacity: 0.75, roughness: 0.1 });
-    const flask = new THREE.Mesh(flaskGeo, flaskMat);
-    flask.position.set(0.1, 1.16, 0);
-    chemGroup.add(flask);
-
-    // Beaker with purple solution
-    const beakerGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.22, 16);
-    const beakerMat = new THREE.MeshStandardMaterial({ color: '#a855f7', transparent: true, opacity: 0.7, roughness: 0.1 });
-    const beaker = new THREE.Mesh(beakerGeo, beakerMat);
-    beaker.position.set(0.5, 1.14, 0.15);
-    chemGroup.add(beaker);
-
-    // Test Tube Rack
-    const rackBase = new THREE.Mesh(
-      new THREE.BoxGeometry(0.45, 0.14, 0.15),
-      new THREE.MeshStandardMaterial({ color: '#d97706', roughness: 0.6 })
-    );
-    rackBase.position.set(-0.1, 1.09, 0.4);
-    chemGroup.add(rackBase);
-
-    [-0.16, -0.08, 0, 0.08, 0.16].forEach((tx, i) => {
-      const tube = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.018, 0.018, 0.22, 12),
-        new THREE.MeshStandardMaterial({
-          color: i === 0 ? '#ef4444' : i === 1 ? '#3b82f6' : i === 2 ? '#10b981' : i === 3 ? '#eab308' : '#ec4899',
-          transparent: true,
-          opacity: 0.85,
-        })
-      );
-      tube.position.set(tx - 0.1, 1.2, 0.4);
-      chemGroup.add(tube);
+    // 2. Chemistry 3D Titration Suite & Ready-Made Glassware GLB Setup
+    createReadyMadeChemistryStation('chemistry').then((chemRig) => {
+      chemRig.position.set(4.5, 0.94, -3.5);
+      scene.add(chemRig);
+      chemEquipmentRef.current = chemRig;
+      chemRig.traverse((c) => {
+        if (c.userData && c.userData.isInteractive) interactiveList.push(c);
+      });
+      interactiveObjectsRef.current = [...interactiveList];
     });
 
-    chemBench.add(chemGroup);
+    // 3. Physics 3D Circuit & Apparatus Ready-Made Setup
+    createReadyMadePhysicsBench('physics').then((physBench) => {
+      physBench.position.set(-4.5, 0.94, 3.5);
+      scene.add(physBench);
+      physEquipmentRef.current = physBench;
+      physBench.traverse((c) => {
+        if (c.userData && c.userData.isInteractive) interactiveList.push(c);
+      });
+      interactiveObjectsRef.current = [...interactiveList];
+    });
 
-    // 3. PHYSICS BENCH
-    const physBench = createLabBench(-4.5, 3.5, '#f59e0b', '⚡ PHYSICS STATION');
+    // 4. Research 3D Analytical Suite Ready-Made Setup
+    createReadyMadeAnalyticalBench('research').then((resBench) => {
+      resBench.position.set(4.5, 0.94, 3.5);
+      scene.add(resBench);
+      resBench.traverse((c) => {
+        if (c.userData && c.userData.isInteractive) interactiveList.push(c);
+      });
+      interactiveObjectsRef.current = [...interactiveList];
+    });
 
-    // 3D Physics Apparatus
-    const physGroup = new THREE.Group();
+    interactiveObjectsRef.current = interactiveList;
 
-    // DC Power Supply Box
-    const psBox = new THREE.Mesh(
-      new THREE.BoxGeometry(0.4, 0.25, 0.3),
-      new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.5, metalness: 0.4 })
-    );
-    psBox.position.set(-0.6, 1.15, 0);
-    physGroup.add(psBox);
+    // Raycaster for Center Reticle Hover & Click
+    const raycaster = new THREE.Raycaster();
+    const centerScreen = new THREE.Vector2(0, 0);
 
-    // Glowing LED Screen on power supply
-    const psScreen = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.18, 0.08),
-      new THREE.MeshBasicMaterial({ color: '#38bdf8' })
-    );
-    psScreen.position.set(-0.6, 1.18, 0.151);
-    physGroup.add(psScreen);
+    const handleMouseMove = (e: MouseEvent) => {
+      if (document.pointerLockElement === renderer.domElement) {
+        const sensitivity = 0.0022;
+        cameraEuler.current.y -= e.movementX * sensitivity;
+        cameraEuler.current.x -= e.movementY * sensitivity;
 
-    // Breadboard Circuit
-    const breadboard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.55, 0.03, 0.35),
-      new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.8 })
-    );
-    breadboard.position.set(0.1, 1.05, 0.1);
-    physGroup.add(breadboard);
-
-    // Miniature Light Bulb on breadboard
-    const physBulb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 16, 16),
-      new THREE.MeshStandardMaterial({ color: '#fef08a', emissive: '#eab308', emissiveIntensity: 0.8 })
-    );
-    physBulb.position.set(0.1, 1.12, 0.1);
-    physGroup.add(physBulb);
-
-    // Digital Multimeter (Yellow casing)
-    const dmm = new THREE.Mesh(
-      new THREE.BoxGeometry(0.2, 0.06, 0.32),
-      new THREE.MeshStandardMaterial({ color: '#facc15', roughness: 0.4 })
-    );
-    dmm.position.set(0.7, 1.05, -0.1);
-    physGroup.add(dmm);
-
-    // Triangular Glass Prism
-    const prism = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.08, 0.14, 3),
-      new THREE.MeshStandardMaterial({ color: '#c7d2fe', transparent: true, opacity: 0.75, roughness: 0.05 })
-    );
-    prism.position.set(-0.1, 1.12, -0.3);
-    physGroup.add(prism);
-
-    physBench.add(physGroup);
-
-    // 4. RESEARCH & ANALYTICAL BENCH
-    const resBench = createLabBench(4.5, 3.5, '#6366f1', '🔬 ANALYTICAL SCIENCE');
-
-    // 3D Analytical Equipment
-    const resGroup = new THREE.Group();
-
-    // Analytical Balance Scale inside Glass Draft Chamber
-    const scaleBase = new THREE.Mesh(
-      new THREE.BoxGeometry(0.4, 0.1, 0.35),
-      new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.4 })
-    );
-    scaleBase.position.set(-0.5, 1.07, 0);
-    resGroup.add(scaleBase);
-
-    const draftShield = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.3, 0.32),
-      new THREE.MeshStandardMaterial({ color: '#bae6fd', transparent: true, opacity: 0.35, roughness: 0.1 })
-    );
-    draftShield.position.set(-0.5, 1.25, 0);
-    resGroup.add(draftShield);
-
-    // Centrifuge Machine
-    const centrifuge = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.22, 0.25, 0.28, 20),
-      new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.3, metalness: 0.4 })
-    );
-    centrifuge.position.set(0.4, 1.16, 0.1);
-    resGroup.add(centrifuge);
-
-    resBench.add(resGroup);
-
-    // ----------------------------------------------------
-    // FIRST-PERSON CONTROLS & POINTER LOCK
-    // ----------------------------------------------------
-    const onMouseMove = (event: MouseEvent) => {
-      if (document.pointerLockElement !== container) return;
-
-      const movementX = event.movementX || 0;
-      const movementY = event.movementY || 0;
-
-      cameraEuler.current.y -= movementX * 0.0022;
-      cameraEuler.current.x -= movementY * 0.0022;
-      // Clamp vertical look
-      cameraEuler.current.x = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, cameraEuler.current.x));
-
-      camera.quaternion.setFromEuler(cameraEuler.current);
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      keysPressed.current[e.code] = true;
-
-      if (e.code === 'KeyE') {
-        // Trigger interaction with nearest active station
-        const currentPrompt = activeStationPromptRef.current;
-        if (currentPrompt) {
-          onOpenStation(currentPrompt.station);
-          soundFx.playClick();
+        // When seated, constrain head swivel to realistic cervical rotation range
+        if (isSeated) {
+          cameraEuler.current.x = Math.max(-0.9, Math.min(0.65, cameraEuler.current.x));
+        } else {
+          cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
         }
       }
     };
 
-    const onKeyUp = (e: KeyboardEvent) => {
-      keysPressed.current[e.code] = false;
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-
-    // Pointer Lock change
-    const onPointerLockChange = () => {
-      setIsPointerLocked(document.pointerLockElement === container);
-    };
-    document.addEventListener('pointerlockchange', onPointerLockChange);
-
-    // Resize Handler
-    const onResize = () => {
-      if (!container || !renderer || !camera) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    };
-    window.addEventListener('resize', onResize);
-
-    // ----------------------------------------------------
-    // ANIMATION & PHYSICS TICK LOOP
-    // ----------------------------------------------------
-    let lastTime = performance.now();
-
-    const animateLoop = (time: number) => {
-      const dt = Math.min((time - lastTime) / 1000, 0.1);
-      lastTime = time;
-
-      // Handle Keyboard Movement WASD
-      const moveSpeed = 4.2;
-      const moveVector = new THREE.Vector3();
-
-      if (keysPressed.current['KeyW'] || keysPressed.current['ArrowUp']) moveVector.z -= 1;
-      if (keysPressed.current['KeyS'] || keysPressed.current['ArrowDown']) moveVector.z += 1;
-      if (keysPressed.current['KeyA'] || keysPressed.current['ArrowLeft']) moveVector.x -= 1;
-      if (keysPressed.current['KeyD'] || keysPressed.current['ArrowRight']) moveVector.x += 1;
-
-      const isMoving = moveVector.lengthSq() > 0;
-      isWalkingRef.current = isMoving;
-
-      if (isMoving) {
-        moveVector.normalize();
-        // Transform direction according to camera Y angle
-        const camYAngle = cameraEuler.current.y;
-        const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), camYAngle);
-        const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), camYAngle);
-
-        const worldMove = new THREE.Vector3();
-        worldMove.addScaledVector(forward, -moveVector.z);
-        worldMove.addScaledVector(right, moveVector.x);
-        worldMove.normalize();
-
-        playerVelocity.current.lerp(worldMove.multiplyScalar(moveSpeed), dt * 10);
-
-        // Footstep sounds
-        stepTimerRef.current += dt;
-        if (stepTimerRef.current > 0.42) {
-          soundFx.playFootstep();
-          stepTimerRef.current = 0;
-        }
-
-        // Head Bobbing
-        headBobTimer.current += dt * 10;
-        camera.position.y = 1.7 + Math.sin(headBobTimer.current) * 0.035;
-      } else {
-        playerVelocity.current.lerp(new THREE.Vector3(0, 0, 0), dt * 12);
-        camera.position.y = THREE.MathUtils.lerp(camera.position.y, 1.7, dt * 8);
+    const handleCanvasClick = () => {
+      if (document.pointerLockElement !== renderer.domElement && !isTouch) {
+        renderer.domElement.requestPointerLock();
       }
 
-      // Apply movement with wall collision bounds
-      const nextX = camera.position.x + playerVelocity.current.x * dt;
-      const nextZ = camera.position.z + playerVelocity.current.z * dt;
-
-      // Lab Boundary Collisions (Room is 24x24, playable area is -10.5 to 10.5)
-      camera.position.x = Math.max(-10.5, Math.min(10.5, nextX));
-      camera.position.z = Math.max(-10.5, Math.min(10.5, nextZ));
-
-      // Table Obstacle Soft Collisions (avoid walking through benches)
-      const benches = [
-        { x: -4.5, z: -3.5 },
-        { x: 4.5, z: -3.5 },
-        { x: -4.5, z: 3.5 },
-        { x: 4.5, z: 3.5 },
-      ];
-
-      benches.forEach((b) => {
-        const dx = camera.position.x - b.x;
-        const dz = camera.position.z - b.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        const minDist = 1.6;
-        if (dist < minDist && dist > 0.001) {
-          const push = (minDist - dist) / dist;
-          camera.position.x += dx * push;
-          camera.position.z += dz * push;
-        }
-      });
-
-      // Update HUD MiniMap Player Beacon
-      setPlayerPosition({
-        x: camera.position.x,
-        z: camera.position.z,
-        angle: cameraEuler.current.y,
-      });
-
-      // Distance check to 4 Stations for Interactive Prompt
-      let closestStation: {
-        station: 'biology' | 'chemistry' | 'physics' | 'research';
-        title: string;
-        action: string;
-        icon: string;
-        color: string;
-      } | null = null;
-      let minStationDist = 3.2; // interaction radius (meters)
-
-      Object.entries(stationPositions.current).forEach(([key, st]) => {
-        const dx = camera.position.x - st.x;
-        const dz = camera.position.z - st.z;
-        const d = Math.sqrt(dx * dx + dz * dz);
-        if (d < minStationDist) {
-          minStationDist = d;
-          if (st.type === 'biology') {
-            closestStation = {
-              station: 'biology',
-              title: '🧬 Biology Workstation',
-              action: 'Use Optical Compound Microscope',
-              icon: '🔬',
-              color: 'text-emerald-400 border-emerald-500 bg-emerald-950/80',
-            };
-          } else if (st.type === 'chemistry') {
-            closestStation = {
-              station: 'chemistry',
-              title: '🧪 Chemistry Workstation',
-              action: 'Examine Titration Rig & Bunsen Burner',
-              icon: '🧪',
-              color: 'text-cyan-400 border-cyan-500 bg-cyan-950/80',
-            };
-          } else if (st.type === 'physics') {
-            closestStation = {
-              station: 'physics',
-              title: '⚡ Physics Workstation',
-              action: "Test DC Circuits & Ohm's Law",
-              icon: '⚡',
-              color: 'text-amber-400 border-amber-500 bg-amber-950/80',
-            };
-          } else if (st.type === 'research') {
-            closestStation = {
-              station: 'research',
-              title: '🔬 Analytical Science Workstation',
-              action: 'Operate Analytical Balance & Centrifuge',
-              icon: '⚖️',
-              color: 'text-indigo-400 border-indigo-500 bg-indigo-950/80',
-            };
+      // Check raycast click on center dot
+      if (cameraRef.current) {
+        raycaster.setFromCamera(centerScreen, cameraRef.current);
+        const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
+        if (hits.length > 0) {
+          const hitObj = hits[0].object;
+          if (hitObj.userData && hitObj.userData.isInteractive) {
+            handleObjectClick(hitObj);
           }
         }
-      });
+      }
+    };
 
-      activeStationPromptRef.current = closestStation;
-      setActiveStationPrompt(closestStation);
+    // Mobile / Touch Look Handler on right half of canvas
+    const handleTouchStart = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.clientX > window.innerWidth / 2 && touchLookId.current === null) {
+          touchLookId.current = t.identifier;
+          touchLookLastPos.current = { x: t.clientX, y: t.clientY };
+        }
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touchLookId.current && touchLookLastPos.current) {
+          const dx = t.clientX - touchLookLastPos.current.x;
+          const dy = t.clientY - touchLookLastPos.current.y;
+          touchLookLastPos.current = { x: t.clientX, y: t.clientY };
+
+          const sensitivity = 0.004;
+          cameraEuler.current.y -= dx * sensitivity;
+          cameraEuler.current.x -= dy * sensitivity;
+          if (isSeated) {
+            cameraEuler.current.x = Math.max(-0.9, Math.min(0.65, cameraEuler.current.x));
+          } else {
+            cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
+          }
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touchLookId.current) {
+          touchLookId.current = null;
+          touchLookLastPos.current = null;
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    renderer.domElement.addEventListener('click', handleCanvasClick);
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    // Animation & Physics Loop
+    let lastTime = performance.now();
+    let coordUpdateCounter = 0;
+
+    const animateLoop = () => {
+      animationFrameId.current = requestAnimationFrame(animateLoop);
+
+      const now = performance.now();
+      const delta = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+
+      // Check for motion key intent to auto-stand up if seated
+      const moveIntent =
+        keysPressed.current['KeyW'] ||
+        keysPressed.current['ArrowUp'] ||
+        keysPressed.current['KeyS'] ||
+        keysPressed.current['ArrowDown'] ||
+        keysPressed.current['KeyA'] ||
+        keysPressed.current['ArrowLeft'] ||
+        keysPressed.current['KeyD'] ||
+        keysPressed.current['ArrowRight'] ||
+        touchMoveVector.current.x !== 0 ||
+        touchMoveVector.current.z !== 0;
+
+      if (isSeated && moveIntent && !transitionRef.current?.active) {
+        standUp();
+      }
+
+      // Handle Smooth Cinematic Camera Transitions (Sitting down / Standing up)
+      if (transitionRef.current?.active && cameraRef.current) {
+        const tr = transitionRef.current;
+        tr.progress += delta / tr.duration;
+
+        if (tr.progress >= 1.0) {
+          tr.progress = 1.0;
+          tr.active = false;
+          cameraRef.current.position.copy(tr.targetPos);
+          cameraEuler.current.x = tr.targetYXZ.pitch;
+          cameraEuler.current.y = tr.targetYXZ.yaw;
+          transitionRef.current = null;
+        } else {
+          // Smooth Hermite S-Curve Interpolation: t * t * (3 - 2 * t)
+          const p = tr.progress;
+          const ease = p * p * (3 - 2 * p);
+
+          cameraRef.current.position.lerpVectors(tr.startPos, tr.targetPos, ease);
+          cameraEuler.current.x = THREE.MathUtils.lerp(tr.startYXZ.pitch, tr.targetYXZ.pitch, ease);
+          cameraEuler.current.y = THREE.MathUtils.lerp(tr.startYXZ.yaw, tr.targetYXZ.yaw, ease);
+        }
+      } else if (!isSeated && cameraRef.current) {
+        // First-Person Walking Physics & Eye Height Enforcement
+        const moveVector = new THREE.Vector3();
+        if (keysPressed.current['KeyW'] || keysPressed.current['ArrowUp']) moveVector.z -= 1;
+        if (keysPressed.current['KeyS'] || keysPressed.current['ArrowDown']) moveVector.z += 1;
+        if (keysPressed.current['KeyA'] || keysPressed.current['ArrowLeft']) moveVector.x -= 1;
+        if (keysPressed.current['KeyD'] || keysPressed.current['ArrowRight']) moveVector.x += 1;
+
+        if (touchMoveVector.current.x !== 0 || touchMoveVector.current.z !== 0) {
+          moveVector.x += touchMoveVector.current.x;
+          moveVector.z += touchMoveVector.current.z;
+        }
+
+        const isMoving = moveVector.lengthSq() > 0.01;
+        isWalkingRef.current = isMoving;
+
+        if (isMoving) {
+          moveVector.normalize();
+          const speed = 4.0;
+          const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraEuler.current.y);
+          const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraEuler.current.y);
+
+          const desiredVelocity = new THREE.Vector3()
+            .addScaledVector(forward, -moveVector.z * speed)
+            .addScaledVector(right, moveVector.x * speed);
+
+          playerVelocity.current.lerp(desiredVelocity, 10 * delta);
+
+          walkTimerRef.current += delta * 8.5;
+          stepTimerRef.current += delta;
+          if (stepTimerRef.current > 0.38) {
+            soundFx.playFootstep();
+            stepTimerRef.current = 0;
+          }
+        } else {
+          playerVelocity.current.lerp(new THREE.Vector3(0, 0, 0), 10 * delta);
+          idleTimerRef.current += delta * 1.8;
+        }
+
+        // Apply Velocity to Player Position
+        cameraRef.current.position.x += playerVelocity.current.x * delta;
+        cameraRef.current.position.z += playerVelocity.current.z * delta;
+
+        // Biomechanical Eye Height & Natural Head-Bobbing
+        const headBobY = isMoving
+          ? Math.sin(walkTimerRef.current) * 0.016
+          : Math.sin(idleTimerRef.current) * 0.0025;
+
+        // Strict Human Eye Level Enforcement (1.68m)
+        cameraRef.current.position.y = EYE_HEIGHT_STANDING + headBobY;
+
+        // Laboratory Boundaries
+        cameraRef.current.position.x = Math.max(-10.5, Math.min(10.5, cameraRef.current.position.x));
+        cameraRef.current.position.z = Math.max(-10.5, Math.min(10.5, cameraRef.current.position.z));
+      } else if (isSeated && cameraRef.current && !transitionRef.current?.active) {
+        // Gentle seated breathing
+        idleTimerRef.current += delta * 1.5;
+        const breathY = Math.sin(idleTimerRef.current) * 0.0018;
+        cameraRef.current.position.y = EYE_HEIGHT_SITTING + breathY;
+      }
+
+      // Apply Camera Orientation & Reticle Raycast
+      if (cameraRef.current) {
+        cameraRef.current.quaternion.setFromEuler(cameraEuler.current);
+
+        // Center Reticle Raycast
+        raycaster.setFromCamera(centerScreen, cameraRef.current);
+        const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
+        if (hits.length > 0) {
+          const hit = hits[0].object;
+          if (hit.userData && hit.userData.isInteractive) {
+            setHoveredAction({
+              id: hit.userData.interactId,
+              label: hit.userData.label,
+              action: hit.userData.action,
+              station: hit.userData.station,
+              category: hit.userData.category,
+            });
+          }
+        } else {
+          setHoveredAction(null);
+        }
+
+        // Update coordinates for Mini Map Radar throttled
+        coordUpdateCounter++;
+        if (coordUpdateCounter % 4 === 0) {
+          setPlayerCoords({
+            x: cameraRef.current.position.x,
+            z: cameraRef.current.position.z,
+            yaw: cameraEuler.current.y,
+          });
+        }
+      }
+
+      // Update 1st-Person Scientist Kinematics (Zero float, realistic posture)
+      if (scientistRigRef.current) {
+        updateScientistRig(scientistRigRef.current, {
+          isWalking: isWalkingRef.current,
+          isSeated,
+          walkTimer: isWalkingRef.current ? walkTimerRef.current : idleTimerRef.current,
+          delta,
+          pitch: cameraEuler.current.x,
+        });
+      }
+
+      // Animate Chemistry Stirrer
+      if (chemEquipmentRef.current) {
+        const uData = chemEquipmentRef.current.userData;
+        if (uData && uData.stirBar && chemistryStateRef.current.stirrerRPM > 0) {
+          uData.stirBar.rotation.y += (chemistryStateRef.current.stirrerRPM / 60) * Math.PI * 2 * delta;
+        }
+      }
 
       renderer.render(scene, camera);
-      animationFrameId.current = requestAnimationFrame(animateLoop);
     };
 
-    animationFrameId.current = requestAnimationFrame(animateLoop);
+    animateLoop();
+
+    // Resize Handler
+    const handleResize = () => {
+      if (!container || !cameraRef.current || !rendererRef.current) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      cameraRef.current.aspect = w / h;
+      cameraRef.current.updateProjectionMatrix();
+      rendererRef.current.setSize(w, h);
+    };
+
+    window.addEventListener('resize', handleResize);
 
     return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      renderer.domElement.removeEventListener('click', handleCanvasClick);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('resize', handleResize);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('resize', onResize);
-      document.removeEventListener('pointerlockchange', onPointerLockChange);
-      soundFx.stopLabAmbience();
-
-      if (renderer.domElement && container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
+      if (rendererRef.current && rendererRef.current.domElement) {
+        container.removeChild(rendererRef.current.domElement);
       }
-      renderer.dispose();
     };
-  }, [onOpenStation]);
+  }, [handleObjectClick, isSeated, isTouch, standUp]);
 
-  const requestLock = () => {
-    if (mountRef.current) {
-      mountRef.current.requestPointerLock();
+  // Update 3D Microscope Mesh States
+  useEffect(() => {
+    if (!microEquipmentRef.current) return;
+    const uData = microEquipmentRef.current.userData;
+    if (!uData) return;
+
+    if (uData.stageAssembly) {
+      uData.stageAssembly.position.y = 0.16 + (1 - biologyState.coarseFocus) * 0.02;
     }
-  };
+
+    if (uData.turret) {
+      const angles: { [key: string]: number } = {
+        '4x': 0,
+        '10x': Math.PI / 2,
+        '40x': Math.PI,
+        '100x': -Math.PI / 2,
+      };
+      uData.turret.rotation.y = angles[biologyState.objective] || 0;
+    }
+  }, [biologyState]);
+
+  // Update 3D Chemistry Mesh States
+  useEffect(() => {
+    chemistryStateRef.current = chemistryState;
+    if (!chemEquipmentRef.current) return;
+    const uData = chemEquipmentRef.current.userData;
+    if (!uData) return;
+
+    if (uData.stopcock) {
+      uData.stopcock.rotation.z = chemistryState.buretteOpen ? 0 : Math.PI / 2;
+    }
+
+    if (uData.flaskLiquid) {
+      const mat = uData.flaskLiquid.material as THREE.MeshStandardMaterial;
+      if (mat) {
+        if (chemistryState.indicatorAdded) {
+          mat.color.set(chemistryState.dispensedML >= 25.0 ? '#f43f5e' : '#fce7f3');
+        } else {
+          mat.color.set('#e0f2fe');
+        }
+      }
+    }
+  }, [chemistryState]);
+
+  // Update 3D Physics Mesh States
+  useEffect(() => {
+    if (!physEquipmentRef.current) return;
+    const uData = physEquipmentRef.current.userData;
+    if (!uData) return;
+
+    if (uData.blade) {
+      uData.blade.rotation.z = physicsState.switchClosed ? 0 : 0.6;
+    }
+
+    if (uData.potKnob) {
+      uData.potKnob.rotation.y = (physicsState.resistance / 100) * Math.PI * 1.5;
+    }
+
+    if (uData.bulbLight && uData.bulbGlass) {
+      const isLit = physicsState.switchClosed;
+      const power = isLit ? (physicsState.voltage ** 2 / physicsState.resistance) * 0.08 : 0;
+      uData.bulbLight.intensity = Math.min(3.5, power * 2.5);
+      const glassMat = uData.bulbGlass.material as THREE.MeshStandardMaterial;
+      if (glassMat) {
+        glassMat.emissiveIntensity = isLit ? 1.0 : 0.05;
+      }
+    }
+  }, [physicsState]);
 
   return (
-    <div className="relative w-full h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
-      {/* 3D Canvas Mount */}
-      <div
-        ref={mountRef}
-        onClick={requestLock}
-        className="w-full h-full cursor-crosshair"
-      />
+    <div className="relative w-full h-screen bg-slate-950 overflow-hidden select-none">
+      {/* 3D WebGL Canvas Container */}
+      <div ref={mountRef} className="w-full h-full cursor-crosshair" />
 
-      {/* Crosshair Center Reticle */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center">
-        <div className="w-2 h-2 rounded-full bg-white/80 ring-2 ring-slate-900/50 shadow-md" />
-      </div>
+      {/* Center Reticle Crosshair ("The Dot") */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+        <div
+          className={`w-2.5 h-2.5 rounded-full border transition-all duration-150 ${
+            hoveredAction
+              ? 'bg-emerald-400 border-emerald-200 scale-150 shadow-[0_0_14px_#34d399]'
+              : 'bg-white/70 border-slate-900/60 scale-100'
+          }`}
+        />
 
-      {/* Top Navigation HUD Bar */}
-      <header className="absolute top-0 left-0 right-0 h-16 px-6 bg-gradient-to-b from-slate-950/90 via-slate-950/60 to-transparent flex items-center justify-between pointer-events-auto z-20">
-        <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center font-bold text-emerald-400">
-            🧪
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-              LabBridge Virtual Science Laboratory
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Simulator Active
-              </span>
-            </h1>
-            <p className="text-[11px] text-slate-400">
-              Interactive 3D Science Discovery Proof of Concept
-            </p>
-          </div>
-        </div>
-
-        {/* Quick Teleport Station Buttons */}
-        <div className="hidden lg:flex items-center space-x-1.5 bg-slate-900/80 backdrop-blur px-2 py-1 rounded-xl border border-slate-800 text-xs">
-          <span className="text-[11px] text-slate-500 mr-1 font-semibold">Jump to:</span>
-          <button
-            onClick={() => handleTeleport('biology')}
-            className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-emerald-950 hover:text-emerald-300 text-slate-300 transition-all flex items-center gap-1"
-          >
-            <span>🧬 Biology</span>
-          </button>
-          <button
-            onClick={() => handleTeleport('chemistry')}
-            className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-cyan-950 hover:text-cyan-300 text-slate-300 transition-all flex items-center gap-1"
-          >
-            <span>🧪 Chemistry</span>
-          </button>
-          <button
-            onClick={() => handleTeleport('physics')}
-            className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-amber-950 hover:text-amber-300 text-slate-300 transition-all flex items-center gap-1"
-          >
-            <span>⚡ Physics</span>
-          </button>
-          <button
-            onClick={() => handleTeleport('research')}
-            className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-indigo-950 hover:text-indigo-300 text-slate-300 transition-all flex items-center gap-1"
-          >
-            <span>🔬 Research</span>
-          </button>
-          <button
-            onClick={() => handleTeleport('center')}
-            className="px-2 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
-            title="Room Center"
-          >
-            Center
-          </button>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex items-center space-x-2.5">
-          <button
-            onClick={() => {
-              const m = soundFx.toggleMute();
-              setIsMuted(m);
-            }}
-            className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-all"
-            title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
-          >
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-
-          <button
-            onClick={onOpenNotebook}
-            className="px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-slate-800 text-xs font-medium flex items-center gap-1.5 transition-all"
-          >
-            <Layers className="w-4 h-4 text-emerald-400" />
-            <span>Notebook</span>
-          </button>
-
-          <button
-            onClick={onOpenAssistant}
-            className="px-3.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-xs font-medium flex items-center gap-1.5 transition-all"
-          >
-            <Sparkles className="w-4 h-4 text-indigo-400" />
-            <span>Dr. Curie (Lab AI)</span>
-          </button>
-
-          <button
-            onClick={onExitToLanding}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all"
-          >
-            ← Exit Lab
-          </button>
-        </div>
-      </header>
-
-      {/* Floating Interaction Prompt when near Station */}
-      {activeStationPrompt && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 pointer-events-auto z-30">
-          <button
-            onClick={() => onOpenStation(activeStationPrompt.station)}
-            className={`px-6 py-3 rounded-2xl border-2 shadow-2xl backdrop-blur-md flex items-center gap-3 transition-all hover:scale-105 active:scale-95 animate-bounce ${activeStationPrompt.color}`}
-          >
-            <span className="text-2xl">{activeStationPrompt.icon}</span>
-            <div className="text-left">
-              <div className="text-xs font-bold text-white uppercase tracking-wider">
-                {activeStationPrompt.title}
-              </div>
-              <div className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-                <span>{activeStationPrompt.action}</span>
-                <span className="px-2 py-0.5 rounded bg-white/20 text-white font-mono text-xs">
-                  [Press E or Click]
+        {/* Hover Action Badge */}
+        {hoveredAction && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900/90 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-emerald-500/50 shadow-2xl flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <div className="text-left">
+                <span className="text-[11px] font-bold text-white block">{hoveredAction.label}</span>
+                <span className="text-[10px] text-emerald-300 block font-medium">
+                  [Click / E] {hoveredAction.action}
                 </span>
               </div>
             </div>
-          </button>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
-      {/* MiniMap / Lab Radar (Bottom Left) */}
-      <div className="absolute bottom-6 left-6 p-3 bg-slate-900/85 backdrop-blur-md rounded-2xl border border-slate-800 shadow-2xl z-20 pointer-events-auto flex flex-col items-center">
-        <div className="flex items-center justify-between w-full mb-1 px-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-            <Compass className="w-3 h-3 text-emerald-400" />
-            Lab Radar
-          </span>
-          <span className="text-[9px] font-mono text-slate-500">24m x 24m</span>
-        </div>
-
-        {/* 2D Radar Canvas */}
-        <div className="w-32 h-32 bg-slate-950 rounded-xl border border-slate-800 relative overflow-hidden flex items-center justify-center">
-          {/* Grid lines */}
-          <div className="absolute inset-0 border-b border-slate-800/80 top-1/2" />
-          <div className="absolute inset-0 border-r border-slate-800/80 left-1/2" />
-
-          {/* 4 Station Blips */}
-          {/* Biology */}
-          <div
-            onClick={() => handleTeleport('biology')}
-            className="absolute w-3.5 h-3.5 rounded bg-emerald-500/80 border border-emerald-300 cursor-pointer hover:scale-125 transition-transform"
-            style={{ left: '22%', top: '26%' }}
-            title="Biology Workstation"
-          />
-          {/* Chemistry */}
-          <div
-            onClick={() => handleTeleport('chemistry')}
-            className="absolute w-3.5 h-3.5 rounded bg-cyan-500/80 border border-cyan-300 cursor-pointer hover:scale-125 transition-transform"
-            style={{ right: '22%', top: '26%' }}
-            title="Chemistry Workstation"
-          />
-          {/* Physics */}
-          <div
-            onClick={() => handleTeleport('physics')}
-            className="absolute w-3.5 h-3.5 rounded bg-amber-500/80 border border-amber-300 cursor-pointer hover:scale-125 transition-transform"
-            style={{ left: '22%', bottom: '26%' }}
-            title="Physics Workstation"
-          />
-          {/* Research */}
-          <div
-            onClick={() => handleTeleport('research')}
-            className="absolute w-3.5 h-3.5 rounded bg-indigo-500/80 border border-indigo-300 cursor-pointer hover:scale-125 transition-transform"
-            style={{ right: '22%', bottom: '26%' }}
-            title="Analytical Science Workstation"
-          />
-
-          {/* Player Arrow Beacon */}
-          <div
-            className="absolute w-3 h-3 bg-white rounded-full shadow-lg border border-slate-900 z-10 transition-all duration-75"
-            style={{
-              left: `${50 + (playerPosition.x / 24) * 80}%`,
-              top: `${50 + (playerPosition.z / 24) * 80}%`,
-              transform: `translate(-50%, -50%) rotate(${playerPosition.angle}rad)`,
-            }}
-          >
-            <div className="w-0.5 h-2 bg-emerald-400 absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+      {/* Top Left Clean Status Pill */}
+      <div className="absolute top-4 left-4 z-40 pointer-events-auto">
+        <div className="flex items-center gap-2.5 bg-slate-950/85 backdrop-blur-xl px-3.5 py-2 rounded-full border border-slate-700/80 shadow-2xl">
+          <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xs text-emerald-400 font-bold">
+            🔬
+          </div>
+          <div>
+            <span className="text-xs font-bold text-white tracking-tight">LabBridge 3D</span>
+            <span className="text-[9px] text-emerald-400 block font-mono">
+              {isSeated && seatedStation ? `Seated @ ${seatedStation.toUpperCase()}` : 'Exploring Laboratory'}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Movement Controls Overlay Hint */}
-      {controlsHintVisible && (
-        <div className="absolute bottom-6 right-6 p-4 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-800 shadow-2xl z-20 text-xs text-slate-300 space-y-1.5 pointer-events-auto max-w-xs">
-          <div className="flex items-center justify-between text-slate-400 font-semibold border-b border-slate-800 pb-1">
-            <span className="flex items-center gap-1.5">
-              <Footprints className="w-3.5 h-3.5 text-emerald-400" />
-              Movement Controls
-            </span>
-            <button
-              onClick={() => setControlsHintVisible(false)}
-              className="text-slate-500 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-            <div>
-              <span className="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-white">W A S D</span> Walk
-            </div>
-            <div>
-              <span className="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-white">Mouse</span> Look Around
-            </div>
-            <div>
-              <span className="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-white">E</span> Interact
-            </div>
-            <div>
-              <span className="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-white">Click</span> Lock Pointer
-            </div>
-          </div>
+      {/* Top-Right Round Mini Map Radar (Click to Pause) */}
+      <MiniMapRadar
+        playerX={playerCoords.x}
+        playerZ={playerCoords.z}
+        playerYaw={playerCoords.yaw}
+        isSeated={isSeated}
+        seatedStation={seatedStation}
+        onTeleport={handleTeleport}
+        onExitToLanding={onExitToLanding}
+        onOpenPhone={() => setIsPhoneOpen(true)}
+      />
+
+      {/* Virtual Walking Joystick on Bottom-Left */}
+      {!isSeated && (
+        <div className="absolute bottom-6 left-6 z-40 pointer-events-auto">
+          <VirtualJoystick
+            onMove={(vec) => {
+              touchMoveVector.current = vec;
+            }}
+          />
         </div>
       )}
+
+      {/* Round Glassmorphism Phone Button at ~30% from the bottom */}
+      <div className="absolute bottom-[28%] right-6 z-40 pointer-events-auto">
+        <button
+          onClick={() => {
+            soundFx.playClick();
+            setIsPhoneOpen(true);
+          }}
+          className="relative w-14 h-14 rounded-full bg-slate-950/80 backdrop-blur-2xl border-2 border-emerald-500/40 hover:border-emerald-400 text-emerald-400 flex items-center justify-center shadow-[0_8px_30px_rgba(0,0,0,0.8)] active:scale-95 transition-all group"
+          title="Open Scientist Smartphone (AI, Teleport, Protocols, Calculator)"
+        >
+          <div className="absolute inset-0 rounded-full bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors animate-pulse" />
+          <Smartphone className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform" />
+          <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-indigo-500 border-2 border-slate-950 animate-bounce" />
+        </button>
+      </div>
+
+      {/* Contextual Action Buttons (Sit / Stand / Eyepieces) */}
+      <div className="absolute bottom-6 right-6 z-40 pointer-events-auto flex items-center gap-3">
+        {!isSeated && hoveredAction && (
+          <button
+            onClick={() => {
+              if (hoveredAction.category === 'stool') {
+                sitDownAt(hoveredAction.station);
+              }
+            }}
+            className="px-4 py-3 rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-xl shadow-emerald-950/60 backdrop-blur-xl border border-emerald-300 flex items-center gap-2 active:scale-95 transition-all"
+          >
+            <Hand className="w-4 h-4" />
+            <span>{hoveredAction.category === 'stool' ? 'Sit Down' : 'Interact'}</span>
+          </button>
+        )}
+
+        {isSeated && (
+          <button
+            onClick={standUp}
+            className="w-12 h-12 rounded-full bg-slate-900/90 hover:bg-slate-800 text-rose-400 border border-rose-500/40 shadow-xl backdrop-blur-xl flex items-center justify-center active:scale-95 transition-all"
+            title="Stand Up [Space / WASD]"
+          >
+            <Footprints className="w-5 h-5" />
+          </button>
+        )}
+
+        {isSeated && seatedStation === 'biology' && (
+          <button
+            onClick={() => setIsViewingEyepieces(true)}
+            className="px-4 py-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-xl backdrop-blur-xl border border-emerald-300 flex items-center gap-2 active:scale-95 transition-all"
+            title="Look through Eyepieces [F]"
+          >
+            <Eye className="w-4 h-4" />
+            <span>Look in Oculars</span>
+          </button>
+        )}
+      </div>
+
+      {/* Seated Station Direct 3D Equipment Toolbar */}
+      {isSeated && seatedStation && (
+        <SeatedStationToolbar
+          station={seatedStation}
+          onStandUp={standUp}
+          onOpenNotebook={() => handleOpenPhoneWithTab('notebook')}
+          onOpenAssistant={() => handleOpenPhoneWithTab('ai')}
+          onLookThroughEyepieces={() => setIsViewingEyepieces(true)}
+          onRotateTurret={() =>
+            setBiologyState((prev) => {
+              const objs: ('4x' | '10x' | '40x' | '100x')[] = ['4x', '10x', '40x', '100x'];
+              const nextIdx = (objs.indexOf(prev.objective) + 1) % objs.length;
+              return { ...prev, objective: objs[nextIdx] };
+            })
+          }
+          onSwapSlide={() =>
+            setBiologyState((prev) => ({
+              ...prev,
+              slideIndex: (prev.slideIndex + 1) % SPECIMEN_CATALOG.length,
+            }))
+          }
+          activeObjective={biologyState.objective}
+          activeSlideName={SPECIMEN_CATALOG[biologyState.slideIndex].name}
+          buretteOpen={chemistryState.buretteOpen}
+          onToggleBurette={() => setChemistryState((prev) => ({ ...prev, buretteOpen: !prev.buretteOpen }))}
+          stirrerRPM={chemistryState.stirrerRPM}
+          onToggleStirrer={() =>
+            setChemistryState((prev) => ({
+              ...prev,
+              stirrerRPM: prev.stirrerRPM === 0 ? 400 : prev.stirrerRPM === 400 ? 800 : 0,
+            }))
+          }
+          onAddIndicator={() => setChemistryState((prev) => ({ ...prev, indicatorAdded: true }))}
+          phValue={chemistryState.phValue}
+          dispensedML={chemistryState.dispensedML}
+          switchClosed={physicsState.switchClosed}
+          onToggleSwitch={() => setPhysicsState((prev) => ({ ...prev, switchClosed: !prev.switchClosed }))}
+          resistance={physicsState.resistance}
+          onChangeResistance={(val) => setPhysicsState((prev) => ({ ...prev, resistance: val }))}
+          currentMA={(physicsState.voltage / physicsState.resistance) * 1000}
+          voltageV={physicsState.voltage}
+          balanceDoorsOpen={analyticalState.doorsOpen}
+          onToggleBalanceDoor={() => setAnalyticalState((prev) => ({ ...prev, doorsOpen: !prev.doorsOpen }))}
+          onTareBalance={() => setAnalyticalState((prev) => ({ ...prev, balanceWeight: 0.0 }))}
+          balanceWeight={analyticalState.balanceWeight}
+          centrifugeRunning={analyticalState.centrifugeRunning}
+          onToggleCentrifuge={() => setAnalyticalState((prev) => ({ ...prev, centrifugeRunning: !prev.centrifugeRunning }))}
+        />
+      )}
+
+      {/* In-World 3D Microscope Eyepiece Ocular Mode */}
+      {isViewingEyepieces && (
+        <EyepieceOcularOverlay
+          onClose={() => setIsViewingEyepieces(false)}
+          onSaveSnapshot={onSaveSnapshot}
+          onAskAI={onAskAI}
+          initialSpecimenId={SPECIMEN_CATALOG[biologyState.slideIndex].id}
+          initialObjective={biologyState.objective}
+          initialCoarse={biologyState.coarseFocus}
+          initialFine={biologyState.fineFocus}
+          initialLight={biologyState.lightIntensity}
+          onStateChange={(st) => {
+            setBiologyState((prev) => ({
+              ...prev,
+              objective: st.objective,
+              coarseFocus: st.coarseFocus,
+              fineFocus: st.fineFocus,
+              stageX: st.stageX,
+              stageY: st.stageY,
+              lightIntensity: st.lightIntensity,
+            }));
+          }}
+        />
+      )}
+
+      {/* Scientist Smartphone Device Modal */}
+      <ScientistPhoneModal
+        isOpen={isPhoneOpen}
+        onClose={() => setIsPhoneOpen(false)}
+        onTeleport={handleTeleport}
+        onOpenEyepieces={() => setIsViewingEyepieces(true)}
+        seatedStation={seatedStation}
+        isSeated={isSeated}
+        snapshots={snapshots}
+        initialTab={phoneInitialTab}
+        initialAIPrompt={phoneAIPrompt}
+        initialAIContext={phoneAIContext}
+        onSaveSnapshot={onSaveSnapshot}
+      />
     </div>
   );
 }
