@@ -45,10 +45,12 @@ import MiniMapRadar from '@/components/MiniMapRadar';
 import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
 import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
+import { createAllLabWallPosters } from '@/lib/labPosters';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
 
 interface Lab3DSceneProps {
+  initialStation?: 'biology' | 'chemistry' | 'physics' | 'research' | null;
   onOpenNotebook: () => void;
   onOpenAssistant: () => void;
   onExitToLanding: () => void;
@@ -74,6 +76,7 @@ interface CameraTransition {
 }
 
 export default function Lab3DScene({
+  initialStation = null,
   onOpenNotebook,
   onOpenAssistant,
   onExitToLanding,
@@ -230,6 +233,16 @@ export default function Lab3DScene({
     }
   }, []);
 
+  // Auto-seat at requested initialStation on entry
+  useEffect(() => {
+    if (initialStation && seatAnchors.current[initialStation]) {
+      const timer = setTimeout(() => {
+        sitDownAt(initialStation);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [initialStation, sitDownAt]);
+
   // Standing up mechanic with smooth step-back
   const standUp = useCallback(() => {
     soundFx.playStandUp();
@@ -263,6 +276,18 @@ export default function Lab3DScene({
 
     if (data.category === 'stool') {
       sitDownAt(data.station);
+      return;
+    }
+
+    if (data.interactId && String(data.interactId).startsWith('poster_')) {
+      soundFx.playSuccessChime();
+      const title = data.label || 'Lab Instructional Guide';
+      const prompt = `Can you explain the principles shown on the "${title}" lab poster on the classroom wall, and provide clear step-by-step guidance on how to perform experiments using the equipment here in the lab?`;
+      const context = `The student clicked on the framed educational wall poster "${title}" in the 3D science classroom. Provide concise, high-yield scientific explanations and practical laboratory procedures.`;
+      setPhoneInitialTab('ai');
+      setPhoneAIPrompt(prompt);
+      setPhoneAIContext(context);
+      setIsPhoneOpen(true);
       return;
     }
 
@@ -557,6 +582,11 @@ export default function Lab3DScene({
 
     // 4 Workstation Benches with Overhead Shelves & Swivel Stools
     const interactiveList: THREE.Object3D[] = [];
+
+    // Add Framed Laboratory Educational Posters & Equipment Usage Infographics on Classroom Walls
+    const { group: postersGroup, interactiveMeshes: posterMeshes } = createAllLabWallPosters();
+    scene.add(postersGroup);
+    posterMeshes.forEach((mesh) => interactiveList.push(mesh));
 
     const benchConfigs: Array<{
       station: 'biology' | 'chemistry' | 'physics' | 'research';
@@ -1039,19 +1069,26 @@ export default function Lab3DScene({
         )}
       </div>
 
-      {/* Top Left Clean Status Pill */}
-      <div className="absolute top-4 left-4 z-40 pointer-events-auto">
-        <div className="flex items-center gap-2.5 bg-slate-950/85 backdrop-blur-xl px-3.5 py-2 rounded-full border border-slate-700/80 shadow-2xl">
-          <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xs text-emerald-400 font-bold">
+      {/* Top Left Clean Status Pill & Home Button */}
+      <div className="absolute top-4 left-4 z-40 pointer-events-auto flex items-center gap-2">
+        <button
+          onClick={onExitToLanding}
+          className="flex items-center gap-2.5 bg-slate-950/85 hover:bg-slate-900/90 backdrop-blur-xl px-3.5 py-2 rounded-full border border-slate-700/80 hover:border-emerald-500/50 shadow-2xl transition-all group"
+          title="Exit 3D Lab and Return to Landing Page"
+        >
+          <div className="w-6 h-6 rounded-full bg-emerald-500/20 group-hover:bg-emerald-500/30 border border-emerald-500/40 flex items-center justify-center text-xs text-emerald-400 font-bold transition-transform group-hover:scale-105">
             🔬
           </div>
-          <div>
-            <span className="text-xs font-bold text-white tracking-tight">LabBridge 3D</span>
+          <div className="text-left">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-white tracking-tight">LabBridge 3D</span>
+              <span className="text-[10px] text-slate-400 group-hover:text-emerald-300 font-medium">← Home</span>
+            </div>
             <span className="text-[9px] text-emerald-400 block font-mono">
               {isSeated && seatedStation ? `Seated @ ${seatedStation.toUpperCase()}` : 'Exploring Laboratory'}
             </span>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Top-Right Round Mini Map Radar (Click to Pause) */}

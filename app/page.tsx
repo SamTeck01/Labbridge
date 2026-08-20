@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import LandingPage from '@/components/LandingPage';
 import LabNotebookModal, { SnapshotItem } from '@/components/LabNotebookModal';
 import AILabAssistantModal from '@/components/AILabAssistantModal';
 import LandscapeOrientationPrompt from '@/components/LandscapeOrientationPrompt';
@@ -19,6 +20,8 @@ const Lab3DScene = dynamic(() => import('@/components/Lab3DScene'), {
 });
 
 export default function Home() {
+  const [inLab, setInLab] = useState<boolean>(false);
+  const [initialStation, setInitialStation] = useState<'biology' | 'chemistry' | 'physics' | 'research' | null>(null);
   const [isNotebookOpen, setIsNotebookOpen] = useState<boolean>(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState<boolean>(false);
   const [aiContextPrompt, setAiContextPrompt] = useState<{ prompt: string; context: string } | null>(null);
@@ -52,6 +55,21 @@ export default function Home() {
     setIsAIAssistantOpen(true);
   };
 
+  if (!inLab) {
+    return (
+      <LandingPage
+        onEnterLab={(station) => {
+          setInitialStation(station || null);
+          setInLab(true);
+        }}
+        onDirectOpenMicroscope={() => {
+          setInitialStation('biology');
+          setInLab(true);
+        }}
+      />
+    );
+  }
+
   return (
     <main className="w-full min-h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       <div className="relative w-full h-screen">
@@ -60,6 +78,7 @@ export default function Home() {
 
         {/* 3D Lab Simulation - Direct In-World Physical Equipment Interaction & Seating */}
         <Lab3DScene
+          initialStation={initialStation}
           onOpenNotebook={() => {
             setIsNotebookOpen(true);
             soundFx.playClick();
@@ -70,8 +89,9 @@ export default function Home() {
             soundFx.playClick();
           }}
           onExitToLanding={() => {
-            // Re-centers player at laboratory entrance threshold
             soundFx.playClick();
+            setInLab(false);
+            setInitialStation(null);
           }}
           onSaveSnapshot={handleCaptureSnapshot}
           onAskAI={handleOpenAIAssistantWithContext}

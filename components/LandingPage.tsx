@@ -18,14 +18,14 @@ import {
 import { soundFx } from '@/lib/soundEffects';
 
 interface LandingPageProps {
-  onEnterLab: () => void;
+  onEnterLab: (initialStation?: 'biology' | 'chemistry' | 'physics' | 'research') => void;
   onDirectOpenMicroscope: () => void;
 }
 
 export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: LandingPageProps) {
-  const handleStart = () => {
+  const handleStart = (station?: 'biology' | 'chemistry' | 'physics' | 'research') => {
     soundFx.playSuccessChime();
-    onEnterLab();
+    onEnterLab(station);
   };
 
   return (
@@ -59,7 +59,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
             <span>Direct Microscope Demo</span>
           </button>
           <button
-            onClick={handleStart}
+            onClick={() => handleStart()}
             className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 hover:scale-105 active:scale-95"
           >
             <span>Enter Lab</span>
@@ -112,7 +112,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
           className="mt-10 flex flex-col sm:flex-row items-center gap-4"
         >
           <button
-            onClick={handleStart}
+            onClick={() => handleStart()}
             className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 text-base font-extrabold tracking-tight transition-all shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-3 hover:scale-105 active:scale-95 group"
           >
             <span>ENTER THE VIRTUAL LAB</span>
@@ -129,7 +129,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
         >
           {/* Biology */}
           <div
-            onClick={onDirectOpenMicroscope}
+            onClick={() => handleStart('biology')}
             className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-emerald-500/40 hover:border-emerald-500 transition-all cursor-pointer group shadow-lg"
           >
             <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -151,7 +151,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
 
           {/* Chemistry */}
           <div
-            onClick={handleStart}
+            onClick={() => handleStart('chemistry')}
             className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/50 transition-all cursor-pointer group shadow-lg"
           >
             <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -170,7 +170,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
 
           {/* Physics */}
           <div
-            onClick={handleStart}
+            onClick={() => handleStart('physics')}
             className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/50 transition-all cursor-pointer group shadow-lg"
           >
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -189,7 +189,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
 
           {/* Research */}
           <div
-            onClick={handleStart}
+            onClick={() => handleStart('research')}
             className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/50 transition-all cursor-pointer group shadow-lg"
           >
             <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
