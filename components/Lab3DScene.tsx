@@ -39,7 +39,6 @@ import {
 } from '@/lib/gltfLabEquipment';
 import { createFirstPersonScientistRig, updateScientistRig } from '@/lib/scientistCharacter';
 import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
-import SeatedStationToolbar from '@/components/SeatedStationToolbar';
 import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
 import ExperimentPanel from '@/components/ExperimentPanel';
 import MiniMapRadar from '@/components/MiniMapRadar';
@@ -149,6 +148,117 @@ function LiveMiniMap({
   return <MiniMapRadar playerX={pose.x} playerZ={pose.z} playerYaw={pose.yaw} {...rest} />;
 }
 
+/**
+ * Keeps non-bench apparatus meshes in sync with lab state. It lives in its own component so lab
+ * state ticks (5x/s while titrating) re-render only this, never the whole 3D scene component.
+ */
+function ApparatusSync({
+  microEquipmentRef,
+  chemEquipmentRef,
+  physEquipmentRef,
+  resEquipmentRef,
+  benchesRef,
+  physicsVersion,
+  researchVersion,
+}: {
+  microEquipmentRef: React.RefObject<THREE.Group | null>;
+  chemEquipmentRef: React.RefObject<THREE.Group | null>;
+  physEquipmentRef: React.RefObject<THREE.Group | null>;
+  resEquipmentRef: React.RefObject<THREE.Group | null>;
+  benchesRef: React.RefObject<Partial<Record<string, unknown>>>;
+  physicsVersion: number;
+  researchVersion: number;
+}) {
+  const biologyState = useLab((st) => st.biology);
+  const chemistryState = useLab((st) => st.chemistry);
+  const physicsState = useLab((st) => st.physics);
+  const analyticalState = useLab((st) => st.research);
+
+  // Update 3D Microscope Mesh States
+  useEffect(() => {
+    if (!microEquipmentRef.current || benchesRef.current.biology) return;
+    const uData = microEquipmentRef.current.userData;
+    if (!uData) return;
+
+    if (uData.stageAssembly) {
+      // Offset from the modelled rest height, so both GLB and procedural stages work
+      const stage = uData.stageAssembly as THREE.Object3D;
+      if (stage.userData.baseY === undefined) stage.userData.baseY = stage.position.y;
+      stage.position.y = stage.userData.baseY + (biologyState.coarseFocus - 0.5) * 0.02;
+    }
+
+    if (uData.turret) {
+      const angles: { [key: string]: number } = {
+        '4x': 0,
+        '10x': Math.PI / 2,
+        '40x': Math.PI,
+        '100x': -Math.PI / 2,
+      };
+      uData.turret.rotation.y = angles[biologyState.objective] || 0;
+    }
+  }, [biologyState, microEquipmentRef, benchesRef]);
+
+  // Update 3D Chemistry Mesh States
+  useEffect(() => {
+    if (!chemEquipmentRef.current) return;
+    const uData = chemEquipmentRef.current.userData;
+    if (!uData) return;
+
+    if (uData.stopcock) {
+      uData.stopcock.rotation.z = chemistryState.buretteOpen ? 0 : Math.PI / 2;
+    }
+
+    if (uData.flaskLiquid) {
+      const mat = uData.flaskLiquid.material as THREE.MeshStandardMaterial;
+      if (mat) {
+        if (chemistryState.indicatorAdded) {
+          mat.color.set(chemistryState.phValue >= 8.2 ? '#f472b6' : '#f8fafc');
+        } else {
+          mat.color.set('#e0f2fe');
+        }
+      }
+    }
+  }, [chemistryState, chemEquipmentRef]);
+
+  // Update 3D Physics Mesh States
+  useEffect(() => {
+    if (!physEquipmentRef.current || benchesRef.current.physics) return;
+    const uData = physEquipmentRef.current.userData;
+    if (!uData) return;
+
+    if (uData.blade) {
+      uData.blade.rotation.z = physicsState.switchClosed ? 0 : 0.6;
+    }
+
+    if (uData.potKnob) {
+      uData.potKnob.rotation.y = (physicsState.resistance / 100) * Math.PI * 1.5;
+    }
+
+    if (uData.bulbLight && uData.bulbGlass) {
+      const isLit = physicsState.switchClosed;
+      const power = isLit ? (physicsState.voltage ** 2 / physicsState.resistance) * 0.08 : 0;
+      uData.bulbLight.intensity = Math.min(3.5, power * 2.5);
+      const glassMat = uData.bulbGlass.material as THREE.MeshStandardMaterial;
+      if (glassMat) {
+        glassMat.emissiveIntensity = isLit ? 1.0 : 0.05;
+      }
+    }
+
+    // Ammeter needle: 0-1 A full scale, sweeps left to right
+    if (uData.ammeterNeedle) {
+      const amps = physicsState.switchClosed ? physicsState.voltage / physicsState.resistance : 0;
+      (uData.ammeterNeedle as THREE.Object3D).rotation.z = 0.87 - Math.min(1, amps) * 1.74;
+    }
+  }, [physicsState, physicsVersion, physEquipmentRef, benchesRef]);
+
+  // Update 3D Analytical Bench States
+  useEffect(() => {
+    applyResearchState(resEquipmentRef.current, analyticalState);
+  }, [analyticalState, researchVersion, resEquipmentRef]);
+
+  return null;
+}
+
 export default function Lab3DScene({
   initialStation = null,
   onOpenNotebook,
@@ -185,10 +295,6 @@ export default function Lab3DScene({
   } | null>(null);
 
   // 3D Equipment Live States (shared lab store: scene, HUD and Dr. Curie all read the same data)
-  const biologyState = useLab((st) => st.biology);
-  const chemistryState = useLab((st) => st.chemistry);
-  const physicsState = useLab((st) => st.physics);
-  const analyticalState = useLab((st) => st.research);
   const curieSpeech = useCurie((st) => st.speech);
   const atWorkbench = isSeated && !!seatedStation;
   // Bumped when async-loaded equipment arrives so state effects re-apply to the new meshes
@@ -580,7 +686,7 @@ export default function Lab3DScene({
     // Phones: lower pixel ratio and cheaper shadows keep the frame rate up (AO is also desktop-only)
     const renderer = new THREE.WebGLRenderer({ antialias: !isTouch, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.25 : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
     renderer.shadowMap.enabled = !isTouch; // phones: no real-time shadows (AO/env light carry the look)
     renderer.shadowMap.type = isTouch ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1016,7 +1122,8 @@ export default function Lab3DScene({
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-    const adaptive = new AdaptiveResolution(renderer, Math.min(window.devicePixelRatio, isTouch ? 1.25 : 2));
+    // Phones never drop below native CSS resolution (1.0): lower looked blurry. Desktop unchanged.
+    const adaptive = new AdaptiveResolution(renderer, Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2), isTouch ? 1.0 : 0.7);
 
     // Animation & Physics Loop
     let lastTime = performance.now();
@@ -1259,87 +1366,6 @@ export default function Lab3DScene({
     };
   }, [isTouch]);
 
-  // Update 3D Microscope Mesh States
-  useEffect(() => {
-    if (!microEquipmentRef.current || benchesRef.current.biology) return;
-    const uData = microEquipmentRef.current.userData;
-    if (!uData) return;
-
-    if (uData.stageAssembly) {
-      // Offset from the modelled rest height, so both GLB and procedural stages work
-      const stage = uData.stageAssembly as THREE.Object3D;
-      if (stage.userData.baseY === undefined) stage.userData.baseY = stage.position.y;
-      stage.position.y = stage.userData.baseY + (biologyState.coarseFocus - 0.5) * 0.02;
-    }
-
-    if (uData.turret) {
-      const angles: { [key: string]: number } = {
-        '4x': 0,
-        '10x': Math.PI / 2,
-        '40x': Math.PI,
-        '100x': -Math.PI / 2,
-      };
-      uData.turret.rotation.y = angles[biologyState.objective] || 0;
-    }
-  }, [biologyState]);
-
-  // Update 3D Chemistry Mesh States
-  useEffect(() => {
-    if (!chemEquipmentRef.current) return;
-    const uData = chemEquipmentRef.current.userData;
-    if (!uData) return;
-
-    if (uData.stopcock) {
-      uData.stopcock.rotation.z = chemistryState.buretteOpen ? 0 : Math.PI / 2;
-    }
-
-    if (uData.flaskLiquid) {
-      const mat = uData.flaskLiquid.material as THREE.MeshStandardMaterial;
-      if (mat) {
-        if (chemistryState.indicatorAdded) {
-          mat.color.set(chemistryState.phValue >= 8.2 ? '#f472b6' : '#f8fafc');
-        } else {
-          mat.color.set('#e0f2fe');
-        }
-      }
-    }
-  }, [chemistryState]);
-
-  // Update 3D Physics Mesh States
-  useEffect(() => {
-    if (!physEquipmentRef.current || benchesRef.current.physics) return;
-    const uData = physEquipmentRef.current.userData;
-    if (!uData) return;
-
-    if (uData.blade) {
-      uData.blade.rotation.z = physicsState.switchClosed ? 0 : 0.6;
-    }
-
-    if (uData.potKnob) {
-      uData.potKnob.rotation.y = (physicsState.resistance / 100) * Math.PI * 1.5;
-    }
-
-    if (uData.bulbLight && uData.bulbGlass) {
-      const isLit = physicsState.switchClosed;
-      const power = isLit ? (physicsState.voltage ** 2 / physicsState.resistance) * 0.08 : 0;
-      uData.bulbLight.intensity = Math.min(3.5, power * 2.5);
-      const glassMat = uData.bulbGlass.material as THREE.MeshStandardMaterial;
-      if (glassMat) {
-        glassMat.emissiveIntensity = isLit ? 1.0 : 0.05;
-      }
-    }
-
-    // Ammeter needle: 0-1 A full scale, sweeps left to right
-    if (uData.ammeterNeedle) {
-      const amps = physicsState.switchClosed ? physicsState.voltage / physicsState.resistance : 0;
-      (uData.ammeterNeedle as THREE.Object3D).rotation.z = 0.87 - Math.min(1, amps) * 1.74;
-    }
-  }, [physicsState, physicsVersion]);
-
-  // Update 3D Analytical Bench States
-  useEffect(() => {
-    applyResearchState(resEquipmentRef.current, analyticalState);
-  }, [analyticalState, researchVersion]);
 
   return (
     <div className="relative w-full h-screen bg-slate-950 overflow-hidden select-none">
@@ -1353,6 +1379,16 @@ export default function Lab3DScene({
           <p className="text-sm">Preparing the laboratory…</p>
         </div>
       )}
+
+      <ApparatusSync
+        microEquipmentRef={microEquipmentRef}
+        chemEquipmentRef={chemEquipmentRef}
+        physEquipmentRef={physEquipmentRef}
+        resEquipmentRef={resEquipmentRef}
+        benchesRef={benchesRef}
+        physicsVersion={physicsVersion}
+        researchVersion={researchVersion}
+      />
 
       {/* Practical brief / checklist / results */}
       <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} />
@@ -1513,54 +1549,6 @@ export default function Lab3DScene({
         </button>
       )}
 
-      {isSeated && seatedStation && !atWorkbench && (
-        <SeatedStationToolbar
-          station={seatedStation}
-          onStandUp={standUp}
-          onOpenNotebook={() => handleOpenPhoneWithTab('notebook')}
-          onOpenAssistant={() => handleOpenPhoneWithTab('ai')}
-          onLookThroughEyepieces={() => setIsViewingEyepieces(true)}
-          onRotateTurret={() =>
-            setBiologyState((prev) => {
-              const objs: ('4x' | '10x' | '40x' | '100x')[] = ['4x', '10x', '40x', '100x'];
-              const nextIdx = (objs.indexOf(prev.objective) + 1) % objs.length;
-              return { ...prev, objective: objs[nextIdx] };
-            })
-          }
-          onSwapSlide={() =>
-            setBiologyState((prev) => ({
-              ...prev,
-              slideIndex: (prev.slideIndex + 1) % SPECIMEN_CATALOG.length,
-            }))
-          }
-          activeObjective={biologyState.objective}
-          activeSlideName={SPECIMEN_CATALOG[biologyState.slideIndex].name}
-          buretteOpen={chemistryState.buretteOpen}
-          onToggleBurette={() => setChemistryState((prev) => ({ ...prev, buretteOpen: !prev.buretteOpen }))}
-          stirrerRPM={chemistryState.stirrerRPM}
-          onToggleStirrer={() =>
-            setChemistryState((prev) => ({
-              ...prev,
-              stirrerRPM: prev.stirrerRPM === 0 ? 400 : prev.stirrerRPM === 400 ? 800 : 0,
-            }))
-          }
-          onAddIndicator={() => setChemistryState((prev) => ({ ...prev, indicatorAdded: true }))}
-          phValue={chemistryState.phValue}
-          dispensedML={chemistryState.dispensedML}
-          switchClosed={physicsState.switchClosed}
-          onToggleSwitch={() => setPhysicsState((prev) => ({ ...prev, switchClosed: !prev.switchClosed }))}
-          resistance={physicsState.resistance}
-          onChangeResistance={(val) => setPhysicsState((prev) => ({ ...prev, resistance: val }))}
-          currentMA={physicsState.switchClosed ? (physicsState.voltage / physicsState.resistance) * 1000 : 0}
-          voltageV={physicsState.voltage}
-          balanceDoorsOpen={analyticalState.doorsOpen}
-          onToggleBalanceDoor={() => setAnalyticalState((prev) => ({ ...prev, doorsOpen: !prev.doorsOpen }))}
-          onTareBalance={() => setAnalyticalState((prev) => ({ ...prev, tareOffset: prev.massOnPan }))}
-          balanceWeight={analyticalState.balanceWeight}
-          centrifugeRunning={analyticalState.centrifugeRunning}
-          onToggleCentrifuge={() => setAnalyticalState((prev) => ({ ...prev, centrifugeRunning: !prev.centrifugeRunning }))}
-        />
-      )}
 
       {/* In-World 3D Microscope Eyepiece Ocular Mode */}
       {isViewingEyepieces && (

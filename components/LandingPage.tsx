@@ -16,6 +16,7 @@ import {
   Volume2
 } from 'lucide-react';
 import { soundFx } from '@/lib/soundEffects';
+import { useInstall, enterImmersive } from '@/lib/pwa';
 
 interface LandingPageProps {
   onEnterLab: (initialStation?: 'biology' | 'chemistry' | 'physics' | 'research') => void;
@@ -23,13 +24,26 @@ interface LandingPageProps {
 }
 
 export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: LandingPageProps) {
+  const { mode: installMode, install } = useInstall();
+  const [showIosHelp, setShowIosHelp] = React.useState(false);
+
   const handleStart = (station?: 'biology' | 'chemistry' | 'physics' | 'research') => {
     soundFx.playSuccessChime();
+    enterImmersive(); // phones: fullscreen + landscape, like a game (no-op on desktop)
     onEnterLab(station);
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-white flex flex-col justify-between relative overflow-hidden">
+      {showIosHelp && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-6" onClick={() => setShowIosHelp(false)}>
+          <div className="max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-5 text-sm text-slate-200">
+            <p className="font-semibold mb-2">Install LabBridge on your iPhone</p>
+            <p>Tap the <span className="font-semibold">Share</span> button in Safari, then <span className="font-semibold">Add to Home Screen</span>. LabBridge will open fullscreen like an app.</p>
+          </div>
+        </div>
+      )}
+
       {/* Subtle Background Glows */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -52,6 +66,14 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
         </div>
 
         <div className="flex items-center space-x-3">
+          {installMode && (
+            <button
+              onClick={() => (installMode === 'prompt' ? install() : setShowIosHelp(true))}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-emerald-300 text-xs font-semibold border border-emerald-700/60 transition-all"
+            >
+              <span>Install app</span>
+            </button>
+          )}
           <button
             onClick={onDirectOpenMicroscope}
             className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-slate-800 transition-all"

@@ -209,24 +209,34 @@ export class FirstPersonHands {
     }
   }
 
+  // Scratch objects: apply() runs every frame per hand, so it must not allocate (GC stutter on phones)
+  private v1 = new THREE.Vector3();
+  private v2 = new THREE.Vector3();
+  private v3 = new THREE.Vector3();
+  private q1 = new THREE.Quaternion();
+  private q2 = new THREE.Quaternion();
+  private static X = new THREE.Vector3(1, 0, 0);
+
   private apply(h: Hand) {
     const parent = h.forearm.parent!;
-    const wristLocal = parent.worldToLocal(h.pose.wrist.clone());
+    const wristLocal = parent.worldToLocal(this.v1.copy(h.pose.wrist));
     // Elbow sits back, down and out from the wrist (in camera terms), like a person leaning on a bench
     const out = h.side === 'right' ? 1 : -1;
-    const elbowCam = this.camera.worldToLocal(h.pose.wrist.clone()).add(new THREE.Vector3(0.09 * out, -0.13, 0.2));
+    const elbowCam = this.camera.worldToLocal(this.v2.copy(h.pose.wrist));
+    elbowCam.x += 0.09 * out;
+    elbowCam.y -= 0.13;
+    elbowCam.z += 0.2;
     const elbowLocal = parent.worldToLocal(this.camera.localToWorld(elbowCam));
-    const dir = wristLocal.clone().sub(elbowLocal).normalize();
-    const q = new THREE.Quaternion().setFromUnitVectors(h.restDir, dir).multiply(h.restQuat);
-    q.premultiply(new THREE.Quaternion().setFromAxisAngle(dir, h.pose.twist * (h.side === 'right' ? -1 : 1)));
+    const dir = this.v3.copy(wristLocal).sub(elbowLocal).normalize();
+    const q = this.q1.setFromUnitVectors(h.restDir, dir).multiply(h.restQuat);
+    q.premultiply(this.q2.setFromAxisAngle(dir, h.pose.twist * (h.side === 'right' ? -1 : 1)));
     h.forearm.quaternion.copy(q);
     h.forearm.position.copy(wristLocal).addScaledVector(dir, -h.length);
 
-    h.handBone.quaternion.copy(h.handRestQuat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), h.pose.flex));
+    h.handBone.quaternion.copy(h.handRestQuat).multiply(this.q2.setFromAxisAngle(FirstPersonHands.X, h.pose.flex));
 
     const curl = h.pose.grip * 1.25;
-    const X = new THREE.Vector3(1, 0, 0);
-    h.fingers.forEach((b, i) => b.quaternion.copy(h.fingerRest[i]).multiply(new THREE.Quaternion().setFromAxisAngle(X, curl)));
-    h.thumbs.forEach((b, i) => b.quaternion.copy(h.thumbRest[i]).multiply(new THREE.Quaternion().setFromAxisAngle(X, curl * 0.5)));
+    for (let i = 0; i < h.fingers.length; i++) h.fingers[i].quaternion.copy(h.fingerRest[i]).multiply(this.q2.setFromAxisAngle(FirstPersonHands.X, curl));
+    for (let i = 0; i < h.thumbs.length; i++) h.thumbs[i].quaternion.copy(h.thumbRest[i]).multiply(this.q2.setFromAxisAngle(FirstPersonHands.X, curl * 0.5));
   }
 }

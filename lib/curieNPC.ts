@@ -55,8 +55,19 @@ export interface CurieNPC {
   update(delta: number, playerPos: THREE.Vector3, target: Station | null, operating: boolean): boolean;
 }
 
-function tagAll(root: THREE.Object3D) {
-  root.traverse((o) => tagInteractive(o, 'npc_curie', 'Dr. Curie — Lab Manager', 'Talk to Dr. Curie', 'research', 'primary'));
+/**
+ * Clicks on Curie hit an invisible capsule, not her skinned mesh: raycasting a skinned mesh
+ * deforms every vertex on the CPU, which was the single biggest per-frame cost on phones.
+ */
+function addHitbox(root: THREE.Object3D) {
+  const hitbox = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.1, 4, 8), new THREE.MeshBasicMaterial({ visible: false }));
+  hitbox.position.y = 0.85;
+  hitbox.name = 'curie_hitbox';
+  tagInteractive(hitbox, 'npc_curie', 'Dr. Curie — Lab Manager', 'Talk to Dr. Curie', 'research', 'primary');
+  root.add(hitbox);
+  root.traverse((o) => {
+    if (o !== hitbox && (o as THREE.Mesh).isMesh) o.raycast = () => {};
+  });
 }
 
 function buildPlaceholder() {
@@ -155,7 +166,7 @@ export async function createCurieNPC(): Promise<CurieNPC> {
     root.add(parts.group);
     head = parts.head;
   }
-  tagAll(root);
+  addHitbox(root);
 
   let t = 0;
   let walkBlend = 0;
