@@ -91,7 +91,11 @@ export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
   phys_knife_switch: { label: 'Knife Switch', action: 'Open / close circuit', category: 'switch', ref: 'blade' },
   phys_potentiometer: { label: 'Rheostat', action: 'Change resistance', category: 'knob', ref: 'potKnob' },
   phys_bulb: { label: 'Filament Bulb', action: 'Bulb', category: 'primary', ref: 'bulbGlass' },
-  res_balance_door: { label: 'Analytical Balance Door', action: 'Open / close draft shield', category: 'primary' },
+  phys_ammeter_needle: { label: 'Ammeter', action: 'Reads circuit current', category: 'primary', ref: 'ammeterNeedle' },
+  res_balance_door: { label: 'Analytical Balance Door', action: 'Open / close draft shield', category: 'primary', ref: 'balanceDoor' },
+  res_balance_display: { label: 'Balance Readout', action: 'Mass reading', category: 'primary', ref: 'balanceDisplay' },
+  res_centrifuge_lid: { label: 'Centrifuge Lid', action: 'Start / stop centrifuge', category: 'primary', ref: 'centrifugeLid' },
+  res_centrifuge_rotor: { label: 'Centrifuge Rotor', action: 'Start / stop centrifuge', category: 'primary', ref: 'rotor' },
   res_tare_btn: { label: 'Tare Button', action: 'Tare balance', category: 'switch' },
   res_centrifuge_start: { label: 'Centrifuge', action: 'Start / stop centrifuge', category: 'switch' },
 };
@@ -105,7 +109,7 @@ export function wireInteractiveNodes(root: THREE.Object3D, station: 'biology' | 
     if (spec.ref) refs[spec.ref] = node;
     // Tag the node and every mesh below it so raycasts hit.
     node.traverse((m) => tagInteractive(m, node.name, spec.label, spec.action, station, spec.category));
-    if (spec.ref === 'bulbGlass' || spec.ref === 'flaskLiquid') {
+    if (spec.ref === 'bulbGlass' || spec.ref === 'flaskLiquid' || spec.ref === 'balanceDisplay') {
       const mesh = node as THREE.Mesh;
       if (mesh.isMesh) mesh.material = (mesh.material as THREE.Material).clone();
     }
@@ -121,7 +125,7 @@ export function wireInteractiveNodes(root: THREE.Object3D, station: 'biology' | 
 /** Load /models/<name>.glb, fit it to real-world size, enable shadows. Null if missing. */
 export async function loadLabModel(
   name: string,
-  fit: Parameters<typeof fitModelToDimensions>[1],
+  fit: Parameters<typeof fitModelToDimensions>[1] | null,
   station?: 'biology' | 'chemistry' | 'physics' | 'research'
 ): Promise<{ root: THREE.Group; gltf: GLTF } | null> {
   const gltf = await loadGLTF(name);
@@ -135,7 +139,7 @@ export async function loadLabModel(
       m.receiveShadow = true;
     }
   });
-  fitModelToDimensions(model, fit);
+  if (fit) fitModelToDimensions(model, fit);
   root.add(model);
   if (station) wireInteractiveNodes(root, station);
   return { root, gltf };

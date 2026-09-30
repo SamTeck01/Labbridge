@@ -81,10 +81,10 @@ def preview(path, target=(0,0,0.3), dist=1.1, elev=0.35, az=-0.6):
     sc.render.resolution_x, sc.render.resolution_y = 900, 900
     w = bpy.data.worlds.new("w"); sc.world = w; w.use_nodes = True
     w.node_tree.nodes["Background"].inputs[0].default_value = (0.8, 0.82, 0.85, 1)
-    w.node_tree.nodes["Background"].inputs[1].default_value = 0.6
+    w.node_tree.nodes["Background"].inputs[1].default_value = 0.35
     bpy.ops.mesh.primitive_plane_add(size=6); fl = bpy.context.object
     assign(fl, mat("studio_floor", (0.05, 0.05, 0.055), rough=0.35))
-    for loc, e in [((1.5, -1.5, 2.5), 400), ((-2, -0.5, 1.5), 150), ((0, 2, 2), 200)]:
+    for loc, e in [((1.5, -1.5, 2.5), 220), ((-2, -0.5, 1.5), 80), ((0, 2, 2), 120)]:
         bpy.ops.object.light_add(type='AREA', location=loc); l = bpy.context.object
         l.data.energy = e; l.data.size = 1.5
         l.rotation_euler = (Vector(target) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
@@ -93,3 +93,35 @@ def preview(path, target=(0,0,0.3), dist=1.1, elev=0.35, az=-0.6):
     c.rotation_euler = (t - cam_loc).to_track_quat('-Z', 'Y').to_euler(); c.data.lens = 50
     sc.camera = c; sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
+
+def image_texture(name, pixels, size):
+    """Create a Blender image from a numpy float array (h, w, 4) in 0..1."""
+    img = bpy.data.images.new(name, size, size, alpha=False)
+    img.pixels.foreach_set(pixels.astype("float32").ravel())
+    img.pack()
+    return img
+
+def textured_mat(name, img, rough=0.5, metal=0.0, rough_img=None):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    nt = m.node_tree; b = nt.nodes["Principled BSDF"]
+    t = nt.nodes.new("ShaderNodeTexImage"); t.image = img
+    nt.links.new(t.outputs["Color"], b.inputs["Base Color"])
+    b.inputs["Roughness"].default_value = rough; b.inputs["Metallic"].default_value = metal
+    return m
+
+def scale_uvs(obj, sx, sy=None):
+    sy = sy or sx
+    for loop in obj.data.uv_layers.active.data:
+        loop.uv = (loop.uv[0] * sx, loop.uv[1] * sy)
+
+def wire(name, points, m, radius=0.0025):
+    """Flexible cable through a list of 3D points (smooth bezier tube)."""
+    cu = bpy.data.curves.new(name, 'CURVE'); cu.dimensions = '3D'
+    cu.bevel_depth = radius; cu.bevel_resolution = 3
+    sp = cu.splines.new('BEZIER'); sp.bezier_points.add(len(points) - 1)
+    for bp, p in zip(sp.bezier_points, points):
+        bp.co = p; bp.handle_left_type = bp.handle_right_type = 'AUTO'
+    o = bpy.data.objects.new(name, cu); bpy.context.collection.objects.link(o)
+    bpy.context.view_layer.objects.active = o; o.select_set(True)
+    bpy.ops.object.convert(target='MESH')
+    return smooth(assign(bpy.context.object, m))

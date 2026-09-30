@@ -42,7 +42,7 @@ export interface LabState {
 const initialState: LabState = {
   player: { station: null, seated: false },
   biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0 },
-  chemistry: { buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 2.8 },
+  chemistry: { buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
   research: { doorsOpen: false, balanceWeight: 0.0, centrifugeRunning: false },
 };

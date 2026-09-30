@@ -10,18 +10,49 @@ import type { Station } from '@/lib/labStore';
  */
 
 const HOME = new THREE.Vector3(1.8, 0, 9.2);
-// Standing spots beside each bench, on the central aisle side (x = ±2.2 keeps paths clear of benches).
+// Standing spots across the bench from the student, so she demonstrates face-to-face and stays in view.
 const STATION_SPOTS: Record<Station, THREE.Vector3> = {
-  biology: new THREE.Vector3(-2.2, 0, -2.4),
-  chemistry: new THREE.Vector3(2.2, 0, -2.4),
-  physics: new THREE.Vector3(-2.2, 0, 4.8),
-  research: new THREE.Vector3(2.2, 0, 4.8),
+  biology: new THREE.Vector3(-4.0, 0, -4.75),
+  chemistry: new THREE.Vector3(5.0, 0, -4.75),
+  physics: new THREE.Vector3(-4.0, 0, 2.25),
+  research: new THREE.Vector3(5.0, 0, 2.25),
 };
+const BENCH_CENTRES: Record<Station, THREE.Vector3> = {
+  biology: new THREE.Vector3(-4.5, 0, -3.5),
+  chemistry: new THREE.Vector3(4.5, 0, -3.5),
+  physics: new THREE.Vector3(-4.5, 0, 3.5),
+  research: new THREE.Vector3(4.5, 0, 3.5),
+};
+const AISLE_X = 1.5; // benches occupy |x| >= 2.7, so |x| <= 1.5 is always clear
+
+/** True if the straight walk from a to b stays clear of every bench (with 0.3 m clearance). */
+function clearLine(a: THREE.Vector3, b: THREE.Vector3) {
+  const steps = Math.ceil(a.distanceTo(b) / 0.1);
+  for (let i = 0; i <= steps; i++) {
+    const p = new THREE.Vector3().lerpVectors(a, b, i / steps);
+    for (const c of Object.values(BENCH_CENTRES)) {
+      if (Math.abs(p.x - c.x) < 2.1 && Math.abs(p.z - c.z) < 1.2) return false;
+    }
+  }
+  return true;
+}
+
+/** Walk straight when possible, otherwise route through the central aisle so Curie never walks through a bench. */
+function planPath(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3[] {
+  if (clearLine(from, to)) return [to.clone()];
+  const clampX = (x: number) => THREE.MathUtils.clamp(x, -AISLE_X, AISLE_X);
+  return [
+    new THREE.Vector3(clampX(from.x), 0, from.z),
+    new THREE.Vector3(clampX(to.x), 0, to.z),
+    to.clone(),
+  ];
+}
 const WALK_SPEED = 1.3;
 
 export interface CurieNPC {
   root: THREE.Group;
-  update(delta: number, playerPos: THREE.Vector3, target: Station | null): void;
+  /** Returns true while Curie is standing at her target. */
+  update(delta: number, playerPos: THREE.Vector3, target: Station | null, operating: boolean): boolean;
 }
 
 function tagAll(root: THREE.Object3D) {
@@ -115,31 +146,45 @@ export async function createCurieNPC(): Promise<CurieNPC> {
 
   let t = 0;
   let walkBlend = 0;
+  let reach = 0;
+  let path: THREE.Vector3[] = [];
+  let pathTarget: Station | null | undefined = undefined;
   const toTarget = new THREE.Vector3();
   const lookTarget = new THREE.Vector3();
 
+  const turnTowards = (x: number, z: number, rate: number, delta: number) => {
+    const yaw = Math.atan2(x - root.position.x, z - root.position.z);
+    const d = Math.atan2(Math.sin(yaw - root.rotation.y), Math.cos(yaw - root.rotation.y));
+    root.rotation.y += d * Math.min(1, rate * delta);
+  };
+
   return {
     root,
-    update(delta, playerPos, target) {
+    update(delta, playerPos, target, operating) {
       t += delta;
-      const goal = target ? STATION_SPOTS[target] : HOME;
+      if (target !== pathTarget) {
+        pathTarget = target;
+        path = planPath(root.position, target ? STATION_SPOTS[target] : HOME);
+      }
+      // Drop waypoints already reached.
+      while (path.length > 1 && root.position.distanceTo(path[0]) < 0.1) path.shift();
+      const goal = path[0] ?? root.position;
       toTarget.subVectors(goal, root.position).setY(0);
       const dist = toTarget.length();
       const walking = dist > 0.08;
+      const arrived = !walking && path.length <= 1;
 
       if (walking) {
         const step = Math.min(dist, WALK_SPEED * delta);
         root.position.addScaledVector(toTarget.normalize(), step);
-        const yaw = Math.atan2(toTarget.x, toTarget.z);
-        const d = Math.atan2(Math.sin(yaw - root.rotation.y), Math.cos(yaw - root.rotation.y));
-        root.rotation.y += d * Math.min(1, 8 * delta);
+        turnTowards(goal.x, goal.z, 8, delta);
+      } else if (operating && target) {
+        // Face the apparatus while working on it.
+        turnTowards(BENCH_CENTRES[target].x, BENCH_CENTRES[target].z, 5, delta);
       } else {
-        // Turn to face the student.
-        const yaw = Math.atan2(playerPos.x - root.position.x, playerPos.z - root.position.z);
-        let diff = yaw - root.rotation.y;
-        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-        root.rotation.y += diff * Math.min(1, 3 * delta);
+        turnTowards(playerPos.x, playerPos.z, 3, delta);
       }
+      reach = THREE.MathUtils.damp(reach, operating && arrived ? 1 : 0, 5, delta);
 
       walkBlend = THREE.MathUtils.damp(walkBlend, walking ? 1 : 0, 6, delta);
 
@@ -151,18 +196,23 @@ export async function createCurieNPC(): Promise<CurieNPC> {
         const swing = Math.sin(t * 7) * 0.5 * walkBlend;
         parts.legs[0].rotation.x = swing;
         parts.legs[1].rotation.x = -swing;
-        parts.arms[0].rotation.x = -swing * 0.8;
-        parts.arms[1].rotation.x = swing * 0.8;
+        // Walking arm swing, blended into a forward reach when operating equipment
+        const work = Math.sin(t * 5) * 0.08 * reach;
+        parts.arms[0].rotation.x = -swing * 0.8 - reach * 1.1 + work;
+        parts.arms[1].rotation.x = swing * 0.8 - reach * 1.1 - work;
         parts.group.position.y = Math.abs(Math.sin(t * 7)) * 0.03 * walkBlend + Math.sin(t * 1.6) * 0.004;
       }
 
       // Head tracks the student when close.
-      if (head && !walking && root.position.distanceTo(playerPos) < 6) {
+      if (head && !walking && !operating && root.position.distanceTo(playerPos) < 6) {
         lookTarget.copy(playerPos);
         const local = root.worldToLocal(lookTarget.clone());
         const headYaw = THREE.MathUtils.clamp(Math.atan2(local.x, local.z), -0.8, 0.8);
         head.rotation.y = THREE.MathUtils.damp(head.rotation.y, headYaw, 5, delta);
+      } else if (head) {
+        head.rotation.y = THREE.MathUtils.damp(head.rotation.y, 0, 5, delta);
       }
+      return arrived;
     },
   };
 }

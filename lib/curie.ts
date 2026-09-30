@@ -24,6 +24,10 @@ interface CurieState {
   targetStation: Station | null;
   /** Short line shown in the speech bubble above the NPC. */
   speech: string | null;
+  /** Equipment actions waiting until Curie physically reaches the bench. */
+  pending: Action[];
+  /** True while Curie's hands are on the apparatus (drives the reach animation). */
+  operating: boolean;
 }
 
 const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -39,6 +43,8 @@ let state: CurieState = {
   loading: false,
   targetStation: null,
   speech: null,
+  pending: [],
+  operating: false,
 };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<CurieState>) => {
@@ -56,8 +62,21 @@ function say(text: string) {
 
 type Action = { name: string; args: Record<string, unknown> };
 
-function applyAction({ name, args }: Action) {
-  const stations: Station[] = ['biology', 'chemistry', 'physics', 'research'];
+/** Which bench each equipment action happens at. */
+const ACTION_STATION: Record<string, Station> = {
+  set_microscope_objective: 'biology',
+  set_burette: 'chemistry',
+  add_indicator: 'chemistry',
+  set_stirrer: 'chemistry',
+  set_circuit_switch: 'physics',
+  set_resistance: 'physics',
+  set_balance_door: 'research',
+  tare_balance: 'research',
+  set_centrifuge: 'research',
+};
+
+/** Performs an action on the equipment. Only called once Curie is standing at the bench. */
+function operate({ name, args }: Action) {
   switch (name) {
     case 'set_microscope_objective':
       if (['4x', '10x', '40x', '100x'].includes(String(args.objective))) {
@@ -67,23 +86,49 @@ function applyAction({ name, args }: Action) {
       break;
     case 'set_burette':
       labStore.update('chemistry', { buretteOpen: !!args.open });
+      soundFx.playClick();
       break;
     case 'add_indicator':
       labStore.update('chemistry', { indicatorAdded: true });
+      soundFx.playDropLiquid();
       break;
     case 'set_stirrer':
       labStore.update('chemistry', { stirrerRPM: Math.max(0, Math.min(800, Number(args.rpm) || 0)) });
+      soundFx.playKnobTick();
       break;
     case 'set_circuit_switch':
       labStore.update('physics', { switchClosed: !!args.closed });
+      soundFx.playSwitchToggle(!!args.closed);
       break;
     case 'set_resistance':
       labStore.update('physics', { resistance: Math.max(10, Math.min(100, Number(args.ohms) || 25)) });
+      soundFx.playKnobTick();
       break;
-    case 'go_to_station':
-      if (stations.includes(args.station as Station)) set({ targetStation: args.station as Station });
+    case 'set_balance_door':
+      labStore.update('research', { doorsOpen: !!args.open });
+      soundFx.playClick();
+      break;
+    case 'tare_balance':
+      labStore.update('research', { balanceWeight: 0 });
+      soundFx.playBeep();
+      break;
+    case 'set_centrifuge':
+      labStore.update('research', { centrifugeRunning: !!args.running });
+      if (args.running) soundFx.playCentrifugeSpin();
       break;
   }
+}
+
+export function applyAction(action: Action) {
+  const stations: Station[] = ['biology', 'chemistry', 'physics', 'research'];
+  if (action.name === 'go_to_station') {
+    if (stations.includes(action.args.station as Station)) set({ targetStation: action.args.station as Station });
+    return;
+  }
+  const station = ACTION_STATION[action.name];
+  if (!station) return;
+  // Walk to the bench first; the NPC calls curie.arrived() when she gets there.
+  set({ targetStation: station, pending: [...state.pending, action] });
 }
 
 async function request(body: object): Promise<void> {
@@ -137,6 +182,21 @@ export const curie = {
   clear() {
     set({ messages: [{ role: 'assistant', content: 'Chat cleared. What are we working on?', timestamp: now() }] });
   },
+  /** Called by the 3D NPC when she is standing at targetStation. Performs queued work with a reach gesture. */
+  arrived() {
+    if (state.operating || !state.pending.length) return;
+    const station = state.targetStation;
+    const here = state.pending.filter((a) => ACTION_STATION[a.name] === station);
+    if (!here.length) return;
+    set({ operating: true, pending: state.pending.filter((a) => !here.includes(a)) });
+    here.forEach((a, i) => setTimeout(() => operate(a), 700 + i * 900));
+    setTimeout(() => {
+      set({ operating: false });
+      // Continue to the next bench if work remains elsewhere.
+      const next = state.pending[0];
+      if (next) set({ targetStation: ACTION_STATION[next.name] });
+    }, 900 + here.length * 900);
+  },
   walkTo(station: Station | null) {
     set({ targetStation: station });
   },
@@ -153,6 +213,8 @@ let watching = false;
 export function startCurieWatch() {
   if (watching || typeof window === 'undefined') return;
   watching = true;
+  // Dev hook for driving Curie from the console / automated tests without an API key.
+  if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curie: { curie, applyAction } });
   const fired = new Set<string>();
   let prev = labStore.get();
 
@@ -160,7 +222,7 @@ export function startCurieWatch() {
     const s = labStore.get();
 
     // Follow the student to whichever bench they sit at.
-    if (s.player.station !== prev.player.station && s.player.station) {
+    if (s.player.station !== prev.player.station && s.player.station && !state.pending.length && !state.operating) {
       curie.walkTo(s.player.station);
     }
 

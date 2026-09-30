@@ -50,7 +50,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { labStore, useLab, type LabState } from '@/lib/labStore';
 import { curie, useCurie, startCurieWatch } from '@/lib/curie';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
-import { disposeObject } from '@/lib/assetLoader';
+import { disposeObject, loadLabModel } from '@/lib/assetLoader';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
 
@@ -88,6 +88,39 @@ const setBiologyState = makeSetter('biology');
 const setChemistryState = makeSetter('chemistry');
 const setPhysicsState = makeSetter('physics');
 const setAnalyticalState = makeSetter('research');
+
+/** Applies analytical-bench state to its meshes (balance door, readout). */
+function applyResearchState(root: THREE.Object3D | null, analyticalState: LabState['research']) {
+  const uData = root?.userData;
+  if (!uData) return;
+  const door = uData.balanceDoor as THREE.Object3D | undefined;
+  if (door) {
+    if (door.userData.baseZ === undefined) door.userData.baseZ = door.position.z;
+    door.position.z = door.userData.baseZ - (analyticalState.doorsOpen ? 0.2 : 0); // slides toward the back
+  }
+  const display = uData.balanceDisplay as THREE.Mesh | undefined;
+  if (display) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#0b2a22';
+    ctx.fillRect(0, 0, 256, 64);
+    ctx.fillStyle = '#7dffcf';
+    ctx.font = 'bold 40px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${analyticalState.balanceWeight.toFixed(4)} g`, 244, 46);
+    const mat = display.material as THREE.MeshStandardMaterial;
+    mat.map?.dispose();
+    mat.map = new THREE.CanvasTexture(canvas);
+    mat.map.colorSpace = THREE.SRGBColorSpace;
+    mat.color.set('#ffffff');
+    mat.emissive.set('#ffffff');
+    mat.emissiveMap = mat.map;
+    mat.emissiveIntensity = 0.8;
+    mat.needsUpdate = true;
+  }
+}
 
 export default function Lab3DScene({
   initialStation = null,
@@ -133,6 +166,9 @@ export default function Lab3DScene({
   const physicsState = useLab((st) => st.physics);
   const analyticalState = useLab((st) => st.research);
   const curieSpeech = useCurie((st) => st.speech);
+  // Bumped when async-loaded equipment arrives so state effects re-apply to the new meshes
+  const [researchVersion, setResearchVersion] = useState(0);
+  const [physicsVersion, setPhysicsVersion] = useState(0);
 
   const [isTouch] = useState<boolean>(() => (typeof window !== 'undefined' ? isMobileOrTouchDevice() : false));
 
@@ -448,6 +484,8 @@ export default function Lab3DScene({
     const container = mountRef.current;
     if (!container) return;
 
+    let disposed = false;
+
     // Scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
@@ -466,6 +504,8 @@ export default function Lab3DScene({
     // Attach Scientist Character 1st-Person Rig
     const scientistRig = createFirstPersonScientistRig();
     scientistRigRef.current = scientistRig;
+    // Placeholder hands hidden until a real first-person arms model exists
+    scientistRig.visible = false;
     camera.add(scientistRig);
     scene.add(camera);
 
@@ -485,7 +525,22 @@ export default function Lab3DScene({
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTexture;
+    scene.environmentIntensity = 0.55;
     pmrem.dispose();
+
+    // Procedural room shell; replaced by /models/lab-room.glb when that asset exists
+    const proceduralRoom = new THREE.Group();
+    scene.add(proceduralRoom);
+    loadLabModel('lab-room', null).then((room) => {
+      if (!room || disposed) return;
+      room.root.traverse((o) => {
+        // The shell only receives shadows; the ceiling must not block the key light.
+        if (/^(ceiling|led_|wall|window|win_|exterior|skirt|floor)/.test(o.name)) o.castShadow = false;
+      });
+      scene.remove(proceduralRoom);
+      disposeObject(proceduralRoom);
+      scene.add(room.root);
+    });
 
     // Bright Ambient & Hemisphere Illumination (Daylight White 6000K)
     const ambientLight = new THREE.AmbientLight('#ffffff', 0.25);
@@ -494,7 +549,7 @@ export default function Lab3DScene({
     const hemiLight = new THREE.HemisphereLight('#ffffff', '#cbd5e1', 0.35);
     scene.add(hemiLight);
 
-    const mainCeilingLight = new THREE.DirectionalLight('#ffffff', 1.8);
+    const mainCeilingLight = new THREE.DirectionalLight('#fff8ee', 1.1);
     mainCeilingLight.position.set(0, 8, 0);
     mainCeilingLight.castShadow = true;
     mainCeilingLight.shadow.mapSize.width = 2048;
@@ -521,7 +576,7 @@ export default function Lab3DScene({
         })
       );
       troffer.position.set(tx, ty, tz);
-      scene.add(troffer);
+      proceduralRoom.add(troffer);
 
     });
 
@@ -535,29 +590,29 @@ export default function Lab3DScene({
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
-    scene.add(floor);
+    proceduralRoom.add(floor);
 
 
     // Realistic Clean Antimicrobial Laboratory Walls
     const wallMat = new THREE.MeshStandardMaterial({ color: '#f1f5f9', roughness: 0.45, metalness: 0.05 });
     const backWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
     backWall.position.set(0, 4, -12);
-    scene.add(backWall);
+    proceduralRoom.add(backWall);
 
     const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
     frontWall.position.set(0, 4, 12);
     frontWall.rotation.y = Math.PI;
-    scene.add(frontWall);
+    proceduralRoom.add(frontWall);
 
     const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
     rightWall.position.set(12, 4, 0);
     rightWall.rotation.y = -Math.PI / 2;
-    scene.add(rightWall);
+    proceduralRoom.add(rightWall);
 
     const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 8), wallMat);
     leftWall.position.set(-12, 4, 0);
     leftWall.rotation.y = Math.PI / 2;
-    scene.add(leftWall);
+    proceduralRoom.add(leftWall);
 
     // Sunlit Panoramic Windows on Left Wall
     [-6, 0, 6].forEach((wz) => {
@@ -567,14 +622,14 @@ export default function Lab3DScene({
       );
       skyPane.position.set(-11.92, 4.0, wz);
       skyPane.rotation.y = Math.PI / 2;
-      scene.add(skyPane);
+      proceduralRoom.add(skyPane);
 
       const winFrame = new THREE.Mesh(
         new THREE.BoxGeometry(0.08, 4.0, 3.2),
         new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.5, roughness: 0.2 })
       );
       winFrame.position.set(-11.9, 4.0, wz);
-      scene.add(winFrame);
+      proceduralRoom.add(winFrame);
     });
 
     // Add Chemical Fume Hood at Center Back Wall
@@ -644,7 +699,7 @@ export default function Lab3DScene({
         bench.add(leg);
       });
 
-      scene.add(bench);
+      proceduralRoom.add(bench);
 
       // Add Overhead Reagent Shelf above each bench
       const shelf = createReagentShelf();
@@ -687,6 +742,7 @@ export default function Lab3DScene({
     createReadyMadePhysicsBench('physics').then((physBench) => {
       physBench.position.set(-4.5, 0.94, 3.5);
       scene.add(physBench);
+      setPhysicsVersion((v) => v + 1);
       physEquipmentRef.current = physBench;
       physBench.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
@@ -698,6 +754,8 @@ export default function Lab3DScene({
     createReadyMadeAnalyticalBench('research').then((resBench) => {
       resBench.position.set(4.5, 0.94, 3.5);
       scene.add(resBench);
+      resEquipmentRef.current = resBench;
+      setResearchVersion((v) => v + 1);
       resBench.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
@@ -708,10 +766,10 @@ export default function Lab3DScene({
 
     // Dr. Curie, the lab manager NPC
     let curieNPC: CurieNPC | null = null;
-    let disposed = false;
     createCurieNPC().then((npc) => {
       if (disposed) return;
       curieNPC = npc;
+      if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curieNPC: npc });
       scene.add(npc.root);
       interactiveList.push(npc.root);
       interactiveObjectsRef.current = [...interactiveList];
@@ -965,7 +1023,14 @@ export default function Lab3DScene({
         }
       }
 
-      if (curieNPC) curieNPC.update(delta, camera.position, curie.get().targetStation);
+      const rotor = resEquipmentRef.current?.userData.rotor as THREE.Object3D | undefined;
+      if (rotor && labStore.get().research.centrifugeRunning) rotor.rotation.y += 40 * delta;
+
+      if (curieNPC) {
+        const c = curie.get();
+        const atTarget = curieNPC.update(delta, camera.position, c.targetStation, c.operating);
+        if (atTarget && c.pending.length && !c.operating) curie.arrived();
+      }
 
       renderer.render(scene, camera);
     };
@@ -1009,7 +1074,10 @@ export default function Lab3DScene({
     if (!uData) return;
 
     if (uData.stageAssembly) {
-      uData.stageAssembly.position.y = 0.16 + (1 - biologyState.coarseFocus) * 0.02;
+      // Offset from the modelled rest height, so both GLB and procedural stages work
+      const stage = uData.stageAssembly as THREE.Object3D;
+      if (stage.userData.baseY === undefined) stage.userData.baseY = stage.position.y;
+      stage.position.y = stage.userData.baseY + (biologyState.coarseFocus - 0.5) * 0.02;
     }
 
     if (uData.turret) {
@@ -1068,7 +1136,18 @@ export default function Lab3DScene({
         glassMat.emissiveIntensity = isLit ? 1.0 : 0.05;
       }
     }
-  }, [physicsState]);
+
+    // Ammeter needle: 0-1 A full scale, sweeps left to right
+    if (uData.ammeterNeedle) {
+      const amps = physicsState.switchClosed ? physicsState.voltage / physicsState.resistance : 0;
+      (uData.ammeterNeedle as THREE.Object3D).rotation.z = 0.87 - Math.min(1, amps) * 1.74;
+    }
+  }, [physicsState, physicsVersion]);
+
+  // Update 3D Analytical Bench States
+  useEffect(() => {
+    applyResearchState(resEquipmentRef.current, analyticalState);
+  }, [analyticalState, researchVersion]);
 
   return (
     <div className="relative w-full h-screen bg-slate-950 overflow-hidden select-none">
@@ -1254,7 +1333,7 @@ export default function Lab3DScene({
           onToggleSwitch={() => setPhysicsState((prev) => ({ ...prev, switchClosed: !prev.switchClosed }))}
           resistance={physicsState.resistance}
           onChangeResistance={(val) => setPhysicsState((prev) => ({ ...prev, resistance: val }))}
-          currentMA={(physicsState.voltage / physicsState.resistance) * 1000}
+          currentMA={physicsState.switchClosed ? (physicsState.voltage / physicsState.resistance) * 1000 : 0}
           voltageV={physicsState.voltage}
           balanceDoorsOpen={analyticalState.doorsOpen}
           onToggleBalanceDoor={() => setAnalyticalState((prev) => ({ ...prev, doorsOpen: !prev.doorsOpen }))}

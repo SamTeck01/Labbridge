@@ -47,6 +47,21 @@ const tools: FunctionDeclaration[] = [
     parameters: { type: Type.OBJECT, properties: { ohms: { type: Type.NUMBER } }, required: ['ohms'] },
   },
   {
+    name: 'set_balance_door',
+    description: 'Slide the analytical balance draft-shield door open or closed.',
+    parameters: { type: Type.OBJECT, properties: { open: { type: Type.BOOLEAN } }, required: ['open'] },
+  },
+  {
+    name: 'tare_balance',
+    description: 'Press TARE on the analytical balance to zero it.',
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: 'set_centrifuge',
+    description: 'Start or stop the benchtop centrifuge.',
+    parameters: { type: Type.OBJECT, properties: { running: { type: Type.BOOLEAN } }, required: ['running'] },
+  },
+  {
     name: 'go_to_station',
     description: 'Walk over to a workstation to supervise or demonstrate.',
     parameters: {
@@ -61,7 +76,7 @@ const systemInstruction = `You are Dr. Curie, the lab manager of the LabBridge v
 You supervise students at four benches: biology (microscopy), chemistry (acid-base titration), physics (DC circuits) and research (analytical balance, centrifuge).
 You receive a live snapshot of every instrument with each message. Use it: refer to actual readings, spot mistakes (e.g. burette left open past the 25 mL endpoint, focusing at 100x without oil) and give the next concrete step.
 Enforce lab safety like a real lab manager. Be warm but concise: 2-4 sentences unless asked for detail.
-You may use tools to demonstrate or fix the setup, but prefer guiding the student to do it themselves; only act when asked or when safety requires it. Always say what you did.`;
+When you use a tool you physically walk to that bench and operate the equipment in front of the student. You may use tools to demonstrate or fix the setup, but prefer guiding the student to do it themselves; only act when asked or when safety requires it. Always say what you did.`;
 
 export async function POST(req: NextRequest) {
   let body: { messages?: ChatTurn[]; labState?: string; event?: string };
