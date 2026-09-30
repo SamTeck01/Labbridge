@@ -123,6 +123,11 @@ export class FirstPersonHands {
     this.root.visible = visible && this.ready;
   }
 
+  /** The hand on the same side of the view as a point (people reach with the nearer hand). */
+  sideFor(world: THREE.Vector3): Side {
+    return this.camera.worldToLocal(world.clone()).x < -0.02 ? 'left' : 'right';
+  }
+
   /** Resting position: low in view, like hands hovering over the bench edge. */
   idleWrist(side: Side) {
     const local = new THREE.Vector3(side === 'right' ? 0.16 : -0.16, -0.15, -0.36);

@@ -324,13 +324,13 @@ export async function createReadyMadeChemistryStation(
 export async function createReadyMadePhysicsBench(
   station: 'biology' | 'chemistry' | 'physics' | 'research' = 'physics'
 ): Promise<THREE.Group> {
-  const real = await loadLabModel('physics-bench', { targetWidth: 1.4, centerOrigin: true }, station);
+  const real = await loadLabModel('physics-bench', null, station); // authored at real size
   return real ? real.root : proceduralPhysicsBench(station);
 }
 
 export async function createReadyMadeAnalyticalBench(
   station: 'biology' | 'chemistry' | 'physics' | 'research' = 'research'
 ): Promise<THREE.Group> {
-  const real = await loadLabModel('analytical-bench', { targetWidth: 1.6, centerOrigin: true }, station);
+  const real = await loadLabModel('analytical-bench', null, station); // authored at real size
   return real ? real.root : proceduralAnalyticalBench(station);
 }

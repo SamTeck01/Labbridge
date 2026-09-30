@@ -60,6 +60,7 @@ import { disposeObject, loadLabModel, swapInModel } from '@/lib/assetLoader';
 import { mergeStaticMeshes, AdaptiveResolution } from '@/lib/scenePerf';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { TitrationBench } from '@/lib/workbench/titrationBench';
+import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench } from '@/lib/workbench/benches';
 import { experiments } from '@/lib/experiments';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
@@ -104,7 +105,7 @@ function applyResearchState(root: THREE.Object3D | null, analyticalState: LabSta
   const uData = root?.userData;
   if (!uData) return;
   const door = uData.balanceDoor as THREE.Object3D | undefined;
-  if (door) {
+  if (door && !uData.benchOwnsDoor) {
     if (door.userData.baseZ === undefined) door.userData.baseZ = door.position.z;
     door.position.z = door.userData.baseZ - (analyticalState.doorsOpen ? 0.2 : 0); // slides toward the back
   }
@@ -189,7 +190,7 @@ export default function Lab3DScene({
   const physicsState = useLab((st) => st.physics);
   const analyticalState = useLab((st) => st.research);
   const curieSpeech = useCurie((st) => st.speech);
-  const atWorkbench = isSeated && seatedStation === 'chemistry';
+  const atWorkbench = isSeated && !!seatedStation;
   // Bumped when async-loaded equipment arrives so state effects re-apply to the new meshes
   const [labReady, setLabReady] = useState(false);
   const [researchVersion, setResearchVersion] = useState(0);
@@ -235,8 +236,8 @@ export default function Lab3DScene({
     };
   }>({
     biology: {
-      pos: new THREE.Vector3(-4.5, EYE_HEIGHT_SITTING, -2.35),
-      lookAt: new THREE.Vector3(-4.5, 1.10, -3.5),
+      pos: new THREE.Vector3(-4.5, 1.3, -2.42),
+      lookAt: new THREE.Vector3(-4.5, 1.1, -2.98),
       baseYaw: 0,
     },
     // Chemistry is a standing workbench: apparatus at the front edge, student standing close over it
@@ -246,13 +247,13 @@ export default function Lab3DScene({
       baseYaw: 0,
     },
     physics: {
-      pos: new THREE.Vector3(-4.5, EYE_HEIGHT_SITTING, 4.75),
-      lookAt: new THREE.Vector3(-4.5, 1.10, 3.5),
+      pos: new THREE.Vector3(-4.5, 1.46, 4.72),
+      lookAt: new THREE.Vector3(-4.5, 1.0, 4.02),
       baseYaw: Math.PI,
     },
     research: {
-      pos: new THREE.Vector3(4.5, EYE_HEIGHT_SITTING, 4.75),
-      lookAt: new THREE.Vector3(4.5, 1.10, 3.5),
+      pos: new THREE.Vector3(4.62, 1.42, 4.72),
+      lookAt: new THREE.Vector3(4.62, 1.02, 4.04),
       baseYaw: Math.PI,
     },
   });
@@ -353,6 +354,11 @@ export default function Lab3DScene({
       return;
     }
 
+    // At a hands-on bench, the hands perform it
+    if (data.station && benchesRef.current[data.station as 'biology']?.tap(String(data.interactId))) {
+      return;
+    }
+
     if (data.station === 'biology') {
       if (data.interactId === 'micro_eyepieces') {
         soundFx.playClick();
@@ -389,8 +395,6 @@ export default function Lab3DScene({
           lightIntensity: prev.lightIntensity > 0.5 ? 0.3 : 1.0,
         }));
       }
-    } else if (data.station === 'chemistry' && titrationBenchRef.current?.tap(String(data.interactId))) {
-      // performed by the hands
     } else if (data.station === 'chemistry') {
       if (data.interactId === 'chem_stopcock' || data.interactId === 'chem_burette_valve') {
         soundFx.playClick();
@@ -506,6 +510,8 @@ export default function Lab3DScene({
   const seatedStationRef = useRef(seatedStation);
   const handsRef = useRef<FirstPersonHands | null>(null);
   const titrationBenchRef = useRef<TitrationBench | null>(null);
+  // Hands-on bench for each station (created once its apparatus and the hands are loaded)
+  const benchesRef = useRef<Partial<Record<'biology' | 'chemistry' | 'physics' | 'research', Workbench | TitrationBench>>>({});
   // Where the view should turn while the hands work (e.g. up to the burette funnel)
   const focusRef = useRef<THREE.Vector3 | null>(null);
   // Pointer position at a workbench (tap/click targets and hover)
@@ -525,7 +531,7 @@ export default function Lab3DScene({
     const onDrop = () => titrationBenchRef.current?.visualDrop();
     window.addEventListener('labbridge:drop', onDrop);
     const off = experiments.onEvent((e) => {
-      if (e.type === 'started') titrationBenchRef.current?.reset();
+      if (e.type === 'started') Object.values(benchesRef.current).forEach((b) => b?.reset());
     });
     return () => {
       window.removeEventListener('labbridge:drop', onDrop);
@@ -567,6 +573,7 @@ export default function Lab3DScene({
     const hands = new FirstPersonHands(camera);
     handsRef.current = hands;
     const handsPromise = hands.load().catch(() => false);
+    const setFocus = (p: THREE.Vector3 | null) => (focusRef.current = p ? p.clone() : null);
 
     // WebGL Renderer
     // Phones: lower pixel ratio and cheaper shadows keep the frame rate up (AO is also desktop-only)
@@ -580,7 +587,7 @@ export default function Lab3DScene({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
-    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __renderer: renderer, __scene: scene, __camera: camera });
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __renderer: renderer, __scene: scene, __camera: camera, __benches: benchesRef.current });
 
     // Ambient occlusion: soft contact shadows in corners, under benches and around equipment.
     // Desktop only; phones render directly to keep the frame rate up.
@@ -827,9 +834,15 @@ export default function Lab3DScene({
 
     // 1. Biology 3D Microscope Setup (Ready-Made High-Fidelity GLB Model)
     createReadyMadeMicroscope('biology').then((microscope) => {
-      microscope.position.set(-4.5, 0.94, -3.5);
+      microscope.position.set(-4.5, 0.94, -2.98); // front edge, within reach
       scene.add(microscope);
       microEquipmentRef.current = microscope;
+      handsPromise.then((ok) => {
+        if (ok && !disposed) {
+          benchesRef.current.biology = new MicroscopeBench(scene, microscope, hands, setFocus, () => setIsViewingEyepieces(true));
+          collectInteractives();
+        }
+      });
       microscope.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
@@ -850,10 +863,11 @@ export default function Lab3DScene({
       // Hands-on titration once the hands are ready
       handsPromise.then((ok) => {
         if (!ok || disposed) return;
-        TitrationBench.create(scene, chemRig, hands, (p) => (focusRef.current = p ? p.clone() : null))
+        TitrationBench.create(scene, chemRig, hands, setFocus)
           .then((bench) => {
             if (disposed) return;
             titrationBenchRef.current = bench;
+            benchesRef.current.chemistry = bench;
             if (process.env.NODE_ENV !== 'production') Object.assign(window, { __titration: bench });
             collectInteractives();
           })
@@ -863,8 +877,11 @@ export default function Lab3DScene({
 
     // 3. Physics 3D Circuit & Apparatus Ready-Made Setup
     createReadyMadePhysicsBench('physics').then((physBench) => {
-      physBench.position.set(-4.5, 0.94, 3.5);
+      physBench.position.set(-4.5, 0.94, 4.0);
       scene.add(physBench);
+      handsPromise.then((ok) => {
+        if (ok && !disposed) benchesRef.current.physics = new CircuitBench(scene, physBench, hands, setFocus);
+      });
       setPhysicsVersion((v) => v + 1);
       physEquipmentRef.current = physBench;
       physBench.traverse((c) => {
@@ -876,9 +893,16 @@ export default function Lab3DScene({
 
     // 4. Research 3D Analytical Suite Ready-Made Setup
     createReadyMadeAnalyticalBench('research').then((resBench) => {
-      resBench.position.set(4.5, 0.94, 3.5);
+      resBench.position.set(4.85, 0.94, 4.04); // balance (model x -0.35) centred in front of the student, centrifuge to the right
       scene.add(resBench);
       resEquipmentRef.current = resBench;
+      handsPromise.then((ok) => {
+        if (ok && !disposed) {
+          benchesRef.current.research = new BalanceBench(scene, resBench, hands, setFocus);
+          resBench.userData.benchOwnsDoor = true;
+          collectInteractives();
+        }
+      });
       setResearchVersion((v) => v + 1);
       resBench.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
@@ -924,7 +948,7 @@ export default function Lab3DScene({
 
     const handleCanvasClick = (e: MouseEvent) => {
       // At a workbench the student taps/clicks things directly (no pointer lock, no reticle)
-      const atWorkbench = isSeatedRef.current && seatedStationRef.current === 'chemistry';
+      const atWorkbench = isSeatedRef.current && !!seatedStationRef.current;
       if (!atWorkbench && document.pointerLockElement !== renderer.domElement && !isTouch) {
         renderer.domElement.requestPointerLock();
       }
@@ -935,13 +959,9 @@ export default function Lab3DScene({
           ? new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
           : centerScreen;
         raycaster.setFromCamera(pointer, cameraRef.current);
-        const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
-        if (hits.length > 0) {
-          const hitObj = hits[0].object;
-          if (hitObj.userData && hitObj.userData.isInteractive) {
-            handleObjectClickRef.current(hitObj);
-          }
-        }
+        // First usable thing under the pointer (see through glass shields and liquids)
+        const hit = raycaster.intersectObjects(interactiveObjectsRef.current, true).find((h) => h.object.userData?.isInteractive);
+        if (hit) handleObjectClickRef.current(hit.object);
       }
     };
 
@@ -1124,9 +1144,9 @@ export default function Lab3DScene({
 
         // Hover raycast (every 3rd frame): reticle when exploring, pointer at a workbench
         if (coordUpdateCounter % 3 === 0) {
-          const atBench = isSeatedRef.current && seatedStationRef.current === 'chemistry';
+          const atBench = isSeatedRef.current && !!seatedStationRef.current;
           raycaster.setFromCamera(atBench ? pointerRef.current : centerScreen, cameraRef.current);
-          const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
+          const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true).filter((h) => h.object.userData?.isInteractive);
           if (hits.length > 0) {
             const hit = hits[0].object;
             if (hit.userData && hit.userData.isInteractive && hoveredIdRef.current !== hit.userData.interactId) {
@@ -1175,7 +1195,7 @@ export default function Lab3DScene({
         }
       }
 
-      const working = isSeatedRef.current && seatedStationRef.current === 'chemistry';
+      const working = isSeatedRef.current && !!seatedStationRef.current;
       hands.show(working && !transitionRef.current?.active);
       // Lean in at the workbench: narrower field of view for a close-up of the apparatus
       const targetFov = working ? 50 : 65;
@@ -1185,7 +1205,7 @@ export default function Lab3DScene({
       }
       const realDelta = Math.min(frameMs / 1000, 0.5);
       hands.update(realDelta);
-      titrationBenchRef.current?.update(realDelta);
+      Object.values(benchesRef.current).forEach((b) => b?.update(realDelta));
 
       const rotor = resEquipmentRef.current?.userData.rotor as THREE.Object3D | undefined;
       if (rotor && labStore.get().research.centrifugeRunning) rotor.rotation.y += 40 * delta;
@@ -1237,7 +1257,7 @@ export default function Lab3DScene({
 
   // Update 3D Microscope Mesh States
   useEffect(() => {
-    if (!microEquipmentRef.current) return;
+    if (!microEquipmentRef.current || benchesRef.current.biology) return;
     const uData = microEquipmentRef.current.userData;
     if (!uData) return;
 
@@ -1283,7 +1303,7 @@ export default function Lab3DScene({
 
   // Update 3D Physics Mesh States
   useEffect(() => {
-    if (!physEquipmentRef.current) return;
+    if (!physEquipmentRef.current || benchesRef.current.physics) return;
     const uData = physEquipmentRef.current.userData;
     if (!uData) return;
 
@@ -1331,7 +1351,7 @@ export default function Lab3DScene({
       )}
 
       {/* Practical brief / checklist / results */}
-      <ExperimentPanel station={isSeated ? seatedStation : null} />
+      <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} />
 
       {/* Dr. Curie speech bubble */}
       {curieSpeech && !isPhoneOpen && (

@@ -22,6 +22,7 @@ const NAOH_BOTTLE_START_ML = 400;
 
 export class TitrationBench {
   private busy = false;
+  private queued: string | null = null;
   private rig: THREE.Object3D;
   private scale = 1;
   private bottle: THREE.Object3D | null = null;
@@ -107,13 +108,19 @@ export class TitrationBench {
   tap(id: string): boolean {
     const known = ['chem_naoh_bottle', 'chem_hcl_cylinder', 'chem_indicator', 'chem_dropper', 'chem_flask', 'chem_stopcock', 'chem_stirrer_knob'];
     if (!known.includes(id)) return false;
-    if (this.busy) return true;
+    if (this.busy) {
+      this.queued = id; // performed when the current action finishes
+      return true;
+    }
     const run = async (fn: () => Promise<void>) => {
       this.busy = true;
       try {
         await fn();
       } finally {
         this.busy = false;
+        const next = this.queued;
+        this.queued = null;
+        if (next) this.tap(next);
       }
     };
     if (id === 'chem_naoh_bottle') run(() => this.fillBurette());

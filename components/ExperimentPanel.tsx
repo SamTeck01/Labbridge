@@ -7,7 +7,8 @@ import { labStore, titrationPH, type Station } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
 
 /** Practical brief, live procedure checklist, readings and results for the bench the student is at. */
-export default function ExperimentPanel({ station }: { station: Station | null }) {
+/** compact: at a workbench only the current step is shown, keeping the apparatus clear. */
+export default function ExperimentPanel({ station, compact = false }: { station: Station | null; compact?: boolean }) {
   const run = useExperiments((s) => s.run);
   const lastResult = useExperiments((s) => s.lastResult);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +64,7 @@ export default function ExperimentPanel({ station }: { station: Station | null }
   if (!active) {
     if (!available) return null;
     return (
-      <div className="absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 w-[min(92vw,340px)] [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl">
+      <div className={`absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 ${compact ? 'w-[min(80vw,280px)] p-3' : 'w-[min(92vw,340px)]'} [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl`}>
         <div className="flex items-center gap-2 text-teal-400 text-xs font-semibold uppercase tracking-wide mb-1">
           <ClipboardList className="w-4 h-4" /> Practical
         </div>
@@ -98,7 +99,7 @@ export default function ExperimentPanel({ station }: { station: Station | null }
   };
 
   return (
-    <div className="absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 w-[min(92vw,340px)] [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl">
+    <div className={`absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 ${compact ? 'w-[min(80vw,280px)] p-3' : 'w-[min(92vw,340px)]'} [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl`}>
       <div className="flex items-center gap-2 mb-2">
         <FlaskConical className="w-4 h-4 text-teal-400" />
         <h3 className="text-sm font-semibold flex-1">
@@ -116,7 +117,7 @@ export default function ExperimentPanel({ station }: { station: Station | null }
           const done = run_.completedSteps.includes(s.id);
           const current = !done && active.steps.find((x) => !run_.completedSteps.includes(x.id))?.id === s.id;
           return (
-            <li key={s.id} className={`flex gap-2 text-sm ${done ? 'text-slate-500 line-through' : current ? 'text-white' : 'text-slate-400'} ${current ? '' : '[@media(max-height:500px)]:hidden'}`}>
+            <li key={s.id} className={`flex gap-2 text-sm ${done ? 'text-slate-500 line-through' : current ? 'text-white' : 'text-slate-400'} ${current ? '' : compact ? 'hidden' : '[@media(max-height:500px)]:hidden'}`}>
               {done ? <CheckCircle2 className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" /> : <Circle className={`w-4 h-4 shrink-0 mt-0.5 ${current ? 'text-teal-400' : ''}`} />}
               <span>{s.text}</span>
             </li>
