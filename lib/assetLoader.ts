@@ -78,7 +78,7 @@ interface InteractiveSpec {
 
 export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
   micro_eyepieces: { label: 'Binocular Eyepieces', action: 'Look through eyepieces', category: 'eyepiece' },
-  micro_turret: { label: 'Objective Turret', action: 'Rotate objective', category: 'knob', ref: 'turret' },
+  micro_turret: { label: 'Objective Turret', action: 'Tap left side: lower power · right side: higher', category: 'knob', ref: 'turret' },
   micro_coarse_focus: { label: 'Coarse Focus Knob', action: 'Adjust coarse focus', category: 'knob', ref: 'coarseKnobL' },
   micro_fine_focus: { label: 'Fine Focus Knob', action: 'Adjust fine focus', category: 'knob', ref: 'fineKnobL' },
   micro_slide: { label: 'Slide Box', action: 'Change specimen slide', category: 'primary' },

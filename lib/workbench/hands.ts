@@ -128,6 +128,11 @@ export class FirstPersonHands {
     return this.camera.worldToLocal(world.clone()).x < -0.02 ? 'left' : 'right';
   }
 
+  /** True if point a appears left of point b from the student's eyes. */
+  leftOf(a: THREE.Vector3, b: THREE.Vector3) {
+    return this.camera.worldToLocal(a.clone()).x < this.camera.worldToLocal(b.clone()).x;
+  }
+
   /** Resting position: low in view, like hands hovering over the bench edge. */
   idleWrist(side: Side) {
     const local = new THREE.Vector3(side === 'right' ? 0.16 : -0.16, -0.15, -0.36);

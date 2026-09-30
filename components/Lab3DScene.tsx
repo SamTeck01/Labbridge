@@ -355,7 +355,7 @@ export default function Lab3DScene({
     }
 
     // At a hands-on bench, the hands perform it
-    if (data.station && benchesRef.current[data.station as 'biology']?.tap(String(data.interactId))) {
+    if (data.station && benchesRef.current[data.station as 'biology']?.tap(String(data.interactId), lastHitPointRef.current ?? undefined)) {
       return;
     }
 
@@ -514,6 +514,7 @@ export default function Lab3DScene({
   const benchesRef = useRef<Partial<Record<'biology' | 'chemistry' | 'physics' | 'research', Workbench | TitrationBench>>>({});
   // Where the view should turn while the hands work (e.g. up to the burette funnel)
   const focusRef = useRef<THREE.Vector3 | null>(null);
+  const lastHitPointRef = useRef<THREE.Vector3 | null>(null);
   // Pointer position at a workbench (tap/click targets and hover)
   const pointerRef = useRef(new THREE.Vector2(0, 0));
   const handleObjectClickRef = useRef(handleObjectClick);
@@ -961,7 +962,10 @@ export default function Lab3DScene({
         raycaster.setFromCamera(pointer, cameraRef.current);
         // First usable thing under the pointer (see through glass shields and liquids)
         const hit = raycaster.intersectObjects(interactiveObjectsRef.current, true).find((h) => h.object.userData?.isInteractive);
-        if (hit) handleObjectClickRef.current(hit.object);
+        if (hit) {
+          lastHitPointRef.current = hit.point.clone();
+          handleObjectClickRef.current(hit.object);
+        }
       }
     };
 

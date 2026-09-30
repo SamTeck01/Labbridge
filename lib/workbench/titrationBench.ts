@@ -105,7 +105,7 @@ export class TitrationBench {
   }
 
   /** Returns true if the tap was handled here (hands will perform it). */
-  tap(id: string): boolean {
+  tap(id: string, _point?: THREE.Vector3): boolean {
     const known = ['chem_naoh_bottle', 'chem_hcl_cylinder', 'chem_indicator', 'chem_dropper', 'chem_flask', 'chem_stopcock', 'chem_stirrer_knob'];
     if (!known.includes(id)) return false;
     if (this.busy) {

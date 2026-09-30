@@ -127,7 +127,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     safety: ['Always start at the lowest power.', 'Never use coarse focus at 40× or 100×; it can crack the slide.'],
     intro: "Let's look at cells. Always start on the 4× objective. Check the turret, then look through the eyepieces.",
     steps: [
-      { id: 'low', text: 'Select the 4× scanning objective', coach: 'Rotate the turret to 4×, the shortest objective with the red band.', done: (l) => l.biology.objective === '4x' },
+      { id: 'low', text: 'Select the 4× scanning objective', coach: 'Turn the turret to 4×, the shortest objective with the red band. Tap its left side to go down in power.', done: (l) => l.biology.objective === '4x' },
       { id: 'focus4', text: 'Focus the specimen at 4×', coach: 'Use the coarse focus until the image is sharp at 4×.', done: (l) => l.biology.objective === '4x' && microscopeSharpness(l.biology) > 0.8 },
       { id: 'focus10', text: 'Switch to 10× and refocus', coach: 'Now 10×. Only small focus adjustments are needed.', done: (l) => l.biology.objective === '10x' && microscopeSharpness(l.biology) > 0.8 },
       { id: 'focus40', text: 'Switch to 40× and fine-focus', coach: 'Go to 40× and use only the fine focus from here.', done: (l) => l.biology.objective === '40x' && microscopeSharpness(l.biology) > 0.8 },

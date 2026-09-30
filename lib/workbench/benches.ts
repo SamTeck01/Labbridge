@@ -13,7 +13,8 @@ import { FirstPersonHands } from '@/lib/workbench/hands';
  */
 
 export interface Workbench {
-  tap(id: string): boolean;
+  /** point: where on the object the student tapped (world), when known. */
+  tap(id: string, point?: THREE.Vector3): boolean;
   update(delta: number): void;
   reset(): void;
   readonly isBusy: boolean;
@@ -32,10 +33,13 @@ abstract class BenchBase implements Workbench {
   }
 
   private queued: string | null = null;
+  /** Where the current/queued tap landed. */
+  protected tapPoint: THREE.Vector3 | null = null;
 
   /** Taps during an action are queued (latest wins) and performed next, never silently dropped. */
-  tap(id: string) {
+  tap(id: string, point?: THREE.Vector3) {
     if (!this.ids.includes(id)) return false;
+    this.tapPoint = point?.clone() ?? null;
     if (this.busy) {
       this.queued = id;
       return true;
@@ -156,7 +160,11 @@ export class MicroscopeBench extends BenchBase {
     } else if (id === 'micro_turret') {
       const at = this.pos('micro_turret');
       if (!at) return;
-      const next = OBJECTIVES[(OBJECTIVES.indexOf(bio().objective) + 1) % OBJECTIVES.length];
+      // Turn toward the side that was tapped: left = lower power, right = higher power (no wrap-around)
+      const leftSide = this.tapPoint ? this.hands.leftOf(this.tapPoint, at) : false;
+      const idx = OBJECTIVES.indexOf(bio().objective);
+      const next = OBJECTIVES[THREE.MathUtils.clamp(idx + (leftSide ? -1 : 1), 0, OBJECTIVES.length - 1)];
+      if (next === bio().objective) return;
       await this.turn(this.hands.sideFor(at), at, 0.9, () => {
         labStore.update('biology', { objective: next });
         soundFx.playLensTurretClick();
