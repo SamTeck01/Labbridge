@@ -49,6 +49,11 @@ function getManifest() {
   return manifest;
 }
 
+/** Drop cached model data (call when leaving the lab so the landing page doesn't hold the 3D scene in RAM). */
+export function clearModelCache() {
+  cache.clear();
+}
+
 /** Loads /models/<name>.glb if listed in the manifest; resolves to null otherwise or on error. */
 export function loadGLTF(name: string): Promise<GLTF | null> {
   if (!cache.has(name)) {

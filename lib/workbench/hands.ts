@@ -119,6 +119,11 @@ export class FirstPersonHands {
     return true;
   }
 
+  /** True while any hand is moving or steering (the frame scheduler keeps full rate). */
+  get isAnimating() {
+    return Object.values(this.hands).some((h) => h && h.from !== null);
+  }
+
   show(visible: boolean) {
     this.root.visible = visible && this.ready;
   }

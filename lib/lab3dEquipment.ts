@@ -1,5 +1,6 @@
 import type { Station } from '@/lib/labStore';
 import * as THREE from 'three';
+import { releaseCanvasAfterUpload } from '@/lib/scenePerf';
 
 /**
  * 3D Laboratory Equipment & Environment Generator
@@ -89,7 +90,7 @@ export function createPeriodicTableTexture(): THREE.CanvasTexture {
   ctx.textAlign = 'center';
   ctx.fillText('Standard International Chemical Registry • IUPAC Certified Standards', canvas.width / 2, 650);
 
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = releaseCanvasAfterUpload(new THREE.CanvasTexture(canvas));
   texture.needsUpdate = true;
   return texture;
 }
@@ -181,7 +182,7 @@ export function createSafetySignTexture(): THREE.CanvasTexture {
   ctx.font = 'bold 18px sans-serif';
   ctx.fillText('FLUSH EYES FOR 15 MINUTES MINIMUM', 256, 470);
 
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = releaseCanvasAfterUpload(new THREE.CanvasTexture(canvas));
   texture.needsUpdate = true;
   return texture;
 }

@@ -72,6 +72,13 @@ export function mergeStaticMeshes(scene: THREE.Scene, root: THREE.Object3D = sce
     buckets.set(key, bucket);
   });
 
+  // How many meshes use each geometry (clones share geometry): only free fully-merged ones
+  const users = new Map<THREE.BufferGeometry, number>();
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh) users.set(m.geometry, (users.get(m.geometry) ?? 0) + 1);
+  });
+
   const group = new THREE.Group();
   group.name = 'mergedStatic';
   for (const { material, geos, meshes, castShadow } of buckets.values()) {
@@ -84,7 +91,12 @@ export function mergeStaticMeshes(scene: THREE.Scene, root: THREE.Object3D = sce
     m.userData.merged = true;
     m.matrixAutoUpdate = false;
     group.add(m);
-    meshes.forEach((orig) => orig.removeFromParent());
+    meshes.forEach((orig) => {
+      orig.removeFromParent();
+      const left = (users.get(orig.geometry) ?? 1) - 1;
+      users.set(orig.geometry, left);
+      if (left === 0) orig.geometry.dispose(); // frees GPU buffers of the now-merged original
+    });
   }
   scene.add(group);
   return group;
@@ -210,5 +222,54 @@ export class QualityManager {
       if (this.drops >= 3) this.locked = true;
       else this.set(this.tier - 1, now);
     }
+  }
+}
+
+/**
+ * Canvas textures keep their <canvas> (width x height x 4 bytes) in RAM forever. Once the pixels are
+ * on the GPU the canvas isn't needed: shrink its backing store to 1x1 right after the upload.
+ */
+export function releaseCanvasAfterUpload<T extends THREE.Texture>(texture: T): T {
+  texture.onUpdate = () => {
+    const img = texture.image as HTMLCanvasElement | undefined;
+    if (img && 'width' in img && typeof (img as HTMLCanvasElement).getContext === 'function') {
+      img.width = 1;
+      img.height = 1;
+    }
+    texture.onUpdate = null;
+  };
+  return texture;
+}
+
+/**
+ * Decides whether a requestAnimationFrame tick should render.
+ * - active (input in the last 2.5 s, or something animating): up to 60 fps, never more
+ *   (120/144 Hz laptops would otherwise do double the work)
+ * - idle (nothing happening): 15 fps, so a lab left open doesn't run the GPU flat out all day
+ * - background (window not focused): 5 fps
+ */
+export class FrameScheduler {
+  mode: 'active' | 'idle' | 'background' = 'active';
+  readonly stats = { rendered: 0, skipped: 0 };
+  private lastActivity = 0;
+  private lastRender = 0;
+
+  /** Something happened that should render smoothly for a moment (input, a state change). */
+  poke() {
+    this.lastActivity = performance.now();
+  }
+
+  shouldRender(now: number, animating: boolean) {
+    if (animating) this.lastActivity = now;
+    const focused = typeof document === 'undefined' || document.hasFocus();
+    this.mode = !focused ? 'background' : now - this.lastActivity < 2500 ? 'active' : 'idle';
+    const minGap = this.mode === 'active' ? 1000 / 60 - 1.5 : this.mode === 'idle' ? 1000 / 15 : 1000 / 5;
+    if (now - this.lastRender >= minGap) {
+      this.lastRender = now;
+      this.stats.rendered++;
+      return true;
+    }
+    this.stats.skipped++;
+    return false;
   }
 }

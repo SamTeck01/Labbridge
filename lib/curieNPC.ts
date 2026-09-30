@@ -176,6 +176,7 @@ export async function createCurieNPC(): Promise<CurieNPC> {
   let reach = 0;
   let path: THREE.Vector3[] = [];
   let pathTarget: Station | null | undefined = undefined;
+  let walkingFor = 0;
   const toTarget = new THREE.Vector3();
   const lookTarget = new THREE.Vector3();
 
@@ -195,6 +196,13 @@ export async function createCurieNPC(): Promise<CurieNPC> {
       }
       // Drop waypoints already reached.
       while (path.length > 1 && root.position.distanceTo(path[0]) < 0.1) path.shift();
+      // Safety net: never walk forever (a blocked path would keep the scene rendering at full rate)
+      walkingFor = path.length && root.position.distanceTo(path[path.length - 1]) > 0.08 ? walkingFor + delta : 0;
+      if (walkingFor > 25 && path.length) {
+        root.position.copy(path[path.length - 1]);
+        path = [path[path.length - 1]];
+        walkingFor = 0;
+      }
       const goal = path[0] ?? root.position;
       toTarget.subVectors(goal, root.position).setY(0);
       const dist = toTarget.length();

@@ -55,8 +55,8 @@ import { labStore, useLab, type LabState, type Station } from '@/lib/labStore';
 import { curie, useCurie, startCurieWatch } from '@/lib/curie';
 import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
-import { disposeObject, loadLabModel, swapInModel } from '@/lib/assetLoader';
-import { mergeStaticMeshes, QualityManager } from '@/lib/scenePerf';
+import { disposeObject, loadLabModel, swapInModel, clearModelCache } from '@/lib/assetLoader';
+import { mergeStaticMeshes, QualityManager, FrameScheduler, releaseCanvasAfterUpload } from '@/lib/scenePerf';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { TitrationBench } from '@/lib/workbench/titrationBench';
 import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench } from '@/lib/workbench/benches';
@@ -123,7 +123,7 @@ function applyResearchState(root: THREE.Object3D | null, analyticalState: LabSta
     ctx.fillText(`${analyticalState.balanceWeight.toFixed(4)} g`, 244, 46);
     const mat = display.material as THREE.MeshStandardMaterial;
     mat.map?.dispose();
-    mat.map = new THREE.CanvasTexture(canvas);
+    mat.map = releaseCanvasAfterUpload(new THREE.CanvasTexture(canvas));
     mat.map.colorSpace = THREE.SRGBColorSpace;
     mat.color.set('#ffffff');
     mat.emissive.set('#ffffff');
@@ -784,8 +784,8 @@ export default function Lab3DScene({
     const mainCeilingLight = new THREE.DirectionalLight('#fff8ee', 1.1);
     mainCeilingLight.position.set(0, 8, 0);
     mainCeilingLight.castShadow = true;
-    mainCeilingLight.shadow.mapSize.width = isTouch ? 1024 : 2048;
-    mainCeilingLight.shadow.mapSize.height = isTouch ? 1024 : 2048;
+    mainCeilingLight.shadow.mapSize.width = 1024;
+    mainCeilingLight.shadow.mapSize.height = 1024;
     scene.add(mainCeilingLight);
 
     // Realistic Overhead Fluorescent Troffers with Bright Downlights
@@ -1191,6 +1191,52 @@ export default function Lab3DScene({
     if (process.env.NODE_ENV !== 'production') Object.assign(window, { __quality: quality });
     let shadowFrame = 0;
 
+    // ---- Frame scheduling: what counts as "something is happening" ----
+    const scheduler = new FrameScheduler();
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __scheduler: scheduler });
+    let curieMoving = false;
+    const isAnimating = () => {
+      const lab = labStore.get();
+      const c = curie.get();
+      return (
+        !!transitionRef.current?.active ||
+        Object.values(keysPressed.current).some(Boolean) ||
+        touchMoveVector.current.x !== 0 ||
+        touchMoveVector.current.z !== 0 ||
+        !!focusRef.current ||
+        !!savedLookRef.current ||
+        hands.isAnimating ||
+        Object.values(benchesRef.current).some((bench) => bench?.isBusy) ||
+        lab.chemistry.buretteOpen ||
+        lab.chemistry.stirrerRPM > 0 ||
+        lab.research.centrifugeRunning ||
+        lab.flame.lit ||
+        curieMoving ||
+        c.operating ||
+        c.loading
+      );
+    };
+    if (process.env.NODE_ENV !== 'production') {
+      Object.assign(window, {
+        __whyActive: () => ({
+          transition: !!transitionRef.current?.active,
+          keys: Object.values(keysPressed.current).some(Boolean),
+          focus: !!focusRef.current,
+          savedLook: !!savedLookRef.current,
+          hands: hands.isAnimating,
+          benchBusy: Object.values(benchesRef.current).some((bench) => bench?.isBusy),
+          curieMoving,
+          curieOperating: curie.get().operating,
+          curieLoading: curie.get().loading,
+          lab: labStore.get().chemistry.buretteOpen || labStore.get().chemistry.stirrerRPM > 0 || labStore.get().research.centrifugeRunning || labStore.get().flame.lit,
+        }),
+      });
+    }
+    const poke = () => scheduler.poke();
+    const unsubscribeLab = labStore.subscribe(poke); // any state change animates for a moment
+    const pokeEvents = ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart', 'touchmove'] as const;
+    pokeEvents.forEach((ev) => window.addEventListener(ev, poke, { passive: true }));
+
     // Animation & Physics Loop
     let lastTime = performance.now();
     let coordUpdateCounter = 0;
@@ -1199,9 +1245,11 @@ export default function Lab3DScene({
       animationFrameId.current = requestAnimationFrame(animateLoop);
 
       const now = performance.now();
+      // Render only when needed: full rate while something moves, a trickle when idle (keeps laptops cool)
+      if (!scheduler.shouldRender(now, isAnimating())) return;
       const frameMs = now - lastTime;
       const delta = Math.min(frameMs / 1000, 0.1);
-      quality.frame(frameMs);
+      if (scheduler.mode === 'active') quality.frame(frameMs); // idle frames are slow on purpose
       if (renderer.shadowMap.enabled && ++shadowFrame % 6 === 0) renderer.shadowMap.needsUpdate = true;
       lastTime = now;
 
@@ -1397,7 +1445,9 @@ export default function Lab3DScene({
 
       if (curieNPC) {
         const c = curie.get();
-        const atTarget = curieNPC.update(delta, camera.position, c.targetStation, c.operating);
+        // Real time (not the capped physics delta) so she never walks in slow motion on slow devices
+        const atTarget = curieNPC.update(Math.min(frameMs / 1000, 0.5), camera.position, c.targetStation, c.operating);
+        curieMoving = !atTarget;
         if (atTarget && c.pending.length && !c.operating) curie.arrived();
       }
 
@@ -1431,8 +1481,11 @@ export default function Lab3DScene({
       window.removeEventListener('resize', handleResize);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       disposed = true;
+      unsubscribeLab();
+      pokeEvents.forEach((ev) => window.removeEventListener(ev, poke));
       if (mergeTimer) clearTimeout(mergeTimer);
       disposeObject(scene);
+      clearModelCache();
       envTexture.dispose();
       composer?.dispose();
       renderer.dispose();

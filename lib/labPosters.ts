@@ -1,5 +1,6 @@
 import type { Station } from '@/lib/labStore';
 import * as THREE from 'three';
+import { releaseCanvasAfterUpload } from '@/lib/scenePerf';
 import { tagInteractive } from './lab3dEquipment';
 
 /**
@@ -17,7 +18,7 @@ function createPosterCanvasTexture(
   if (ctx) {
     draw(ctx, width, height);
   }
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = releaseCanvasAfterUpload(new THREE.CanvasTexture(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;

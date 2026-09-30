@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { releaseCanvasAfterUpload } from '@/lib/scenePerf';
 
 /** Dr. Curie's handwritten notes for today's practical, drawn as a marker-on-whiteboard texture. */
 export function createWhiteboardNotes(width = 4.0, height = 2.0): THREE.Mesh {
@@ -52,7 +53,7 @@ export function createWhiteboardNotes(width = 4.0, height = 2.0): THREE.Mesh {
   write('Lab coats buttoned. No food or drink.', 110, 850, 52, red);
   write('— Dr. Curie', 1600, 940, 56, blue);
 
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = releaseCanvasAfterUpload(new THREE.CanvasTexture(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   const mesh = new THREE.Mesh(
