@@ -60,8 +60,12 @@ export abstract class BenchBase implements Workbench {
   abstract update(delta: number): void;
   reset() {}
 
+  // Parts are remembered by name on first lookup: once a hand picks something up it leaves the
+  // rig's hierarchy, and a fresh search of the rig would no longer find it.
+  private nodeCache = new Map<string, THREE.Object3D | null>();
   protected node(name: string) {
-    return this.rig.getObjectByName(name) ?? null;
+    if (!this.nodeCache.has(name) || !this.nodeCache.get(name)) this.nodeCache.set(name, this.rig.getObjectByName(name) ?? null);
+    return this.nodeCache.get(name) ?? null;
   }
 
   protected pos(obj: THREE.Object3D | string) {

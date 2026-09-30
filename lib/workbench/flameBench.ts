@@ -75,6 +75,8 @@ export class FlameBench extends BenchBase {
     tagInteractive(zone, 'flame_zone', 'Bunsen Flame', 'Hold the loop at the edge of the flame', 'hood', 'primary');
     scene.add(zone);
 
+    // Remember parts that the hands will carry out of the kit's hierarchy
+    ['flame_loop', 'anchor_loop_tip', 'flame_lighter', 'anchor_lighter_tip'].forEach((n) => this.node(n));
     const loop = this.node('flame_loop');
     if (loop) {
       loop.updateMatrixWorld(true);
@@ -93,7 +95,7 @@ export class FlameBench extends BenchBase {
     if (!tip) return Promise.resolve();
     const steer = (pose: { wrist: THREE.Vector3 }) => {
       const at = tip.getWorldPosition(new THREE.Vector3());
-      pose.wrist.addScaledVector(target.clone().sub(at), 0.3);
+      pose.wrist.addScaledVector(target.clone().sub(at), 0.45);
     };
     return this.hands.move('right', { wrist: target.clone().add(new THREE.Vector3(0.1, 0.02, 0.03)) }, dur, steer);
   }
@@ -299,8 +301,8 @@ export class FlameBench extends BenchBase {
     const innerMat = this.inner.material as THREE.MeshBasicMaterial;
     if (s.airOpen) {
       // Hot, roaring, non-luminous flame: pale blue outer cone and a bright inner cone
-      this.outer.scale.set(0.0085, 0.075 * flick * (1 + this.saltStrength * 0.25), 0.0085);
-      this.inner.scale.set(0.0052, 0.028 * (1 + (flick - 1) * 0.5), 0.0052);
+      this.outer.scale.set(0.014, 0.085 * flick * (1 + this.saltStrength * 0.25), 0.014);
+      this.inner.scale.set(0.0085, 0.032 * (1 + (flick - 1) * 0.5), 0.0085);
       outerMat.color.set('#4a6cff').lerp(this.saltColour, this.saltStrength);
       outerMat.opacity = 0.32 + this.saltStrength * 0.5;
       innerMat.color.set('#8fd3ff');
@@ -308,8 +310,8 @@ export class FlameBench extends BenchBase {
       this.flame.rotation.z = 0;
     } else {
       // Luminous yellow flame: taller, lazier, swaying
-      this.outer.scale.set(0.011, 0.115 * flick, 0.011);
-      this.inner.scale.set(0.006, 0.035, 0.006);
+      this.outer.scale.set(0.02, 0.13 * flick, 0.02);
+      this.inner.scale.set(0.009, 0.04, 0.009);
       outerMat.color.set('#ff9d2e').lerp(this.saltColour, this.saltStrength * 0.5);
       outerMat.opacity = 0.8;
       innerMat.color.set('#5a78ff');
