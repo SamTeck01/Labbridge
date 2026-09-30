@@ -460,6 +460,12 @@ export default function Lab3DScene({
       return;
     }
 
+    // Walking around: tapping a bench's equipment steps you up to that bench to work on it
+    if (!isSeated && data.station && data.interactId !== 'npc_curie' && !String(data.interactId).startsWith('poster_')) {
+      sitDownAt(data.station);
+      return;
+    }
+
     // At a hands-on bench, the hands perform it
     if (data.station && benchesRef.current[data.station as 'biology']?.tap(String(data.interactId), lastHitPointRef.current ?? undefined)) {
       return;
@@ -546,7 +552,7 @@ export default function Lab3DScene({
         setAnalyticalState((prev) => ({ ...prev, centrifugeRunning: !prev.centrifugeRunning }));
       }
     }
-  }, [sitDownAt]);
+  }, [sitDownAt, isSeated]);
 
   // Teleport helper
   const handleTeleport = useCallback((dest: 'center' | 'biology' | 'chemistry' | 'physics' | 'research') => {
@@ -621,6 +627,8 @@ export default function Lab3DScene({
   // Where the view should turn while the hands work (e.g. up to the burette funnel)
   const focusRef = useRef<THREE.Vector3 | null>(null);
   const lastHitPointRef = useRef<THREE.Vector3 | null>(null);
+  // View the student had before an automatic "look at the action" turn
+  const savedLookRef = useRef<{ x: number; y: number } | null>(null);
   // Pointer position at a workbench (tap/click targets and hover)
   const pointerRef = useRef(new THREE.Vector2(0, 0));
   const handleObjectClickRef = useRef(handleObjectClick);
@@ -1036,87 +1044,104 @@ export default function Lab3DScene({
     const raycaster = new THREE.Raycaster();
     const centerScreen = new THREE.Vector2(0, 0);
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointerRef.current.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-      if (document.pointerLockElement === renderer.domElement) {
-        const sensitivity = 0.0022;
-        cameraEuler.current.y -= e.movementX * sensitivity;
-        cameraEuler.current.x -= e.movementY * sensitivity;
-
-        // When seated, constrain head swivel to realistic cervical rotation range
-        if (isSeatedRef.current) {
-          cameraEuler.current.x = Math.max(-0.9, Math.min(0.65, cameraEuler.current.x));
-        } else {
-          cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
-        }
+    // ---- Input: drag to look, tap/click to act (never both) ----
+    const clampLook = () => {
+      if (isSeatedRef.current) {
+        cameraEuler.current.x = Math.max(-1.25, Math.min(0.6, cameraEuler.current.x));
+      } else {
+        cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
       }
+    };
+    const lookBy = (dx: number, dy: number, sensitivity: number) => {
+      cameraEuler.current.y -= dx * sensitivity;
+      cameraEuler.current.x -= dy * sensitivity;
+      clampLook();
+      savedLookRef.current = null; // the student's own view wins over any automatic turn
+    };
+    const toNdc = (clientX: number, clientY: number) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      return new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    };
+    /** Raycast at a screen point and act on the first usable thing there. */
+    const actAt = (ndc: THREE.Vector2) => {
+      if (!cameraRef.current) return;
+      raycaster.setFromCamera(ndc, cameraRef.current);
+      const hit = raycaster.intersectObjects(interactiveObjectsRef.current, true).find((h) => h.object.userData?.isInteractive);
+      if (hit) {
+        lastHitPointRef.current = hit.point.clone();
+        handleObjectClickRef.current(hit.object);
+      }
+    };
+
+    let suppressClickUntil = 0;
+    let mouseDown: { x: number; y: number; dragged: boolean } | null = null;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      pointerRef.current.copy(toNdc(e.clientX, e.clientY));
+      if (document.pointerLockElement === renderer.domElement) {
+        lookBy(e.movementX, e.movementY, 0.0022);
+      } else if (mouseDown && e.buttons & 1) {
+        // Drag to look (used at a bench, where the mouse is free for clicking things)
+        if (!mouseDown.dragged && Math.hypot(e.clientX - mouseDown.x, e.clientY - mouseDown.y) > 5) mouseDown.dragged = true;
+        if (mouseDown.dragged) lookBy(e.movementX, e.movementY, 0.004);
+      }
+    };
+    const handleMouseDown = (e: MouseEvent) => {
+      mouseDown = { x: e.clientX, y: e.clientY, dragged: false };
+    };
+    const handleMouseUp = () => {
+      if (mouseDown?.dragged) suppressClickUntil = performance.now() + 50;
+      mouseDown = null;
     };
 
     const handleCanvasClick = (e: MouseEvent) => {
-      // At a workbench the student taps/clicks things directly (no pointer lock, no reticle)
+      if (performance.now() < suppressClickUntil) return; // end of a drag, or a touch already handled
       const atWorkbench = isSeatedRef.current && !!seatedStationRef.current;
-      if (!atWorkbench && document.pointerLockElement !== renderer.domElement && !isTouch) {
+      if (!atWorkbench && !isTouch && document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock();
       }
-
-      if (cameraRef.current) {
-        const rect = renderer.domElement.getBoundingClientRect();
-        const pointer = atWorkbench
-          ? new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-          : centerScreen;
-        raycaster.setFromCamera(pointer, cameraRef.current);
-        // First usable thing under the pointer (see through glass shields and liquids)
-        const hit = raycaster.intersectObjects(interactiveObjectsRef.current, true).find((h) => h.object.userData?.isInteractive);
-        if (hit) {
-          lastHitPointRef.current = hit.point.clone();
-          handleObjectClickRef.current(hit.object);
-        }
-      }
+      // Walking with a locked pointer: act on what the reticle is on. Otherwise: on what was clicked.
+      actAt(document.pointerLockElement === renderer.domElement ? centerScreen : toNdc(e.clientX, e.clientY));
     };
 
-    // Mobile / Touch Look Handler on right half of canvas
+    // Touch: any drag on the 3D view looks around; a tap (no drag) acts on what was tapped.
+    // (The walking joystick is its own element, so its touches never reach the canvas.)
+    const touches = new Map<number, { x: number; y: number; lastX: number; lastY: number; dragged: boolean }>();
     const handleTouchStart = (e: TouchEvent) => {
+      if (e.target !== renderer.domElement) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
-        if (t.clientX > window.innerWidth / 2 && touchLookId.current === null) {
-          touchLookId.current = t.identifier;
-          touchLookLastPos.current = { x: t.clientX, y: t.clientY };
-        }
+        touches.set(t.identifier, { x: t.clientX, y: t.clientY, lastX: t.clientX, lastY: t.clientY, dragged: false });
       }
     };
-
     const handleTouchMove = (e: TouchEvent) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
-        if (t.identifier === touchLookId.current && touchLookLastPos.current) {
-          const dx = t.clientX - touchLookLastPos.current.x;
-          const dy = t.clientY - touchLookLastPos.current.y;
-          touchLookLastPos.current = { x: t.clientX, y: t.clientY };
-
-          const sensitivity = 0.004;
-          cameraEuler.current.y -= dx * sensitivity;
-          cameraEuler.current.x -= dy * sensitivity;
-          if (isSeatedRef.current) {
-            cameraEuler.current.x = Math.max(-0.9, Math.min(0.65, cameraEuler.current.x));
-          } else {
-            cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
-          }
-        }
+        const tr = touches.get(t.identifier);
+        if (!tr) continue;
+        if (!tr.dragged && Math.hypot(t.clientX - tr.x, t.clientY - tr.y) > 8) tr.dragged = true;
+        if (tr.dragged) lookBy(t.clientX - tr.lastX, t.clientY - tr.lastY, 0.005);
+        tr.lastX = t.clientX;
+        tr.lastY = t.clientY;
       }
     };
-
     const handleTouchEnd = (e: TouchEvent) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
-        if (t.identifier === touchLookId.current) {
-          touchLookId.current = null;
-          touchLookLastPos.current = null;
+        const tr = touches.get(t.identifier);
+        if (!tr) continue;
+        touches.delete(t.identifier);
+        suppressClickUntil = performance.now() + 500; // the browser's synthetic click must not act twice
+        if (!tr.dragged) {
+          pointerRef.current.copy(toNdc(t.clientX, t.clientY));
+          actAt(toNdc(t.clientX, t.clientY));
         }
       }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
+    renderer.domElement.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
     renderer.domElement.addEventListener('click', handleCanvasClick);
     window.addEventListener('touchstart', handleTouchStart, { passive: true });
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
@@ -1236,16 +1261,23 @@ export default function Lab3DScene({
         const breathY = Math.sin(idleTimerRef.current) * 0.0018;
         const eye = seatedStationRef.current ? seatAnchors.current[seatedStationRef.current].pos.y : EYE_HEIGHT_SITTING;
         cameraRef.current.position.y = eye + breathY;
-        // Turn the view toward the action, or back to the work position
-        const st = seatedStationRef.current;
-        if (st) {
-          const look = focusRef.current ?? seatAnchors.current[st].lookAt;
-          const d = look.clone().sub(cameraRef.current.position);
-          const yaw = Math.atan2(-d.x, -d.z);
-          const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
-          const k = Math.min(1, delta * 3);
+        // The student controls the view. It only turns by itself to follow an action (e.g. up to the
+        // burette funnel), then returns to wherever the student was looking.
+        const k = Math.min(1, delta * 3);
+        const steerTo = (yaw: number, pitch: number) => {
           cameraEuler.current.y += Math.atan2(Math.sin(yaw - cameraEuler.current.y), Math.cos(yaw - cameraEuler.current.y)) * k;
           cameraEuler.current.x += (pitch - cameraEuler.current.x) * k;
+        };
+        if (focusRef.current) {
+          if (!savedLookRef.current) savedLookRef.current = { x: cameraEuler.current.x, y: cameraEuler.current.y };
+          const d = focusRef.current.clone().sub(cameraRef.current.position);
+          steerTo(Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z)));
+        } else if (savedLookRef.current) {
+          const back = savedLookRef.current;
+          steerTo(back.y, back.x);
+          if (Math.abs(back.x - cameraEuler.current.x) + Math.abs(Math.atan2(Math.sin(back.y - cameraEuler.current.y), Math.cos(back.y - cameraEuler.current.y))) < 0.01) {
+            savedLookRef.current = null;
+          }
         }
       }
 
@@ -1348,6 +1380,8 @@ export default function Lab3DScene({
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
+      renderer.domElement.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
       renderer.domElement.removeEventListener('click', handleCanvasClick);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
