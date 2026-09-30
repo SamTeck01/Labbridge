@@ -1411,22 +1411,6 @@ export default function Lab3DScene({
           onClose={() => setIsViewingEyepieces(false)}
           onSaveSnapshot={onSaveSnapshot}
           onAskAI={onAskAI}
-          initialSpecimenId={SPECIMEN_CATALOG[biologyState.slideIndex].id}
-          initialObjective={biologyState.objective}
-          initialCoarse={biologyState.coarseFocus}
-          initialFine={biologyState.fineFocus}
-          initialLight={biologyState.lightIntensity}
-          onStateChange={(st) => {
-            setBiologyState((prev) => ({
-              ...prev,
-              objective: st.objective,
-              coarseFocus: st.coarseFocus,
-              fineFocus: st.fineFocus,
-              stageX: st.stageX,
-              stageY: st.stageY,
-              lightIntensity: st.lightIntensity,
-            }));
-          }}
         />
       )}
 

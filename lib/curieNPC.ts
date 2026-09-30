@@ -128,6 +128,19 @@ export async function createCurieNPC(): Promise<CurieNPC> {
 
   if (real) {
     root.add(real.root);
+    // Mixamo materials import glossy; fabric and skin should be matte.
+    real.root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((m) => {
+        const std = m as THREE.MeshStandardMaterial;
+        if (std.isMeshStandardMaterial) {
+          std.metalness = 0;
+          std.roughness = /hair/i.test(std.name) ? 0.6 : 0.85;
+        }
+      });
+      mesh.frustumCulled = false; // skinned bounds don't follow the animation
+    });
     mixer = new THREE.AnimationMixer(real.root.children[0]);
     const clip = (n: string) => real.gltf.animations.find((a) => a.name.toLowerCase().includes(n));
     const idleClip = clip('idle');

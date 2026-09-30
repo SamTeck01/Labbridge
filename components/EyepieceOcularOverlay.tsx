@@ -21,51 +21,36 @@ import {
 } from 'lucide-react';
 import { SPECIMEN_CATALOG, SpecimenInfo, drawSpecimenToCanvas } from '@/lib/specimenGenerator';
 import { soundFx } from '@/lib/soundEffects';
+import { labStore, useLab, microscopeSharpness } from '@/lib/labStore';
 import { SnapshotItem } from '@/components/LabNotebookModal';
 
 interface EyepieceOcularOverlayProps {
   onClose: () => void;
   onSaveSnapshot: (snapshot: SnapshotItem) => void;
   onAskAI?: (prompt: string, context: string) => void;
-  initialSpecimenId?: string;
-  initialObjective?: '4x' | '10x' | '40x' | '100x';
-  initialCoarse?: number;
-  initialFine?: number;
-  initialLight?: number;
-  onStateChange?: (state: {
-    specimenId: string;
-    objective: '4x' | '10x' | '40x' | '100x';
-    coarseFocus: number;
-    fineFocus: number;
-    stageX: number;
-    stageY: number;
-    lightIntensity: number;
-  }) => void;
 }
 
 export default function EyepieceOcularOverlay({
   onClose,
   onSaveSnapshot,
   onAskAI,
-  initialSpecimenId = 'allium_cepa',
-  initialObjective = '10x',
-  initialCoarse = 0.5,
-  initialFine = 0.5,
-  initialLight = 1.0,
-  onStateChange,
 }: EyepieceOcularOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Optical State
-  const [selectedSpecimenId, setSelectedSpecimenId] = useState<string>(initialSpecimenId);
-  const [objective, setObjective] = useState<'4x' | '10x' | '40x' | '100x'>(initialObjective);
-  const [coarseFocus, setCoarseFocus] = useState<number>(initialCoarse);
-  const [fineFocus, setFineFocus] = useState<number>(initialFine);
-  const [stageX, setStageX] = useState<number>(0);
-  const [stageY, setStageY] = useState<number>(0);
-  const [lightIntensity, setLightIntensity] = useState<number>(initialLight);
+  // Optics live in the shared lab store, so the 3D microscope, this view, experiments and Dr. Curie agree
+  const bio = useLab((st) => st.biology);
+  const selectedSpecimenId = (SPECIMEN_CATALOG[bio.slideIndex] || SPECIMEN_CATALOG[0]).id;
+  const { objective, coarseFocus, fineFocus, lightIntensity, immersionOil } = bio;
+  const setSelectedSpecimenId = (id: string) =>
+    labStore.update('biology', { slideIndex: Math.max(0, SPECIMEN_CATALOG.findIndex((sp) => sp.id === id)) });
+  const setObjective = (o: '4x' | '10x' | '40x' | '100x') => labStore.update('biology', { objective: o });
+  const setCoarseFocus = (v: number) => labStore.update('biology', { coarseFocus: v });
+  const setFineFocus = (v: number) => labStore.update('biology', { fineFocus: v });
+  const setImmersionOil = (v: boolean) => labStore.update('biology', { immersionOil: v });
+  const [stageX] = useState<number>(0);
+  const [stageY] = useState<number>(0);
   const [diaphragmAperture, setDiaphragmAperture] = useState<number>(0.8);
-  const [immersionOil, setImmersionOil] = useState<boolean>(false);
   const [showMicrometer, setShowMicrometer] = useState<boolean>(false);
   const [capturedFlash, setCapturedFlash] = useState<boolean>(false);
 
@@ -73,16 +58,8 @@ export default function EyepieceOcularOverlay({
 
   const magnificationFactor = objective === '4x' ? 40 : objective === '10x' ? 100 : objective === '40x' ? 400 : 1000;
 
-  // Calculate Optical Focus Sharpness
-  const effectiveFocus = coarseFocus * 0.8 + fineFocus * 0.2;
-  const focusDistance = Math.abs(effectiveFocus - selectedSpecimen.optimalFocusHeight);
-  // Sharpness drops rapidly with higher magnification
-  const sensitivity = objective === '100x' ? 18 : objective === '40x' ? 12 : objective === '10x' ? 6 : 3;
-  let sharpness = Math.max(0.02, 1.0 - focusDistance * sensitivity);
-
-  if (objective === '100x' && !immersionOil) {
-    sharpness *= 0.4; // refractive index mismatch without oil
-  }
+  // Optical focus sharpness (shared model)
+  const sharpness = microscopeSharpness(bio);
 
   // Redraw Canvas on Optical Parameter Changes
   const renderEyepiece = useCallback(() => {
@@ -147,18 +124,7 @@ export default function EyepieceOcularOverlay({
 
   useEffect(() => {
     renderEyepiece();
-    if (onStateChange) {
-      onStateChange({
-        specimenId: selectedSpecimenId,
-        objective,
-        coarseFocus,
-        fineFocus,
-        stageX,
-        stageY,
-        lightIntensity,
-      });
-    }
-  }, [renderEyepiece, selectedSpecimenId, objective, coarseFocus, fineFocus, stageX, stageY, lightIntensity, onStateChange]);
+  }, [renderEyepiece]);
 
   const handleObjectiveChange = (newObj: '4x' | '10x' | '40x' | '100x') => {
     soundFx.playLensTurretClick();

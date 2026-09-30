@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { fitModelToDimensions } from '@/lib/gltfLabEquipment';
 import { tagInteractive } from '@/lib/lab3dEquipment';
@@ -132,7 +133,8 @@ export async function loadLabModel(
   const gltf = await loadGLTF(name);
   if (!gltf) return null;
   const root = new THREE.Group();
-  const model = gltf.scene.clone(true);
+  // SkeletonUtils.clone keeps skinned meshes bound to their (cloned) bones
+  const model = cloneSkinned(gltf.scene);
   model.traverse((o) => {
     const m = o as THREE.Mesh;
     if (m.isMesh) {

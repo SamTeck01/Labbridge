@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
 
 /**
  * Single source of truth for all experiment state.
@@ -19,6 +20,7 @@ export interface LabState {
     coarseFocus: number;
     fineFocus: number;
     lightIntensity: number;
+    immersionOil: boolean;
   };
   chemistry: {
     buretteOpen: boolean;
@@ -46,7 +48,7 @@ export interface LabState {
 
 const initialState: LabState = {
   player: { station: null, seated: false },
-  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0 },
+  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false },
   chemistry: { buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
   research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false },
@@ -79,6 +81,18 @@ export function useLab<T>(selector: (s: LabState) => T): T {
 
 // --- Pure simulation helpers (testable, no rendering) ---
 
+/** Image sharpness through the eyepieces, 0.02 (blurred) to 1 (crisp). Shared by the eyepiece view, experiments and Curie. */
+export function microscopeSharpness(b: LabState['biology']): number {
+  const specimen = SPECIMEN_CATALOG[b.slideIndex] || SPECIMEN_CATALOG[0];
+  const effectiveFocus = b.coarseFocus * 0.8 + b.fineFocus * 0.2;
+  const focusDistance = Math.abs(effectiveFocus - specimen.optimalFocusHeight);
+  // Depth of field shrinks with magnification
+  const sensitivity = b.objective === '100x' ? 18 : b.objective === '40x' ? 12 : b.objective === '10x' ? 6 : 3;
+  let sharpness = Math.max(0.02, 1.0 - focusDistance * sensitivity);
+  if (b.objective === '100x' && !b.immersionOil) sharpness *= 0.4; // refractive index mismatch without oil
+  return sharpness;
+}
+
 /** pH of 25 mL 0.1 M HCl titrated with 0.1 M NaOH. Equivalence at 25 mL. */
 export function titrationPH(naohML: number, acidML = 25, conc = 0.1): number {
   const molAcid = acidML * conc;
@@ -101,7 +115,7 @@ export function describeLabState(s: LabState): string {
   const { current } = circuit(s.physics.voltage, s.physics.resistance, s.physics.switchClosed);
   return [
     `Student location: ${s.player.seated && s.player.station ? `seated at ${s.player.station} bench` : 'walking in the lab'}.`,
-    `Biology: microscope objective ${s.biology.objective}, slide #${s.biology.slideIndex}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
+    `Biology: microscope objective ${s.biology.objective}, slide "${SPECIMEN_CATALOG[s.biology.slideIndex]?.name}", image sharpness ${Math.round(microscopeSharpness(s.biology) * 100)}%, immersion oil ${s.biology.immersionOil ? 'applied' : 'none'}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
     `Chemistry: burette ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into 25 mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
     `Physics: switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
     `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}.`,
