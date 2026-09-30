@@ -9,6 +9,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 /** True if this object, or any ancestor, moves or can be clicked (so it must stay separate). */
 function isDynamic(o: THREE.Object3D): boolean {
   for (let n: THREE.Object3D | null = o; n; n = n.parent) {
+    // Hidden things, and anything attached to the camera, must never be baked into the room
+    if (!n.visible || (n as THREE.Camera).isCamera) return true;
     // placeholder: procedural stand-ins that a real model will replace; never bake them in
     if (n.userData?.isInteractive || n.userData?.keepSeparate || n.userData?.placeholder) return true;
   }

@@ -37,7 +37,6 @@ import {
   createReadyMadePhysicsBench,
   createReadyMadeAnalyticalBench,
 } from '@/lib/gltfLabEquipment';
-import { createFirstPersonScientistRig, updateScientistRig } from '@/lib/scientistCharacter';
 import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
 import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
 import ExperimentPanel from '@/components/ExperimentPanel';
@@ -309,7 +308,6 @@ export default function Lab3DScene({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const scientistRigRef = useRef<THREE.Group | null>(null);
   const animationFrameId = useRef<number | null>(null);
 
   // Interactive 3D Equipment Refs
@@ -688,11 +686,6 @@ export default function Lab3DScene({
     cameraRef.current = camera;
 
     // Attach Scientist Character 1st-Person Rig
-    const scientistRig = createFirstPersonScientistRig();
-    scientistRigRef.current = scientistRig;
-    // Placeholder hands hidden until a real first-person arms model exists
-    scientistRig.visible = false;
-    camera.add(scientistRig);
     scene.add(camera);
 
     // First-person gloved hands for hands-on work at the bench
@@ -1180,13 +1173,17 @@ export default function Lab3DScene({
     let useComposer = !!composer;
     const quality = new QualityManager(renderer, isTouch, (t) => {
       useComposer = t.ao && !!composer;
+      const shadowsChanged = renderer.shadowMap.enabled !== t.shadows;
       renderer.shadowMap.enabled = t.shadows;
       renderer.shadowMap.needsUpdate = true;
       composer?.setSize(container.clientWidth, container.clientHeight);
-      scene.traverse((o) => {
-        const m = (o as THREE.Mesh).material as THREE.Material | undefined;
-        if (m) m.needsUpdate = true; // shadow on/off changes shaders
-      });
+      // Recompiling every material causes a hitch; only needed when shadows switch on/off
+      if (shadowsChanged) {
+        scene.traverse((o) => {
+          const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+          if (m) m.needsUpdate = true;
+        });
+      }
     });
     if (process.env.NODE_ENV !== 'production') Object.assign(window, { __quality: quality });
     let shadowFrame = 0;
@@ -1410,15 +1407,6 @@ export default function Lab3DScene({
       }
 
       // Update 1st-Person Scientist Kinematics (Zero float, realistic posture)
-      if (scientistRigRef.current) {
-        updateScientistRig(scientistRigRef.current, {
-          isWalking: isWalkingRef.current,
-          isSeated: isSeatedRef.current,
-          walkTimer: isWalkingRef.current ? walkTimerRef.current : idleTimerRef.current,
-          delta,
-          pitch: cameraEuler.current.x,
-        });
-      }
 
       // Animate Chemistry Stirrer
       if (chemEquipmentRef.current) {
@@ -1489,6 +1477,8 @@ export default function Lab3DScene({
       envTexture.dispose();
       composer?.dispose();
       renderer.dispose();
+      // Release the WebGL context now (browsers cap live contexts; re-entering the lab would pile them up)
+      renderer.forceContextLoss();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
       }

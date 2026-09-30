@@ -2,8 +2,9 @@
  * - 3D models and build assets: cache-first (they're versioned/immutable), so the lab loads instantly after the first visit.
  * - Pages and the API: network-first, falling back to cache for pages when offline. The API is never cached.
  */
-const VERSION = 'labbridge-v1';
-const MODELS = 'labbridge-models-v1';
+const VERSION = 'labbridge-v2';
+const MODELS = 'labbridge-models-v2';
+const MAX_ASSETS = 150; // build files from old deploys are trimmed, so the cache can't grow forever
 
 self.addEventListener('install', (event) => {
   // Warm the model cache in the background using the model manifest
@@ -34,15 +35,40 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
-  const cacheFirst = url.pathname.startsWith('/models/') || url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/');
-  if (cacheFirst && url.pathname !== '/models/manifest.json') {
-    const bucket = url.pathname.startsWith('/models/') ? MODELS : VERSION;
+  // 3D models: serve instantly from cache, refresh in the background (stale-while-revalidate), so an
+  // updated model reaches installed users on their next visit
+  if (url.pathname.startsWith('/models/') && url.pathname !== '/models/manifest.json') {
     event.respondWith(
-      caches.open(bucket).then(async (cache) => {
+      caches.open(MODELS).then(async (cache) => {
+        const hit = await cache.match(req);
+        const refresh = fetch(req)
+          .then((res) => {
+            if (res.ok) cache.put(req, res.clone());
+            return res;
+          })
+          .catch(() => hit);
+        if (hit) {
+          event.waitUntil(refresh);
+          return hit;
+        }
+        return refresh;
+      })
+    );
+    return;
+  }
+
+  // Build assets are content-hashed (immutable): cache-first, oldest trimmed
+  if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/')) {
+    event.respondWith(
+      caches.open(VERSION).then(async (cache) => {
         const hit = await cache.match(req);
         if (hit) return hit;
         const res = await fetch(req);
-        if (res.ok) cache.put(req, res.clone());
+        if (res.ok) {
+          await cache.put(req, res.clone());
+          const keys = await cache.keys();
+          if (keys.length > MAX_ASSETS) await Promise.all(keys.slice(0, keys.length - MAX_ASSETS).map((k) => cache.delete(k)));
+        }
         return res;
       })
     );

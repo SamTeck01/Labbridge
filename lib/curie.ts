@@ -50,6 +50,8 @@ let state: CurieState = {
 const listeners = new Set<() => void>();
 const CHAT_KEY = 'labbridge.curie-chat.v1';
 const set = (patch: Partial<CurieState>) => {
+  // Keep memory bounded in long sessions
+  if (patch.messages && patch.messages.length > 100) patch = { ...patch, messages: patch.messages.slice(-100) };
   state = { ...state, ...patch };
   if (patch.messages) {
     try {

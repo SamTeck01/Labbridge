@@ -50,7 +50,15 @@ Headless software rendering is slow, so trust the *counts* (frames rendered, cal
 8. **React re-rendering the scene component** on lab-state ticks: keep `useLab` subscriptions in small
    child components (`ApparatusSync`), never in `Lab3DScene` itself.
 9. **Merged static geometry**: originals must be disposed after `mergeStaticMeshes` unless shared.
-10. **Dev server**: `next dev` itself uses 1-2 GB RAM and a CPU core. Judge performance on a production
+10. **Baking hidden or camera-attached objects**: `mergeStaticMeshes` must skip anything invisible (at
+    any ancestor) or under the camera, or it freezes a copy into the room (this happened with the old
+    first-person body: floating white cylinders). Delete unused objects instead of hiding them.
+11. **WebGL contexts on remount**: leaving the lab must `renderer.dispose()` *and* `forceContextLoss()`;
+    browsers cap live contexts and each holds GPU memory.
+12. **Service worker caches**: build assets cache-first with a size cap (old deploys trimmed); models
+    stale-while-revalidate so updated models reach installed users. Never cache `/api/`.
+13. **Unbounded arrays in long sessions** (chat history, logs, readings): cap them.
+14. **Dev server**: `next dev` itself uses 1-2 GB RAM and a CPU core. Judge performance on a production
     build (`npm run build && npm start`) or the deployed site.
 
 ## Procedure
