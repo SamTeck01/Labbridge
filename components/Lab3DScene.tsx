@@ -586,7 +586,11 @@ export default function Lab3DScene({
     const handleKeyDown = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = true;
 
-      // Space or Escape stands up if seated
+      // Escape closes the eyepiece view first; otherwise Space/Escape steps back from the bench
+      if (isViewingEyepieces && (e.code === 'Escape' || e.code === 'Space')) {
+        if (e.code === 'Escape') setIsViewingEyepieces(false);
+        return;
+      }
       if ((e.code === 'Space' || e.code === 'Escape') && isSeated) {
         standUp();
       }
@@ -620,7 +624,7 @@ export default function Lab3DScene({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isSeated, seatedStation, hoveredAction, sitDownAt, standUp]);
+  }, [isSeated, seatedStation, hoveredAction, sitDownAt, standUp, isViewingEyepieces]);
 
   // Latest values for the render loop, so the scene is built exactly once
   const isSeatedRef = useRef(isSeated);
@@ -632,6 +636,8 @@ export default function Lab3DScene({
   // Where the view should turn while the hands work (e.g. up to the burette funnel)
   const focusRef = useRef<THREE.Vector3 | null>(null);
   const lastHitPointRef = useRef<THREE.Vector3 | null>(null);
+  // True while a full-screen overlay hides the 3D view: the render loop does no work at all
+  const pausedRef = useRef(false);
   // View the student had before an automatic "look at the action" turn
   const savedLookRef = useRef<{ x: number; y: number } | null>(null);
   // Pointer position at a workbench (tap/click targets and hover)
@@ -641,6 +647,7 @@ export default function Lab3DScene({
   const hoveredIdRef = useRef<string | null>(null);
   useEffect(() => {
     isSeatedRef.current = isSeated;
+    pausedRef.current = isViewingEyepieces;
     seatedStationRef.current = seatedStation;
     handleObjectClickRef.current = handleObjectClick;
     standUpRef.current = standUp;
@@ -1242,6 +1249,8 @@ export default function Lab3DScene({
       animationFrameId.current = requestAnimationFrame(animateLoop);
 
       const now = performance.now();
+      // Nothing to draw while a full-screen view (the eyepieces) covers the lab
+      if (pausedRef.current) return;
       // Render only when needed: full rate while something moves, a trickle when idle (keeps laptops cool)
       if (!scheduler.shouldRender(now, isAnimating())) return;
       const frameMs = now - lastTime;

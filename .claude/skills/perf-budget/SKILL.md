@@ -57,8 +57,10 @@ Headless software rendering is slow, so trust the *counts* (frames rendered, cal
     browsers cap live contexts and each holds GPU memory.
 12. **Service worker caches**: build assets cache-first with a size cap (old deploys trimmed); models
     stale-while-revalidate so updated models reach installed users. Never cache `/api/`.
-13. **Unbounded arrays in long sessions** (chat history, logs, readings): cap them.
-14. **Dev server**: `next dev` itself uses 1-2 GB RAM and a CPU core. Judge performance on a production
+13. **Rendering behind full-screen overlays**: while the eyepiece view (or any full-screen UI) covers
+    the lab, `pausedRef` must stop the 3D loop entirely.
+14. **Unbounded arrays in long sessions** (chat history, logs, readings): cap them.
+15. **Dev server**: `next dev` itself uses 1-2 GB RAM and a CPU core. Judge performance on a production
     build (`npm run build && npm start`) or the deployed site.
 
 ## Procedure
