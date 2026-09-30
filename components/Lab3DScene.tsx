@@ -50,7 +50,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { labStore, useLab, type LabState } from '@/lib/labStore';
 import { curie, useCurie, startCurieWatch } from '@/lib/curie';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
-import { disposeObject, loadLabModel } from '@/lib/assetLoader';
+import { disposeObject, loadLabModel, swapInModel } from '@/lib/assetLoader';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
 
@@ -528,6 +528,15 @@ export default function Lab3DScene({
     scene.environmentIntensity = 0.55;
     pmrem.dispose();
 
+    // Click targets are whatever is tagged interactive in the scene right now (rebuilt after async loads/swaps)
+    const collectInteractives = () => {
+      const list: THREE.Object3D[] = [];
+      scene.traverse((o) => {
+        if (o.userData?.isInteractive) list.push(o);
+      });
+      interactiveObjectsRef.current = list;
+    };
+
     // Procedural room shell; replaced by /models/lab-room.glb when that asset exists
     const proceduralRoom = new THREE.Group();
     scene.add(proceduralRoom);
@@ -636,18 +645,21 @@ export default function Lab3DScene({
     const fumeHood = createFumeHood();
     fumeHood.position.set(0, 0, -11.3);
     scene.add(fumeHood);
+    swapInModel(fumeHood, 'fume-hood');
 
     // Add Emergency Safety Shower & Eye Wash Station
     const safetyShower = createSafetyShower();
     safetyShower.position.set(11.2, 0, 4.0);
     safetyShower.rotation.y = -Math.PI / 2;
     scene.add(safetyShower);
+    swapInModel(safetyShower, 'safety-shower');
 
     // Add Science Whiteboard on Front Wall
     const whiteboard = createLabWhiteboard();
     whiteboard.position.set(0, 2.5, 11.85);
     whiteboard.rotation.y = Math.PI;
     scene.add(whiteboard);
+    swapInModel(whiteboard, 'whiteboard');
 
     // 4 Workstation Benches with Overhead Shelves & Swivel Stools
     const interactiveList: THREE.Object3D[] = [];
@@ -705,10 +717,15 @@ export default function Lab3DScene({
       const shelf = createReagentShelf();
       shelf.position.set(cfg.x, 2.1, cfg.z + (cfg.z < 0 ? -0.6 : 0.6));
       scene.add(shelf);
+      swapInModel(shelf, 'reagent-shelf');
 
       // Add Swivel Lab Stool (Seat cushion at 0.62m)
       const stool = createLabStool(cfg.station, cfg.x, cfg.stoolZ, cfg.stoolZ > 0 ? Math.PI : 0);
       scene.add(stool);
+      swapInModel(stool, 'lab-stool', (model) => {
+        model.traverse((o) => tagInteractive(o, `stool_${cfg.station}`, 'Lab Swivel Stool', 'Sit Down on Chair', cfg.station, 'stool'));
+        collectInteractives();
+      });
       stool.traverse((c) => {
         if (c.userData && c.userData.isInteractive) {
           interactiveList.push(c);
@@ -724,7 +741,7 @@ export default function Lab3DScene({
       microscope.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
-      interactiveObjectsRef.current = [...interactiveList];
+      collectInteractives();
     });
 
     // 2. Chemistry 3D Titration Suite & Ready-Made Glassware GLB Setup
@@ -735,7 +752,7 @@ export default function Lab3DScene({
       chemRig.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
-      interactiveObjectsRef.current = [...interactiveList];
+      collectInteractives();
     });
 
     // 3. Physics 3D Circuit & Apparatus Ready-Made Setup
@@ -747,7 +764,7 @@ export default function Lab3DScene({
       physBench.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
-      interactiveObjectsRef.current = [...interactiveList];
+      collectInteractives();
     });
 
     // 4. Research 3D Analytical Suite Ready-Made Setup
@@ -759,7 +776,7 @@ export default function Lab3DScene({
       resBench.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
-      interactiveObjectsRef.current = [...interactiveList];
+      collectInteractives();
     });
 
     interactiveObjectsRef.current = interactiveList;
@@ -772,7 +789,7 @@ export default function Lab3DScene({
       if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curieNPC: npc });
       scene.add(npc.root);
       interactiveList.push(npc.root);
-      interactiveObjectsRef.current = [...interactiveList];
+      collectInteractives();
     });
 
     // Raycaster for Center Reticle Hover & Click

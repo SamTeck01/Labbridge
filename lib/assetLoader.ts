@@ -159,3 +159,19 @@ export function disposeObject(root: THREE.Object3D) {
     });
   });
 }
+
+/**
+ * Replaces a procedural group's contents with /models/<name>.glb (unfitted, authored at real size).
+ * The group keeps its transform, so placement code stays the same. Resolves true if swapped.
+ */
+export async function swapInModel(group: THREE.Group, name: string, onLoaded?: (model: THREE.Object3D) => void) {
+  const loaded = await loadLabModel(name, null);
+  if (!loaded || !group.parent) return false;
+  [...group.children].forEach((c) => {
+    group.remove(c);
+    disposeObject(c);
+  });
+  group.add(loaded.root);
+  onLoaded?.(loaded.root);
+  return true;
+}
