@@ -109,7 +109,7 @@ function operate({ name, args }: Action) {
       soundFx.playClick();
       break;
     case 'tare_balance':
-      labStore.update('research', { balanceWeight: 0 });
+      labStore.update('research', (r) => ({ tareOffset: r.massOnPan }));
       soundFx.playBeep();
       break;
     case 'set_centrifuge':
@@ -214,7 +214,7 @@ export function startCurieWatch() {
   if (watching || typeof window === 'undefined') return;
   watching = true;
   // Dev hook for driving Curie from the console / automated tests without an API key.
-  if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curie: { curie, applyAction } });
+  if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curie: { curie, applyAction, labStore } });
   const fired = new Set<string>();
   let prev = labStore.get();
 
@@ -243,6 +243,14 @@ export function startCurieWatch() {
     }
     prev = s;
   });
+
+  // Balance reading: settles when the shield is closed, drifts with air currents when open.
+  setInterval(() => {
+    const r = labStore.get().research;
+    const drift = r.doorsOpen ? (Math.random() - 0.5) * 0.0008 : 0;
+    const reading = Math.round((r.massOnPan - r.tareOffset + drift) * 10000) / 10000;
+    if (reading !== r.balanceWeight) labStore.update('research', { balanceWeight: reading });
+  }, 400);
 
   // Burette dispensing simulation runs here so it's independent of rendering.
   setInterval(() => {

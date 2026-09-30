@@ -39,7 +39,8 @@ parent(box("door_glass", (0.004, 0.25, sh - 0.01), (bx + 0.102, 0.06, sz0 + sh /
 parent(box("door_handle", (0.012, 0.04, 0.012), (bx + 0.108, -0.02, sz0 + sh - 0.03), white, bev=0.003), door)
 lathe("weighing_pan", [(0, 0.1), (0.045, 0.1), (0.047, 0.104), (0, 0.104)], steel, loc=(bx, 0.06, 0))
 cyl("pan_stem", 0.006, 0.012, (bx, 0.06, 0.094), steel, verts=16)
-lathe("weigh_boat", [(0, 0.104), (0.02, 0.104), (0.028, 0.114), (0.0275, 0.114), (0.0195, 0.105), (0, 0.105)], mat("weigh_boat", (0.9, 0.9, 0.9), rough=0.5), loc=(bx, 0.06, 0))
+boat = empty("res_weigh_boat", (bx, 0.06, 0.104))
+parent(lathe("weigh_boat", [(0, 0.104), (0.02, 0.104), (0.028, 0.114), (0.0275, 0.114), (0.0195, 0.105), (0, 0.105)], mat("weigh_boat", (0.9, 0.9, 0.9), rough=0.5), loc=(bx, 0.06, 0)), boat)
 
 # ---------- Benchtop centrifuge (right) ----------
 cx = 0.3

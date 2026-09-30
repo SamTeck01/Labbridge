@@ -46,9 +46,14 @@ import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
 import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
 import { createAllLabWallPosters } from '@/lib/labPosters';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { labStore, useLab, type LabState } from '@/lib/labStore';
 import { curie, useCurie, startCurieWatch } from '@/lib/curie';
+import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
 import { disposeObject, loadLabModel, swapInModel } from '@/lib/assetLoader';
 
@@ -167,6 +172,7 @@ export default function Lab3DScene({
   const analyticalState = useLab((st) => st.research);
   const curieSpeech = useCurie((st) => st.speech);
   // Bumped when async-loaded equipment arrives so state effects re-apply to the new meshes
+  const [labReady, setLabReady] = useState(false);
   const [researchVersion, setResearchVersion] = useState(0);
   const [physicsVersion, setPhysicsVersion] = useState(0);
 
@@ -391,9 +397,17 @@ export default function Lab3DScene({
       if (data.interactId === 'res_balance_door') {
         soundFx.playClick();
         setAnalyticalState((prev) => ({ ...prev, doorsOpen: !prev.doorsOpen }));
+      } else if (data.interactId === 'res_weigh_boat') {
+        if (!labStore.get().research.doorsOpen) {
+          curie.say('Slide the draft shield open before you add sample to the boat.');
+        } else {
+          // One spatula of sample, 50-150 mg
+          soundFx.playGlassSlide();
+          setAnalyticalState((prev) => ({ ...prev, massOnPan: prev.massOnPan + 0.05 + Math.random() * 0.1 }));
+        }
       } else if (data.interactId === 'res_tare_btn') {
         soundFx.playBeep();
-        setAnalyticalState((prev) => ({ ...prev, balanceWeight: 0.0 }));
+        setAnalyticalState((prev) => ({ ...prev, tareOffset: prev.massOnPan }));
       } else if (data.interactId === 'res_centrifuge_start' || data.interactId === 'res_centrifuge_lid') {
         soundFx.playCentrifugeSpin();
         setAnalyticalState((prev) => ({ ...prev, centrifugeRunning: !prev.centrifugeRunning }));
@@ -521,6 +535,19 @@ export default function Lab3DScene({
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Ambient occlusion: soft contact shadows in corners, under benches and around equipment.
+    // Desktop only; phones render directly to keep the frame rate up.
+    let composer: EffectComposer | null = null;
+    if (!isTouch) {
+      composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      const gtao = new GTAOPass(scene, camera, width, height);
+      gtao.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1.5, thickness: 1, scale: 1.2 });
+      gtao.blendIntensity = 0.9;
+      composer.addPass(gtao);
+      composer.addPass(new OutputPass());
+    }
+
     // Image-based lighting: gives metal, glass and the epoxy floor something real to reflect.
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -541,7 +568,9 @@ export default function Lab3DScene({
     const proceduralRoom = new THREE.Group();
     scene.add(proceduralRoom);
     loadLabModel('lab-room', null).then((room) => {
-      if (!room || disposed) return;
+      if (disposed) return;
+      setLabReady(true);
+      if (!room) return;
       room.root.traverse((o) => {
         // The shell only receives shadows; the ceiling must not block the key light.
         if (/^(ceiling|led_|wall|window|win_|exterior|skirt|floor)/.test(o.name)) o.castShadow = false;
@@ -659,7 +688,11 @@ export default function Lab3DScene({
     whiteboard.position.set(0, 2.5, 11.85);
     whiteboard.rotation.y = Math.PI;
     scene.add(whiteboard);
-    swapInModel(whiteboard, 'whiteboard');
+    swapInModel(whiteboard, 'whiteboard', (model) => {
+      const notes = createWhiteboardNotes();
+      notes.position.z = 0.012; // just proud of the board surface (model front is local +z)
+      model.add(notes);
+    });
 
     // 4 Workstation Benches with Overhead Shelves & Swivel Stools
     const interactiveList: THREE.Object3D[] = [];
@@ -1049,7 +1082,8 @@ export default function Lab3DScene({
         if (atTarget && c.pending.length && !c.operating) curie.arrived();
       }
 
-      renderer.render(scene, camera);
+      if (composer) composer.render(delta);
+      else renderer.render(scene, camera);
     };
 
     animateLoop();
@@ -1062,6 +1096,7 @@ export default function Lab3DScene({
       cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
+      composer?.setSize(w, h);
     };
 
     window.addEventListener('resize', handleResize);
@@ -1077,6 +1112,7 @@ export default function Lab3DScene({
       disposed = true;
       disposeObject(scene);
       envTexture.dispose();
+      composer?.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
@@ -1170,6 +1206,14 @@ export default function Lab3DScene({
     <div className="relative w-full h-screen bg-slate-950 overflow-hidden select-none">
       {/* 3D WebGL Canvas Container */}
       <div ref={mountRef} className="w-full h-full cursor-crosshair" />
+
+      {/* Loading cover so the placeholder room never flashes */}
+      {!labReady && (
+        <div className="absolute inset-0 z-[60] bg-slate-950 flex flex-col items-center justify-center gap-3 text-slate-300">
+          <div className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm">Preparing the laboratory…</p>
+        </div>
+      )}
 
       {/* Dr. Curie speech bubble */}
       {curieSpeech && !isPhoneOpen && (
@@ -1354,7 +1398,7 @@ export default function Lab3DScene({
           voltageV={physicsState.voltage}
           balanceDoorsOpen={analyticalState.doorsOpen}
           onToggleBalanceDoor={() => setAnalyticalState((prev) => ({ ...prev, doorsOpen: !prev.doorsOpen }))}
-          onTareBalance={() => setAnalyticalState((prev) => ({ ...prev, balanceWeight: 0.0 }))}
+          onTareBalance={() => setAnalyticalState((prev) => ({ ...prev, tareOffset: prev.massOnPan }))}
           balanceWeight={analyticalState.balanceWeight}
           centrifugeRunning={analyticalState.centrifugeRunning}
           onToggleCentrifuge={() => setAnalyticalState((prev) => ({ ...prev, centrifugeRunning: !prev.centrifugeRunning }))}

@@ -96,6 +96,7 @@ export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
   res_balance_display: { label: 'Balance Readout', action: 'Mass reading', category: 'primary', ref: 'balanceDisplay' },
   res_centrifuge_lid: { label: 'Centrifuge Lid', action: 'Start / stop centrifuge', category: 'primary', ref: 'centrifugeLid' },
   res_centrifuge_rotor: { label: 'Centrifuge Rotor', action: 'Start / stop centrifuge', category: 'primary', ref: 'rotor' },
+  res_weigh_boat: { label: 'Weighing Boat', action: 'Add sample to weigh', category: 'primary' },
   res_tare_btn: { label: 'Tare Button', action: 'Tare balance', category: 'switch' },
   res_centrifuge_start: { label: 'Centrifuge', action: 'Start / stop centrifuge', category: 'switch' },
 };

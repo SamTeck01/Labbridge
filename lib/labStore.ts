@@ -34,6 +34,11 @@ export interface LabState {
   };
   research: {
     doorsOpen: boolean;
+    /** True mass on the pan (g), including the empty weighing boat. */
+    massOnPan: number;
+    /** Mass zeroed by the last TARE press. */
+    tareOffset: number;
+    /** Displayed reading (g): massOnPan - tareOffset, drifting with air currents while the shield is open. */
     balanceWeight: number;
     centrifugeRunning: boolean;
   };
@@ -44,7 +49,7 @@ const initialState: LabState = {
   biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0 },
   chemistry: { buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
-  research: { doorsOpen: false, balanceWeight: 0.0, centrifugeRunning: false },
+  research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false },
 };
 
 let state: LabState = initialState;
