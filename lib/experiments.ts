@@ -173,7 +173,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       const Rs = [...new Set(r.readings.map((x) => x.extra?.R ?? 0))];
       const span = Rs.length ? Math.max(...Rs) - Math.min(...Rs) : 0;
       return [
-        { label: 'Data collected', points: Math.min(3, Rs.length) * 15 + (Rs.length >= 5 ? 5 : 0), max: 50, note: `${Rs.length} distinct resistance settings.` },
+        { label: 'Data collected', points: Math.round((Math.min(3, Rs.length) / 3) * 50), max: 50, note: `${Rs.length} distinct resistance settings.` },
         { label: 'Range of data', points: span >= 40 ? 20 : span >= 20 ? 10 : 0, max: 20, note: `Resistances spanned ${span} Ω.` },
         { label: 'Safety', points: (r.mistakes.includes('overcurrent') ? 0 : 20) + (r.completedSteps.includes('open') ? 10 : 0), max: 30, note: r.mistakes.includes('overcurrent') ? 'Exceeded 1 A.' : 'Current kept in the safe range.' },
       ];
@@ -194,7 +194,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       { id: 'record', text: 'Record the mass', coach: 'Stable reading. Record it to four decimal places.', done: (_l, r) => r.readings.length >= 1 },
     ],
     mistakes: [
-      { id: 'overTarget', message: "You're over 0.15 g. On a real balance you'd remove some; note it and be more careful.", check: (l) => l.research.massOnPan - l.research.tareOffset > 0.15 },
+      { id: 'overTarget', message: "You're over 0.15 g. On a real balance you'd remove some; note it and be more careful.", check: (l, r) => r.completedSteps.includes('tare') && l.research.massOnPan - l.research.tareOffset > 0.15 },
     ],
     recordLabel: 'Record mass',
     readingsNeeded: 1,

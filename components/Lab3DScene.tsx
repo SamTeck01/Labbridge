@@ -525,11 +525,12 @@ export default function Lab3DScene({
     scene.add(camera);
 
     // WebGL Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Phones: lower pixel ratio and cheaper shadows keep the frame rate up (AO is also desktop-only)
+    const renderer = new THREE.WebGLRenderer({ antialias: !isTouch, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.25 : 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = isTouch ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -591,8 +592,8 @@ export default function Lab3DScene({
     const mainCeilingLight = new THREE.DirectionalLight('#fff8ee', 1.1);
     mainCeilingLight.position.set(0, 8, 0);
     mainCeilingLight.castShadow = true;
-    mainCeilingLight.shadow.mapSize.width = 2048;
-    mainCeilingLight.shadow.mapSize.height = 2048;
+    mainCeilingLight.shadow.mapSize.width = isTouch ? 1024 : 2048;
+    mainCeilingLight.shadow.mapSize.height = isTouch ? 1024 : 2048;
     scene.add(mainCeilingLight);
 
     // Realistic Overhead Fluorescent Troffers with Bright Downlights
@@ -1024,24 +1025,26 @@ export default function Lab3DScene({
       if (cameraRef.current) {
         cameraRef.current.quaternion.setFromEuler(cameraEuler.current);
 
-        // Center Reticle Raycast
-        raycaster.setFromCamera(centerScreen, cameraRef.current);
-        const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
-        if (hits.length > 0) {
-          const hit = hits[0].object;
-          if (hit.userData && hit.userData.isInteractive && hoveredIdRef.current !== hit.userData.interactId) {
-            hoveredIdRef.current = hit.userData.interactId;
-            setHoveredAction({
-              id: hit.userData.interactId,
-              label: hit.userData.label,
-              action: hit.userData.action,
-              station: hit.userData.station,
-              category: hit.userData.category,
-            });
+        // Center Reticle Raycast (every 3rd frame: hover feedback doesn't need 60 Hz)
+        if (coordUpdateCounter % 3 === 0) {
+          raycaster.setFromCamera(centerScreen, cameraRef.current);
+          const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
+          if (hits.length > 0) {
+            const hit = hits[0].object;
+            if (hit.userData && hit.userData.isInteractive && hoveredIdRef.current !== hit.userData.interactId) {
+              hoveredIdRef.current = hit.userData.interactId;
+              setHoveredAction({
+                id: hit.userData.interactId,
+                label: hit.userData.label,
+                action: hit.userData.action,
+                station: hit.userData.station,
+                category: hit.userData.category,
+              });
+            }
+          } else if (hoveredIdRef.current !== null) {
+            hoveredIdRef.current = null;
+            setHoveredAction(null);
           }
-        } else if (hoveredIdRef.current !== null) {
-          hoveredIdRef.current = null;
-          setHoveredAction(null);
         }
 
         // Update coordinates for Mini Map Radar throttled
@@ -1227,10 +1230,10 @@ export default function Lab3DScene({
             setPhoneAIPrompt(undefined);
             setIsPhoneOpen(true);
           }}
-          className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 max-w-[min(92vw,520px)] text-left bg-white/95 text-slate-900 rounded-2xl px-4 py-3 shadow-2xl border border-slate-200 animate-in fade-in slide-in-from-bottom-2"
+          className="absolute bottom-24 [@media(max-height:500px)]:bottom-auto [@media(max-height:500px)]:top-3 [@media(max-height:500px)]:max-w-[42vw] [@media(max-height:500px)]:py-2 left-1/2 -translate-x-1/2 z-40 max-w-[min(92vw,520px)] text-left bg-white/95 text-slate-900 rounded-2xl px-4 py-3 shadow-2xl border border-slate-200 animate-in fade-in slide-in-from-bottom-2"
         >
           <span className="block text-xs font-semibold text-teal-700 mb-0.5">Dr. Curie · Lab Manager</span>
-          <span className="block text-sm leading-snug">{curieSpeech}</span>
+          <span className="block text-sm [@media(max-height:500px)]:text-xs leading-snug [@media(max-height:500px)]:line-clamp-3">{curieSpeech}</span>
         </button>
       )}
 

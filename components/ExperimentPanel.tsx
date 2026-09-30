@@ -63,13 +63,13 @@ export default function ExperimentPanel({ station }: { station: Station | null }
   if (!active) {
     if (!available) return null;
     return (
-      <div className="absolute top-20 left-4 z-40 w-[min(92vw,340px)] bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl">
+      <div className="absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 w-[min(92vw,340px)] [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl">
         <div className="flex items-center gap-2 text-teal-400 text-xs font-semibold uppercase tracking-wide mb-1">
           <ClipboardList className="w-4 h-4" /> Practical
         </div>
         <h3 className="text-base font-semibold mb-1">{available.title}</h3>
-        <p className="text-sm text-slate-300 mb-3">{available.objective}</p>
-        <ul className="text-xs text-rose-300 mb-3 space-y-0.5">
+        <p className="text-sm text-slate-300 mb-3 [@media(max-height:500px)]:text-xs [@media(max-height:500px)]:line-clamp-3">{available.objective}</p>
+        <ul className="text-xs text-rose-300 mb-3 space-y-0.5 [@media(max-height:500px)]:hidden">
           {available.safety.map((s) => <li key={s}>⚠ {s}</li>)}
         </ul>
         <button
@@ -96,10 +96,15 @@ export default function ExperimentPanel({ station }: { station: Station | null }
   };
 
   return (
-    <div className="absolute top-20 left-4 z-40 w-[min(92vw,340px)] bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl">
+    <div className="absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 w-[min(92vw,340px)] [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl">
       <div className="flex items-center gap-2 mb-2">
         <FlaskConical className="w-4 h-4 text-teal-400" />
-        <h3 className="text-sm font-semibold flex-1">{active.title}</h3>
+        <h3 className="text-sm font-semibold flex-1">
+          {active.title}
+          <span className="ml-1 text-xs font-normal text-slate-400 tabular-nums">
+            {run_.completedSteps.length}/{active.steps.length}
+          </span>
+        </h3>
         <button onClick={() => experiments.abandon()} title="Abandon practical" className="text-slate-400 hover:text-white">
           <X className="w-4 h-4" />
         </button>
@@ -109,7 +114,7 @@ export default function ExperimentPanel({ station }: { station: Station | null }
           const done = run_.completedSteps.includes(s.id);
           const current = !done && active.steps.find((x) => !run_.completedSteps.includes(x.id))?.id === s.id;
           return (
-            <li key={s.id} className={`flex gap-2 text-sm ${done ? 'text-slate-500 line-through' : current ? 'text-white' : 'text-slate-400'}`}>
+            <li key={s.id} className={`flex gap-2 text-sm ${done ? 'text-slate-500 line-through' : current ? 'text-white' : 'text-slate-400'} ${current ? '' : '[@media(max-height:500px)]:hidden'}`}>
               {done ? <CheckCircle2 className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" /> : <Circle className={`w-4 h-4 shrink-0 mt-0.5 ${current ? 'text-teal-400' : ''}`} />}
               <span>{s.text}</span>
             </li>
