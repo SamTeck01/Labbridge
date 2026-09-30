@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { labStore, describeLabState, titrationPH, type Station, type Objective } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
+import { experiments, getExperiment } from '@/lib/experiments';
 
 /**
  * Dr. Curie's "brain": one shared conversation used by every chat surface
@@ -47,8 +48,16 @@ let state: CurieState = {
   operating: false,
 };
 const listeners = new Set<() => void>();
+const CHAT_KEY = 'labbridge.curie-chat.v1';
 const set = (patch: Partial<CurieState>) => {
   state = { ...state, ...patch };
+  if (patch.messages) {
+    try {
+      window.localStorage.setItem(CHAT_KEY, JSON.stringify(state.messages.slice(-40)));
+    } catch {
+      /* chat just won't persist */
+    }
+  }
   listeners.forEach((l) => l());
 };
 
@@ -137,7 +146,7 @@ async function request(body: object): Promise<void> {
     const res = await fetch('/api/assistant', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...body, labState: describeLabState(labStore.get()) }),
+      body: JSON.stringify({ ...body, labState: `${describeLabState(labStore.get())}\n${experiments.describe()}` }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
@@ -179,6 +188,11 @@ export const curie = {
       event,
     });
   },
+  /** A line from Curie that needs no model call (coaching during a practical). */
+  coach(text: string) {
+    set({ messages: [...state.messages, { role: 'assistant', content: text, timestamp: now() }] });
+    say(text);
+  },
   clear() {
     set({ messages: [{ role: 'assistant', content: 'Chat cleared. What are we working on?', timestamp: now() }] });
   },
@@ -213,10 +227,40 @@ let watching = false;
 export function startCurieWatch() {
   if (watching || typeof window === 'undefined') return;
   watching = true;
+  try {
+    const saved = window.localStorage.getItem(CHAT_KEY);
+    if (saved) set({ messages: JSON.parse(saved) });
+  } catch {
+    /* ignore unreadable chat history */
+  }
   // Dev hook for driving Curie from the console / automated tests without an API key.
-  if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curie: { curie, applyAction, labStore } });
+  if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curie: { curie, applyAction, labStore, experiments } });
   const fired = new Set<string>();
   let prev = labStore.get();
+
+  // Practical coaching: Curie comes to the bench, walks the student through each step,
+  // corrects mistakes as they happen, and gives feedback on the result.
+  experiments.init();
+  experiments.onEvent((e) => {
+    if (e.type === 'started') {
+      const def = getExperiment(experiments.get().run?.experimentId);
+      if (def) curie.walkTo(def.station);
+      curie.coach(e.message);
+    } else if (e.type === 'step') {
+      curie.coach(e.message);
+    } else if (e.type === 'mistake') {
+      curie.coach(e.message);
+      soundFx.playBeep();
+    } else if (e.type === 'finished' && e.result) {
+      const r = e.result;
+      curie.coach(`${r.title} complete: ${r.score}/100.`);
+      curie.notify(
+        `The student just finished the practical "${r.title}" with ${r.score}/100. ` +
+          `Breakdown: ${r.breakdown.map((b) => `${b.label} ${b.points}/${b.max} (${b.note})`).join('; ')}. ` +
+          `Mistakes: ${r.mistakes.join(' | ') || 'none'}. Give short, specific feedback: one thing done well, one thing to improve next time.`
+      );
+    }
+  });
 
   labStore.subscribe(() => {
     const s = labStore.get();
@@ -226,18 +270,19 @@ export function startCurieWatch() {
       curie.walkTo(s.player.station);
     }
 
+    const inPractical = !!experiments.get().run;
     // Titration endpoint overshoot.
-    if (s.chemistry.dispensedML > 26 && !fired.has('overshoot')) {
+    if (!inPractical && s.chemistry.dispensedML > 26 && !fired.has('overshoot')) {
       fired.add('overshoot');
       curie.notify(`The student overshot the titration endpoint: ${s.chemistry.dispensedML.toFixed(1)} mL NaOH dispensed and the burette is ${s.chemistry.buretteOpen ? 'still open' : 'closed'}.`);
     }
     // Titrating without indicator.
-    if (s.chemistry.buretteOpen && !s.chemistry.indicatorAdded && !fired.has('noIndicator')) {
+    if (!inPractical && s.chemistry.buretteOpen && !s.chemistry.indicatorAdded && !fired.has('noIndicator')) {
       fired.add('noIndicator');
       curie.notify('The student opened the burette before adding any indicator to the flask.');
     }
     // Very high current in the circuit.
-    if (s.physics.switchClosed && s.physics.voltage / s.physics.resistance > 1 && !fired.has('highCurrent')) {
+    if (!inPractical && s.physics.switchClosed && s.physics.voltage / s.physics.resistance > 1 && !fired.has('highCurrent')) {
       fired.add('highCurrent');
       curie.notify(`Circuit closed at low resistance: ${(s.physics.voltage / s.physics.resistance).toFixed(2)} A through the bulb.`);
     }

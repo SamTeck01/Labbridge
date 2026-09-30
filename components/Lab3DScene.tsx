@@ -41,6 +41,7 @@ import { createFirstPersonScientistRig, updateScientistRig } from '@/lib/scienti
 import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
 import SeatedStationToolbar from '@/components/SeatedStationToolbar';
 import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
+import ExperimentPanel from '@/components/ExperimentPanel';
 import MiniMapRadar from '@/components/MiniMapRadar';
 import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
@@ -401,9 +402,9 @@ export default function Lab3DScene({
         if (!labStore.get().research.doorsOpen) {
           curie.say('Slide the draft shield open before you add sample to the boat.');
         } else {
-          // One spatula of sample, 50-150 mg
+          // One small spatula tip of sample, 20-50 mg
           soundFx.playGlassSlide();
-          setAnalyticalState((prev) => ({ ...prev, massOnPan: prev.massOnPan + 0.05 + Math.random() * 0.1 }));
+          setAnalyticalState((prev) => ({ ...prev, massOnPan: prev.massOnPan + 0.02 + Math.random() * 0.03 }));
         }
       } else if (data.interactId === 'res_tare_btn') {
         soundFx.playBeep();
@@ -1214,6 +1215,9 @@ export default function Lab3DScene({
           <p className="text-sm">Preparing the laboratory…</p>
         </div>
       )}
+
+      {/* Practical brief / checklist / results */}
+      <ExperimentPanel station={isSeated ? seatedStation : null} />
 
       {/* Dr. Curie speech bubble */}
       {curieSpeech && !isPhoneOpen && (

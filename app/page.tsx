@@ -7,6 +7,10 @@ import LabNotebookModal, { SnapshotItem } from '@/components/LabNotebookModal';
 import AILabAssistantModal from '@/components/AILabAssistantModal';
 import LandscapeOrientationPrompt from '@/components/LandscapeOrientationPrompt';
 import { soundFx } from '@/lib/soundEffects';
+import { experiments } from '@/lib/experiments';
+import { labStore, microscopeSharpness } from '@/lib/labStore';
+
+const NOTEBOOK_KEY = 'labbridge.notebook.v1';
 
 // Dynamically import Three.js 3D canvas with SSR disabled
 const Lab3DScene = dynamic(() => import('@/components/Lab3DScene'), {
@@ -29,6 +33,17 @@ export default function Home() {
   // Logged snapshots for Electronic Lab Notebook
   const [snapshots, setSnapshots] = useState<SnapshotItem[]>([]);
 
+  // Restore the notebook after a refresh
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(NOTEBOOK_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from storage
+      if (saved) setSnapshots(JSON.parse(saved));
+    } catch {
+      /* unreadable storage: start with an empty notebook */
+    }
+  }, []);
+
   // Keyboard shortcut ESC to exit active tool drawer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -47,7 +62,17 @@ export default function Home() {
   }, [isNotebookOpen, isAIAssistantOpen]);
 
   const handleCaptureSnapshot = (snapshot: SnapshotItem) => {
-    setSnapshots((prev) => [snapshot, ...prev]);
+    // Let an active microscopy practical know an image was captured, and how sharp it was
+    experiments.event('snapshot', microscopeSharpness(labStore.get().biology));
+    setSnapshots((prev) => {
+      const next = [snapshot, ...prev].slice(0, 20);
+      try {
+        window.localStorage.setItem(NOTEBOOK_KEY, JSON.stringify(next));
+      } catch {
+        /* images can exceed storage quota; the notebook still works for this session */
+      }
+      return next;
+    });
   };
 
   const handleOpenAIAssistantWithContext = (prompt: string, context: string) => {
