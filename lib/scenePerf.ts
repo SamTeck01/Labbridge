@@ -104,10 +104,12 @@ export function cheapGlass(root: THREE.Object3D) {
       const strength = m.transmission;
       m.transmission = 0;
       m.transparent = true;
-      m.opacity = Math.max(0.18, 0.55 - strength * 0.35);
+      // Faint blue-grey tint + stronger reflections so glass reads against white walls
+      m.opacity = Math.max(0.3, 0.6 - strength * 0.3);
+      m.color.lerp(new THREE.Color('#9fc1dd'), 0.45);
       m.depthWrite = false;
       m.roughness = Math.min(m.roughness, 0.08);
-      m.envMapIntensity = 1.4;
+      m.envMapIntensity = 1.8;
       m.needsUpdate = true;
     });
   });

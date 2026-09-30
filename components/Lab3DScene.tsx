@@ -58,6 +58,9 @@ import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
 import { disposeObject, loadLabModel, swapInModel } from '@/lib/assetLoader';
 import { mergeStaticMeshes, AdaptiveResolution } from '@/lib/scenePerf';
+import { FirstPersonHands } from '@/lib/workbench/hands';
+import { TitrationBench } from '@/lib/workbench/titrationBench';
+import { experiments } from '@/lib/experiments';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
 
@@ -186,6 +189,7 @@ export default function Lab3DScene({
   const physicsState = useLab((st) => st.physics);
   const analyticalState = useLab((st) => st.research);
   const curieSpeech = useCurie((st) => st.speech);
+  const atWorkbench = isSeated && seatedStation === 'chemistry';
   // Bumped when async-loaded equipment arrives so state effects re-apply to the new meshes
   const [labReady, setLabReady] = useState(false);
   const [researchVersion, setResearchVersion] = useState(0);
@@ -235,9 +239,10 @@ export default function Lab3DScene({
       lookAt: new THREE.Vector3(-4.5, 1.10, -3.5),
       baseYaw: 0,
     },
+    // Chemistry is a standing workbench: apparatus at the front edge, student standing close over it
     chemistry: {
-      pos: new THREE.Vector3(4.5, EYE_HEIGHT_SITTING, -2.35),
-      lookAt: new THREE.Vector3(4.5, 1.10, -3.5),
+      pos: new THREE.Vector3(4.5, 1.44, -2.34),
+      lookAt: new THREE.Vector3(4.5, 1.04, -2.98),
       baseYaw: 0,
     },
     physics: {
@@ -260,7 +265,8 @@ export default function Lab3DScene({
       const startPos = cameraRef.current.position.clone();
       const lookDir = new THREE.Vector3().subVectors(anchor.lookAt, anchor.pos).normalize();
       const targetYaw = Math.atan2(-lookDir.x, -lookDir.z);
-      const targetPitch = -0.22; // Natural angle looking slightly down at bench apparatus
+      // Look down at the apparatus from the work position
+      const targetPitch = Math.atan2(anchor.lookAt.y - anchor.pos.y, Math.hypot(anchor.lookAt.x - anchor.pos.x, anchor.lookAt.z - anchor.pos.z));
 
       transitionRef.current = {
         active: true,
@@ -383,6 +389,8 @@ export default function Lab3DScene({
           lightIntensity: prev.lightIntensity > 0.5 ? 0.3 : 1.0,
         }));
       }
+    } else if (data.station === 'chemistry' && titrationBenchRef.current?.tap(String(data.interactId))) {
+      // performed by the hands
     } else if (data.station === 'chemistry') {
       if (data.interactId === 'chem_stopcock' || data.interactId === 'chem_burette_valve') {
         soundFx.playClick();
@@ -495,17 +503,34 @@ export default function Lab3DScene({
 
   // Latest values for the render loop, so the scene is built exactly once
   const isSeatedRef = useRef(isSeated);
+  const seatedStationRef = useRef(seatedStation);
+  const handsRef = useRef<FirstPersonHands | null>(null);
+  const titrationBenchRef = useRef<TitrationBench | null>(null);
+  // Where the view should turn while the hands work (e.g. up to the burette funnel)
+  const focusRef = useRef<THREE.Vector3 | null>(null);
+  // Pointer position at a workbench (tap/click targets and hover)
+  const pointerRef = useRef(new THREE.Vector2(0, 0));
   const handleObjectClickRef = useRef(handleObjectClick);
   const standUpRef = useRef(standUp);
   const hoveredIdRef = useRef<string | null>(null);
   useEffect(() => {
     isSeatedRef.current = isSeated;
+    seatedStationRef.current = seatedStation;
     handleObjectClickRef.current = handleObjectClick;
     standUpRef.current = standUp;
   });
 
   useEffect(() => {
     startCurieWatch();
+    const onDrop = () => titrationBenchRef.current?.visualDrop();
+    window.addEventListener('labbridge:drop', onDrop);
+    const off = experiments.onEvent((e) => {
+      if (e.type === 'started') titrationBenchRef.current?.reset();
+    });
+    return () => {
+      window.removeEventListener('labbridge:drop', onDrop);
+      off();
+    };
   }, []);
 
   // Main Three.js Scene Setup & Render Loop (runs once)
@@ -538,6 +563,11 @@ export default function Lab3DScene({
     camera.add(scientistRig);
     scene.add(camera);
 
+    // First-person gloved hands for hands-on work at the bench
+    const hands = new FirstPersonHands(camera);
+    handsRef.current = hands;
+    const handsPromise = hands.load().catch(() => false);
+
     // WebGL Renderer
     // Phones: lower pixel ratio and cheaper shadows keep the frame rate up (AO is also desktop-only)
     const renderer = new THREE.WebGLRenderer({ antialias: !isTouch, powerPreference: 'high-performance' });
@@ -550,7 +580,7 @@ export default function Lab3DScene({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
-    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __renderer: renderer, __scene: scene });
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __renderer: renderer, __scene: scene, __camera: camera });
 
     // Ambient occlusion: soft contact shadows in corners, under benches and around equipment.
     // Desktop only; phones render directly to keep the frame rate up.
@@ -809,7 +839,7 @@ export default function Lab3DScene({
 
     // 2. Chemistry 3D Titration Suite & Ready-Made Glassware GLB Setup
     createReadyMadeChemistryStation('chemistry').then((chemRig) => {
-      chemRig.position.set(4.5, 0.94, -3.5);
+      chemRig.position.set(4.5, 0.94, -2.98); // front edge of the bench, within reach
       scene.add(chemRig);
       chemEquipmentRef.current = chemRig;
       chemRig.traverse((c) => {
@@ -817,6 +847,18 @@ export default function Lab3DScene({
       });
       collectInteractives();
       scheduleMerge();
+      // Hands-on titration once the hands are ready
+      handsPromise.then((ok) => {
+        if (!ok || disposed) return;
+        TitrationBench.create(scene, chemRig, hands, (p) => (focusRef.current = p ? p.clone() : null))
+          .then((bench) => {
+            if (disposed) return;
+            titrationBenchRef.current = bench;
+            if (process.env.NODE_ENV !== 'production') Object.assign(window, { __titration: bench });
+            collectInteractives();
+          })
+          .catch((err) => console.error('Titration bench setup failed', err));
+      });
     });
 
     // 3. Physics 3D Circuit & Apparatus Ready-Made Setup
@@ -864,6 +906,8 @@ export default function Lab3DScene({
     const centerScreen = new THREE.Vector2(0, 0);
 
     const handleMouseMove = (e: MouseEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointerRef.current.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       if (document.pointerLockElement === renderer.domElement) {
         const sensitivity = 0.0022;
         cameraEuler.current.y -= e.movementX * sensitivity;
@@ -878,14 +922,19 @@ export default function Lab3DScene({
       }
     };
 
-    const handleCanvasClick = () => {
-      if (document.pointerLockElement !== renderer.domElement && !isTouch) {
+    const handleCanvasClick = (e: MouseEvent) => {
+      // At a workbench the student taps/clicks things directly (no pointer lock, no reticle)
+      const atWorkbench = isSeatedRef.current && seatedStationRef.current === 'chemistry';
+      if (!atWorkbench && document.pointerLockElement !== renderer.domElement && !isTouch) {
         renderer.domElement.requestPointerLock();
       }
 
-      // Check raycast click on center dot
       if (cameraRef.current) {
-        raycaster.setFromCamera(centerScreen, cameraRef.current);
+        const rect = renderer.domElement.getBoundingClientRect();
+        const pointer = atWorkbench
+          ? new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+          : centerScreen;
+        raycaster.setFromCamera(pointer, cameraRef.current);
         const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
         if (hits.length > 0) {
           const hitObj = hits[0].object;
@@ -1054,16 +1103,29 @@ export default function Lab3DScene({
         // Gentle seated breathing
         idleTimerRef.current += delta * 1.5;
         const breathY = Math.sin(idleTimerRef.current) * 0.0018;
-        cameraRef.current.position.y = EYE_HEIGHT_SITTING + breathY;
+        const eye = seatedStationRef.current ? seatAnchors.current[seatedStationRef.current].pos.y : EYE_HEIGHT_SITTING;
+        cameraRef.current.position.y = eye + breathY;
+        // Turn the view toward the action, or back to the work position
+        const st = seatedStationRef.current;
+        if (st) {
+          const look = focusRef.current ?? seatAnchors.current[st].lookAt;
+          const d = look.clone().sub(cameraRef.current.position);
+          const yaw = Math.atan2(-d.x, -d.z);
+          const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
+          const k = Math.min(1, delta * 3);
+          cameraEuler.current.y += Math.atan2(Math.sin(yaw - cameraEuler.current.y), Math.cos(yaw - cameraEuler.current.y)) * k;
+          cameraEuler.current.x += (pitch - cameraEuler.current.x) * k;
+        }
       }
 
       // Apply Camera Orientation & Reticle Raycast
       if (cameraRef.current) {
         cameraRef.current.quaternion.setFromEuler(cameraEuler.current);
 
-        // Center Reticle Raycast (every 3rd frame: hover feedback doesn't need 60 Hz)
+        // Hover raycast (every 3rd frame): reticle when exploring, pointer at a workbench
         if (coordUpdateCounter % 3 === 0) {
-          raycaster.setFromCamera(centerScreen, cameraRef.current);
+          const atBench = isSeatedRef.current && seatedStationRef.current === 'chemistry';
+          raycaster.setFromCamera(atBench ? pointerRef.current : centerScreen, cameraRef.current);
           const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
           if (hits.length > 0) {
             const hit = hits[0].object;
@@ -1112,6 +1174,18 @@ export default function Lab3DScene({
           uData.stirBar.rotation.y += (labStore.get().chemistry.stirrerRPM / 60) * Math.PI * 2 * delta;
         }
       }
+
+      const working = isSeatedRef.current && seatedStationRef.current === 'chemistry';
+      hands.show(working && !transitionRef.current?.active);
+      // Lean in at the workbench: narrower field of view for a close-up of the apparatus
+      const targetFov = working ? 50 : 65;
+      if (Math.abs(camera.fov - targetFov) > 0.05) {
+        camera.fov += (targetFov - camera.fov) * Math.min(1, delta * 4);
+        camera.updateProjectionMatrix();
+      }
+      const realDelta = Math.min(frameMs / 1000, 0.5);
+      hands.update(realDelta);
+      titrationBenchRef.current?.update(realDelta);
 
       const rotor = resEquipmentRef.current?.userData.rotor as THREE.Object3D | undefined;
       if (rotor && labStore.get().research.centrifugeRunning) rotor.rotation.y += 40 * delta;
@@ -1267,15 +1341,22 @@ export default function Lab3DScene({
             setPhoneAIPrompt(undefined);
             setIsPhoneOpen(true);
           }}
-          className="absolute bottom-24 [@media(max-height:500px)]:bottom-auto [@media(max-height:500px)]:top-3 [@media(max-height:500px)]:max-w-[42vw] [@media(max-height:500px)]:py-2 left-1/2 -translate-x-1/2 z-40 max-w-[min(92vw,520px)] text-left bg-white/95 text-slate-900 rounded-2xl px-4 py-3 shadow-2xl border border-slate-200 animate-in fade-in slide-in-from-bottom-2"
+          className={`absolute ${atWorkbench ? 'top-3 max-w-[min(60vw,520px)] py-2' : 'bottom-24'} [@media(max-height:500px)]:bottom-auto [@media(max-height:500px)]:top-3 [@media(max-height:500px)]:max-w-[42vw] [@media(max-height:500px)]:py-2 left-1/2 -translate-x-1/2 z-40 max-w-[min(92vw,520px)] text-left bg-white/95 text-slate-900 rounded-2xl px-4 py-3 shadow-2xl border border-slate-200 animate-in fade-in slide-in-from-bottom-2`}
         >
           <span className="block text-xs font-semibold text-teal-700 mb-0.5">Dr. Curie · Lab Manager</span>
           <span className="block text-sm [@media(max-height:500px)]:text-xs leading-snug [@media(max-height:500px)]:line-clamp-3">{curieSpeech}</span>
         </button>
       )}
 
+      {/* At a workbench: no reticle; what's under the pointer is named at the top */}
+      {atWorkbench && hoveredAction && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-slate-900/90 px-3 py-1.5 rounded-full border border-emerald-500/50 text-xs text-white">
+          {hoveredAction.label} <span className="text-emerald-300">· {hoveredAction.action}</span>
+        </div>
+      )}
+
       {/* Center Reticle Crosshair ("The Dot") */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-30 ${atWorkbench ? 'hidden' : ''}`}>
         <div
           className={`w-2.5 h-2.5 rounded-full border transition-all duration-150 ${
             hoveredAction
@@ -1398,7 +1479,17 @@ export default function Lab3DScene({
       </div>
 
       {/* Seated Station Direct 3D Equipment Toolbar */}
-      {isSeated && seatedStation && (
+      {/* At the workbench the hands do the work: just a way to step back */}
+      {atWorkbench && (
+        <button
+          onClick={standUp}
+          className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-slate-900/85 border border-slate-600 text-sm text-white hover:bg-slate-800"
+        >
+          Step back from the bench
+        </button>
+      )}
+
+      {isSeated && seatedStation && !atWorkbench && (
         <SeatedStationToolbar
           station={seatedStation}
           onStandUp={standUp}

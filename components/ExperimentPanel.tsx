@@ -90,8 +90,10 @@ export default function ExperimentPanel({ station }: { station: Station | null }
   };
   const addDrop = () => {
     const c = labStore.get().chemistry;
+    if (c.buretteML < 0.05) return;
     const dispensedML = Math.round((c.dispensedML + 0.05) * 100) / 100;
-    labStore.update('chemistry', { dispensedML, phValue: titrationPH(dispensedML) });
+    labStore.update('chemistry', { dispensedML, buretteML: c.buretteML - 0.05, phValue: titrationPH(dispensedML, c.flaskAcidML) });
+    window.dispatchEvent(new CustomEvent('labbridge:drop'));
     soundFx.playDropLiquid();
   };
 

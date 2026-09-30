@@ -43,8 +43,9 @@ flask = empty("chem_flask", (sx, sy + 0.005, fz))
 prof = [(0.0, 0.0), (0.036, 0.0), (0.041, 0.003), (0.042, 0.008), (0.034, 0.045), (0.022, 0.085),
         (0.016, 0.105), (0.0155, 0.128), (0.0175, 0.130), (0.0175, 0.134), (0.0145, 0.134)]
 g = lathe("flask_glass", prof, glass, thickness=0.0015); g.parent = flask
-liq = lathe("chem_flask_liquid", [(0, 0.002), (0.039, 0.002), (0.0405, 0.008), (0.0355, 0.038), (0, 0.038)], flaskl)
-liq.parent = flask
+# Liquid inside the flask is generated at runtime from this same profile (it rises as you pour).
+empty("anchor_flask_base", (0, 0, 0.0015), parent=flask)
+empty("anchor_flask_mouth", (0, 0, 0.134), parent=flask)
 bar = empty("chem_stir_bar", (0, 0, 0.007), parent=flask)
 b = cyl("stir_bar_mesh", 0.0035, 0.025, (0, 0, 0), white_p, verts=16, rot=(0, math.pi / 2, 0), bev=0.0015); b.parent = bar
 
@@ -62,7 +63,14 @@ lathe("boss_screw", [(0, 0), (0.004, 0), (0.004, 0.02), (0.009, 0.02), (0.009, 0
 tube_bot, tube_top = 0.262, 0.61
 lathe("burette_glass", [(0.0065, tube_bot), (0.0065, tube_top), (0.0072, tube_top + 0.002), (0.0072, tube_top + 0.004)], glass, thickness=0.001)
 lathe("burette_tip", [(0.0, 0.228), (0.0012, 0.228), (0.002, 0.236), (0.004, 0.245), (0.0065, 0.252), (0.0065, 0.262)], glass, thickness=0.0006)
-cyl("burette_naoh", 0.0055, 0.26, (bx, by, 0.262 + 0.13), naoh, verts=24)
+# NaOH column is generated at runtime; anchors mark the scale so the level reads true.
+empty("anchor_burette_zero", (bx, by, tube_top - 0.02))
+empty("anchor_burette_fifty", (bx, by, tube_top - 0.02 - 50 * 0.0062))
+empty("anchor_burette_tip", (bx, by, 0.228))
+# Filling funnel resting in the burette mouth
+fun = empty("chem_funnel", (bx, by, tube_top))
+parent(lathe("funnel_glass", [(0.0035, tube_top - 0.02), (0.0035, tube_top + 0.012), (0.03, tube_top + 0.05), (0.032, tube_top + 0.052)], glass, thickness=0.0012), fun)
+parent(empty("anchor_funnel_mouth", (bx, by, tube_top + 0.05)), fun)
 for obj_name in ("burette_glass", "burette_tip"):
     o = bpy.data.objects[obj_name]; o.location = (bx, by, 0)
 # graduations every mL (major every 5 mL)
@@ -81,7 +89,11 @@ parent(cyl("stopcock_nut", 0.005, 0.004, (bx, by + 0.02, 0.255), ptfe, verts=6, 
 # --- Phenolphthalein dropper bottle ---
 ind = empty("chem_indicator", (0.14, -0.06, 0.014))
 parent(lathe("bottle", [(0, 0), (0.014, 0), (0.016, 0.004), (0.016, 0.045), (0.011, 0.055), (0.006, 0.058), (0.006, 0.064), (0, 0.064)], amber, loc=(0.14, -0.06, 0.014)), ind)
-parent(lathe("pipette_bulb", [(0.003, 0.064), (0.0075, 0.064), (0.0075, 0.072), (0.006, 0.085), (0, 0.09)], rubber, loc=(0.14, -0.06, 0.014)), ind)
+# Removable dropper: rubber bulb + glass stem (the hand lifts this out and squeezes it over the flask)
+dropper = parent(empty("chem_dropper", (0.14, -0.06, 0.014 + 0.064)), ind)
+parent(lathe("pipette_bulb", [(0.003, 0.064), (0.0075, 0.064), (0.0075, 0.072), (0.006, 0.085), (0, 0.09)], rubber, loc=(0.14, -0.06, 0.014)), dropper)
+parent(cyl("dropper_stem", 0.0022, 0.05, (0.14, -0.06, 0.014 + 0.04), glass, verts=12), dropper)
+parent(empty("anchor_dropper_tip", (0.14, -0.06, 0.014 + 0.015)), dropper)
 lbl = lathe("label", [(0.0162, 0.012), (0.0162, 0.036)], label, loc=(0.14, -0.06, 0.014)); parent(lbl, ind)
 
 for o in bpy.data.objects:

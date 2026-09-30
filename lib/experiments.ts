@@ -86,9 +86,11 @@ export const EXPERIMENTS: ExperimentDef[] = [
     title: 'Acid–Base Titration',
     objective: 'Find the volume of 0.1 M NaOH that exactly neutralises 25.0 mL of 0.1 M HCl, using phenolphthalein.',
     safety: ['Goggles on: NaOH is corrosive.', 'Close the burette before you walk away.'],
-    intro: "Today we're finding the endpoint of HCl with NaOH. First, add phenolphthalein to the flask. No indicator, no endpoint.",
+    intro: "Today we're finding the endpoint of HCl with NaOH. Start by filling the burette: pick up the NaOH bottle and pour it through the funnel.",
     steps: [
-      { id: 'indicator', text: 'Add 2–3 drops of phenolphthalein to the flask', coach: 'Click the flask or indicator bottle to add phenolphthalein.', done: (l) => l.chemistry.indicatorAdded },
+      { id: 'fill', text: 'Fill the burette with 0.1 M NaOH to 0.00 mL', coach: 'Pick up the NaOH bottle and pour it through the funnel into the burette until it reaches the zero mark.', done: (l) => l.chemistry.buretteML >= 49.5 },
+      { id: 'acid', text: 'Pour 25.0 mL of 0.1 M HCl into the flask', coach: 'Now the measuring cylinder of HCl. Pour all 25 mL into the conical flask.', done: (l) => l.chemistry.flaskAcidML >= 24.5 },
+      { id: 'indicator', text: 'Add 2–3 drops of phenolphthalein to the flask', coach: 'Take the dropper from the indicator bottle and squeeze a few drops into the flask.', done: (l) => l.chemistry.indicatorAdded },
       { id: 'stir', text: 'Switch on the magnetic stirrer', coach: 'Turn on the stirrer so each addition mixes in. Around 400 rpm is fine.', done: (l) => l.chemistry.stirrerRPM > 0 },
       { id: 'titrate', text: 'Open the burette and titrate', coach: 'Open the stopcock. Run it steadily at first; the endpoint is near 25 mL.', done: (l) => l.chemistry.dispensedML > 0.5 },
       { id: 'endpoint', text: 'Close the burette at the first permanent pink', coach: 'Near 24 mL, close it and add single drops. Stop at the first faint pink that stays.', done: (l) => l.chemistry.phValue >= 8.2 && !l.chemistry.buretteOpen },
@@ -96,6 +98,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     ],
     mistakes: [
       { id: 'noIndicator', message: "Stop. You're titrating without indicator, so you won't see the endpoint.", check: (l) => l.chemistry.dispensedML > 0 && !l.chemistry.indicatorAdded },
+      { id: 'noAcid', message: "There's no acid in the flask yet. Measure the 25 mL of HCl in first, or there's nothing to titrate.", check: (l) => l.chemistry.dispensedML > 0 && l.chemistry.flaskAcidML < 24.5 },
       { id: 'overshoot', message: "That's well past the endpoint. Deep pink means excess base. Close the burette and note it.", check: (l) => l.chemistry.dispensedML > 26.5 },
     ],
     recordLabel: 'Record titre',
@@ -327,7 +330,7 @@ export const experiments = {
     const def = getExperiment(id);
     if (!def) return;
     // Fresh apparatus for the practical
-    if (def.id === 'titration') labStore.update('chemistry', { buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0) });
+    if (def.id === 'titration') labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
     if (def.id === 'weighing') labStore.update('research', { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0 });
     if (def.id === 'microscopy') labStore.update('biology', { objective: '10x', coarseFocus: 0.2, fineFocus: 0.5, immersionOil: false });
     set({ run: { experimentId: id, startedAt: Date.now(), completedSteps: [], readings: [], mistakes: [], events: {} }, lastResult: null });

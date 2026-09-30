@@ -68,13 +68,14 @@ def empty(name, loc=(0,0,0), parent=None):
     return o
 
 def parent(child, par):
+    bpy.context.view_layer.update()  # fresh world matrices for newly created objects
     mw = child.matrix_world.copy(); child.parent = par; child.matrix_world = mw
     return child
 
 def export(path):
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', export_apply=True, export_yup=True)
 
-def preview(path, target=(0,0,0.3), dist=1.1, elev=0.35, az=-0.6):
+def preview(path, target=(0,0,0.3), dist=1.1, elev=0.35, az=-0.6, floor=True):
     """Studio render for review."""
     sc = bpy.context.scene
     sc.render.engine = 'CYCLES'; sc.cycles.samples = 64; sc.cycles.device = 'CPU'
@@ -82,8 +83,9 @@ def preview(path, target=(0,0,0.3), dist=1.1, elev=0.35, az=-0.6):
     w = bpy.data.worlds.new("w"); sc.world = w; w.use_nodes = True
     w.node_tree.nodes["Background"].inputs[0].default_value = (0.8, 0.82, 0.85, 1)
     w.node_tree.nodes["Background"].inputs[1].default_value = 0.35
-    bpy.ops.mesh.primitive_plane_add(size=6); fl = bpy.context.object
-    assign(fl, mat("studio_floor", (0.05, 0.05, 0.055), rough=0.35))
+    if floor:
+        bpy.ops.mesh.primitive_plane_add(size=6); fl = bpy.context.object
+        assign(fl, mat("studio_floor", (0.05, 0.05, 0.055), rough=0.35))
     for loc, e in [((1.5, -1.5, 2.5), 220), ((-2, -0.5, 1.5), 80), ((0, 2, 2), 120)]:
         bpy.ops.object.light_add(type='AREA', location=loc); l = bpy.context.object
         l.data.energy = e; l.data.size = 1.5

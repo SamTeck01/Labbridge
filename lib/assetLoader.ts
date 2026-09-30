@@ -89,6 +89,7 @@ export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
   chem_stir_bar: { label: 'Stir Bar', action: 'Stir bar', category: 'primary', ref: 'stirBar' },
   chem_flask: { label: 'Conical Flask (25 mL 0.1M HCl)', action: 'Add indicator', category: 'primary' },
   chem_flask_liquid: { label: 'Flask Solution', action: 'Add indicator', category: 'primary', ref: 'flaskLiquid' },
+  chem_dropper: { label: 'Indicator Dropper', action: 'Add phenolphthalein to the flask', category: 'primary' },
   chem_indicator: { label: 'Phenolphthalein Bottle', action: 'Add indicator', category: 'primary' },
   phys_knife_switch: { label: 'Knife Switch', action: 'Open / close circuit', category: 'switch', ref: 'blade' },
   phys_potentiometer: { label: 'Rheostat', action: 'Change resistance', category: 'knob', ref: 'potKnob' },

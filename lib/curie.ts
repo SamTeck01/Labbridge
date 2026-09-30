@@ -300,8 +300,9 @@ export function startCurieWatch() {
   // Burette dispensing simulation runs here so it's independent of rendering.
   setInterval(() => {
     const c = labStore.get().chemistry;
-    if (!c.buretteOpen || c.dispensedML >= 50) return;
-    const dispensedML = Math.min(50, c.dispensedML + 0.1);
-    labStore.update('chemistry', { dispensedML, phValue: titrationPH(dispensedML) });
+    if (!c.buretteOpen || c.buretteML <= 0) return;
+    const step = Math.min(0.1, c.buretteML);
+    const dispensedML = Math.round((c.dispensedML + step) * 100) / 100;
+    labStore.update('chemistry', { dispensedML, buretteML: c.buretteML - step, phValue: titrationPH(dispensedML, c.flaskAcidML) });
   }, 200);
 }
