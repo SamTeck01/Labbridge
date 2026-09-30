@@ -83,7 +83,7 @@ export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
   micro_fine_focus: { label: 'Fine Focus Knob', action: 'Adjust fine focus', category: 'knob', ref: 'fineKnobL' },
   micro_slide: { label: 'Slide Box', action: 'Change specimen slide', category: 'primary' },
   micro_light_switch: { label: 'Illuminator', action: 'Toggle lamp', category: 'switch' },
-  micro_stage: { label: 'Mechanical Stage', action: 'Stage', category: 'primary', ref: 'stageAssembly' },
+  micro_stage: { label: 'Mechanical Stage', action: 'Moves with the focus knobs', category: 'primary', ref: 'stageAssembly' },
   chem_stopcock: { label: 'Burette Stopcock', action: 'Open / close burette', category: 'knob', ref: 'stopcock' },
   chem_stirrer_knob: { label: 'Magnetic Stirrer', action: 'Change stirrer speed', category: 'knob' },
   chem_stir_bar: { label: 'Stir Bar', action: 'Stir bar', category: 'primary', ref: 'stirBar' },

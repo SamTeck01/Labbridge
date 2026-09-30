@@ -104,7 +104,7 @@ const TURRET_ANGLE: Record<Objective, number> = { '4x': 0, '10x': Math.PI / 2, '
 const OBJECTIVES: Objective[] = ['4x', '10x', '40x', '100x'];
 
 export class MicroscopeBench extends BenchBase {
-  protected ids = ['micro_slide', 'micro_turret', 'micro_coarse_focus', 'coarse_knob_r', 'micro_fine_focus', 'fine_knob_r', 'micro_light_switch', 'micro_eyepieces', 'micro_stage'];
+  protected ids = ['micro_slide', 'micro_turret', 'micro_coarse_focus', 'coarse_knob_r', 'micro_fine_focus', 'fine_knob_r', 'micro_light_switch', 'micro_eyepieces'];
   private turretAngle = 0;
   private stageBaseY: number | null = null;
   private knobSpin = { coarse: 0, fine: 0 };
@@ -190,7 +190,7 @@ export class MicroscopeBench extends BenchBase {
         labStore.update('biology', { lightIntensity: bio().lightIntensity > 0.5 ? 0.3 : 1.0 });
         soundFx.playClick();
       });
-    } else if (id === 'micro_eyepieces' || id === 'micro_stage') {
+    } else if (id === 'micro_eyepieces') {
       // Lean in to the eyepieces, then look through them
       const eye = this.pos('micro_eyepieces');
       if (!eye) return;
