@@ -51,7 +51,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { labStore, useLab, type LabState } from '@/lib/labStore';
+import { labStore, useLab, type LabState, type Station } from '@/lib/labStore';
 import { curie, useCurie, startCurieWatch } from '@/lib/curie';
 import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
@@ -60,12 +60,13 @@ import { mergeStaticMeshes, AdaptiveResolution } from '@/lib/scenePerf';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { TitrationBench } from '@/lib/workbench/titrationBench';
 import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench } from '@/lib/workbench/benches';
+import { FlameBench } from '@/lib/workbench/flameBench';
 import { experiments } from '@/lib/experiments';
 
-export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
+export type StationType = Station | null;
 
 interface Lab3DSceneProps {
-  initialStation?: 'biology' | 'chemistry' | 'physics' | 'research' | null;
+  initialStation?: Station | null;
   onOpenNotebook: () => void;
   onOpenAssistant: () => void;
   onExitToLanding: () => void;
@@ -81,7 +82,7 @@ const EYE_HEIGHT_SITTING = 1.28;
 interface CameraTransition {
   active: boolean;
   type: 'sit' | 'stand';
-  station?: 'biology' | 'chemistry' | 'physics' | 'research';
+  station?: Station;
   startPos: THREE.Vector3;
   targetPos: THREE.Vector3;
   startYXZ: { pitch: number; yaw: number };
@@ -272,7 +273,7 @@ export default function Lab3DScene({
 
   // Seating & Interaction State
   const [isSeated, setIsSeated] = useState<boolean>(false);
-  const [seatedStation, setSeatedStation] = useState<'biology' | 'chemistry' | 'physics' | 'research' | null>(null);
+  const [seatedStation, setSeatedStation] = useState<Station | null>(null);
   const [isViewingEyepieces, setIsViewingEyepieces] = useState<boolean>(false);
 
   // Phone State
@@ -290,7 +291,7 @@ export default function Lab3DScene({
     id: string;
     label: string;
     action: string;
-    station: 'biology' | 'chemistry' | 'physics' | 'research';
+    station: Station;
     category: string;
   } | null>(null);
 
@@ -335,7 +336,7 @@ export default function Lab3DScene({
 
   // Bench Seating Anchor Coordinates (Eye-Level 1st-Person Operating Vantage)
   const seatAnchors = useRef<{
-    [key in 'biology' | 'chemistry' | 'physics' | 'research']: {
+    [key in Station]: {
       pos: THREE.Vector3;
       lookAt: THREE.Vector3;
       baseYaw: number;
@@ -362,10 +363,16 @@ export default function Lab3DScene({
       lookAt: new THREE.Vector3(4.62, 1.02, 4.04),
       baseYaw: Math.PI,
     },
+    // Fume hood against the back wall: stand at the sash and look down at the worktop (flame test)
+    hood: {
+      pos: new THREE.Vector3(0, 1.45, -10.2),
+      lookAt: new THREE.Vector3(0, 1.02, -11.0),
+      baseYaw: 0,
+    },
   });
 
   // Sitting down mechanic with smooth transition
-  const sitDownAt = useCallback((station: 'biology' | 'chemistry' | 'physics' | 'research') => {
+  const sitDownAt = useCallback((station: Station) => {
     soundFx.playSitDown();
     const anchor = seatAnchors.current[station];
     if (anchor && cameraRef.current) {
@@ -555,7 +562,7 @@ export default function Lab3DScene({
   }, [sitDownAt, isSeated]);
 
   // Teleport helper
-  const handleTeleport = useCallback((dest: 'center' | 'biology' | 'chemistry' | 'physics' | 'research') => {
+  const handleTeleport = useCallback((dest: 'center' | Station) => {
     if (!cameraRef.current) return;
     soundFx.playClick();
     if (dest === 'center') {
@@ -623,7 +630,7 @@ export default function Lab3DScene({
   const handsRef = useRef<FirstPersonHands | null>(null);
   const titrationBenchRef = useRef<TitrationBench | null>(null);
   // Hands-on bench for each station (created once its apparatus and the hands are loaded)
-  const benchesRef = useRef<Partial<Record<'biology' | 'chemistry' | 'physics' | 'research', Workbench | TitrationBench>>>({});
+  const benchesRef = useRef<Partial<Record<Station, Workbench | TitrationBench>>>({});
   // Where the view should turn while the hands work (e.g. up to the burette funnel)
   const focusRef = useRef<THREE.Vector3 | null>(null);
   const lastHitPointRef = useRef<THREE.Vector3 | null>(null);
@@ -640,6 +647,10 @@ export default function Lab3DScene({
     handleObjectClickRef.current = handleObjectClick;
     standUpRef.current = standUp;
   });
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __sitDownAt: sitDownAt });
+  }, [sitDownAt]);
 
   useEffect(() => {
     startCurieWatch();
@@ -883,7 +894,7 @@ export default function Lab3DScene({
     posterMeshes.forEach((mesh) => interactiveList.push(mesh));
 
     const benchConfigs: Array<{
-      station: 'biology' | 'chemistry' | 'physics' | 'research';
+      station: Station;
       x: number;
       z: number;
       label: string;
@@ -1004,6 +1015,21 @@ export default function Lab3DScene({
       });
       collectInteractives();
       scheduleMerge();
+    });
+
+    // 5. Flame test kit on the fume hood worktop
+    loadLabModel('flame-test', null, 'hood').then((kit) => {
+      if (!kit || disposed) return;
+      kit.root.position.set(0, 0.93, -11.05);
+      scene.add(kit.root);
+      collectInteractives();
+      scheduleMerge();
+      handsPromise.then((ok) => {
+        if (ok && !disposed) {
+          benchesRef.current.hood = new FlameBench(scene, kit.root, hands, setFocus);
+          collectInteractives();
+        }
+      });
     });
 
     // 4. Research 3D Analytical Suite Ready-Made Setup

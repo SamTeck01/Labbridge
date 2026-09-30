@@ -1,3 +1,4 @@
+import type { Station } from '@/lib/labStore';
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -95,6 +96,16 @@ export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
   phys_potentiometer: { label: 'Rheostat', action: 'Change resistance', category: 'knob', ref: 'potKnob' },
   phys_bulb: { label: 'Filament Bulb', action: 'Bulb', category: 'primary', ref: 'bulbGlass' },
   phys_ammeter_needle: { label: 'Ammeter', action: 'Reads circuit current', category: 'primary', ref: 'ammeterNeedle' },
+  flame_gas_tap: { label: 'Gas Tap', action: 'Turn the gas on / off', category: 'switch' },
+  flame_air_collar: { label: 'Bunsen Air Collar', action: 'Open / close the air hole', category: 'knob' },
+  flame_lighter: { label: 'Piezo Lighter', action: 'Light the burner', category: 'primary' },
+  flame_loop: { label: 'Nichrome Wire Loop', action: 'Pick up / put down', category: 'primary' },
+  flame_acid: { label: 'Dilute HCl', action: 'Dip the loop to clean it', category: 'primary' },
+  flame_salt_li: { label: 'Sample A: Lithium chloride', action: 'Dip the loop in the sample', category: 'primary' },
+  flame_salt_na: { label: 'Sample B: Sodium chloride', action: 'Dip the loop in the sample', category: 'primary' },
+  flame_salt_k: { label: 'Sample C: Potassium chloride', action: 'Dip the loop in the sample', category: 'primary' },
+  flame_salt_ca: { label: 'Sample D: Calcium chloride', action: 'Dip the loop in the sample', category: 'primary' },
+  flame_salt_cu: { label: 'Sample E: Copper(II) chloride', action: 'Dip the loop in the sample', category: 'primary' },
   res_balance_door: { label: 'Analytical Balance Door', action: 'Open / close draft shield', category: 'primary', ref: 'balanceDoor' },
   res_balance_display: { label: 'Balance Readout', action: 'Mass reading', category: 'primary', ref: 'balanceDisplay' },
   res_centrifuge_lid: { label: 'Centrifuge Lid', action: 'Start / stop centrifuge', category: 'primary', ref: 'centrifugeLid' },
@@ -105,7 +116,7 @@ export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
 };
 
 /** Tags named nodes as interactive and exposes animated parts on root.userData. */
-export function wireInteractiveNodes(root: THREE.Object3D, station: 'biology' | 'chemistry' | 'physics' | 'research') {
+export function wireInteractiveNodes(root: THREE.Object3D, station: Station) {
   const refs: Record<string, THREE.Object3D> = {};
   root.traverse((node) => {
     const spec = INTERACTIVE_NODES[node.name];
@@ -130,7 +141,7 @@ export function wireInteractiveNodes(root: THREE.Object3D, station: 'biology' | 
 export async function loadLabModel(
   name: string,
   fit: Parameters<typeof fitModelToDimensions>[1] | null,
-  station?: 'biology' | 'chemistry' | 'physics' | 'research'
+  station?: Station
 ): Promise<{ root: THREE.Group; gltf: GLTF } | null> {
   const gltf = await loadGLTF(name);
   if (!gltf) return null;

@@ -1,5 +1,7 @@
 'use client';
 
+import type { Station } from '@/lib/labStore';
+
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import LandingPage from '@/components/LandingPage';
@@ -25,7 +27,7 @@ const Lab3DScene = dynamic(() => import('@/components/Lab3DScene'), {
 
 export default function Home() {
   const [inLab, setInLab] = useState<boolean>(false);
-  const [initialStation, setInitialStation] = useState<'biology' | 'chemistry' | 'physics' | 'research' | null>(null);
+  const [initialStation, setInitialStation] = useState<Station | null>(null);
   const [isNotebookOpen, setIsNotebookOpen] = useState<boolean>(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState<boolean>(false);
   const [aiContextPrompt, setAiContextPrompt] = useState<{ prompt: string; context: string } | null>(null);

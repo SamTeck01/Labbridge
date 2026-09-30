@@ -1,3 +1,4 @@
+import type { Station } from '@/lib/labStore';
 import * as THREE from 'three';
 
 /**
@@ -12,7 +13,7 @@ export function tagInteractive(
   id: string,
   label: string,
   action: string,
-  station: 'biology' | 'chemistry' | 'physics' | 'research',
+  station: Station,
   category: 'primary' | 'knob' | 'switch' | 'eyepiece' | 'stool'
 ) {
   mesh.userData = {
@@ -189,7 +190,7 @@ export function createSafetySignTexture(): THREE.CanvasTexture {
  * Creates Ergonomic Laboratory Swivel Stool
  */
 export function createLabStool(
-  station: 'biology' | 'chemistry' | 'physics' | 'research',
+  station: Station,
   x: number,
   z: number,
   rotY: number = 0

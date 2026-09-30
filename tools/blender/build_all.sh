@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")/../.."
 # dr-curie.glb comes from dr_curie.py + the Mixamo FBX (not in the repo)
-for s in lab_room microscope titration_rig physics_bench analytical_bench lab_furniture; do
+for s in lab_room microscope titration_rig titration_props physics_bench analytical_bench lab_furniture flame_test; do
   python3 tools/blender/$s.py > /dev/null 2>&1 || true   # bpy may segfault on exit after a successful export
 done
 for f in public/models/*.glb; do

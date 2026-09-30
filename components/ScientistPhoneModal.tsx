@@ -1,5 +1,7 @@
 'use client';
 
+import type { Station } from '@/lib/labStore';
+
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
@@ -41,9 +43,9 @@ export type PhoneAppTab = 'home' | 'ai' | 'teleport' | 'notebook' | 'protocols' 
 interface ScientistPhoneModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onTeleport: (dest: 'center' | 'biology' | 'chemistry' | 'physics' | 'research') => void;
+  onTeleport: (dest: 'center' | Station) => void;
   onOpenEyepieces?: () => void;
-  seatedStation: 'biology' | 'chemistry' | 'physics' | 'research' | null;
+  seatedStation: Station | null;
   isSeated: boolean;
   snapshots: SnapshotItem[];
   initialTab?: PhoneAppTab;
@@ -357,6 +359,20 @@ export default function ScientistPhoneModal({
                     <div>
                       <span className="text-xs font-bold text-white block">Analytical</span>
                       <span className="text-[10px] text-sky-300">Balance & Spin</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      onTeleport('hood');
+                      onClose();
+                    }}
+                    className="p-2.5 rounded-2xl bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 flex items-center gap-2 text-left transition-all"
+                  >
+                    <FlaskConical className="w-4 h-4 text-rose-400" />
+                    <div>
+                      <span className="text-xs font-bold text-white block">Flame test</span>
+                      <span className="text-[10px] text-rose-300">Fume hood</span>
                     </div>
                   </button>
                 </div>

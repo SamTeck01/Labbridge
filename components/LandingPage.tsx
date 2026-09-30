@@ -1,5 +1,7 @@
 'use client';
 
+import type { Station } from '@/lib/labStore';
+
 import React from 'react';
 import { motion } from 'motion/react';
 import {
@@ -20,7 +22,7 @@ import { useInstall, enterImmersive } from '@/lib/pwa';
 import ProgressModal from '@/components/ProgressModal';
 
 interface LandingPageProps {
-  onEnterLab: (initialStation?: 'biology' | 'chemistry' | 'physics' | 'research') => void;
+  onEnterLab: (initialStation?: Station) => void;
   onDirectOpenMicroscope: () => void;
 }
 
@@ -29,7 +31,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
   const [showIosHelp, setShowIosHelp] = React.useState(false);
   const [showProgress, setShowProgress] = React.useState(false);
 
-  const handleStart = (station?: 'biology' | 'chemistry' | 'physics' | 'research') => {
+  const handleStart = (station?: Station) => {
     soundFx.playSuccessChime();
     enterImmersive(); // phones: fullscreen + landscape, like a game (no-op on desktop)
     onEnterLab(station);

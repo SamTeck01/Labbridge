@@ -20,10 +20,10 @@ export interface Workbench {
   readonly isBusy: boolean;
 }
 
-type Focus = (p: THREE.Vector3 | null) => void;
+export type Focus = (p: THREE.Vector3 | null) => void;
 const TOWARD_STUDENT = new THREE.Vector3(0, 0, 1);
 
-abstract class BenchBase implements Workbench {
+export abstract class BenchBase implements Workbench {
   protected busy = false;
   protected abstract ids: string[];
   constructor(protected scene: THREE.Scene, protected rig: THREE.Object3D, protected hands: FirstPersonHands, protected focus: Focus) {}

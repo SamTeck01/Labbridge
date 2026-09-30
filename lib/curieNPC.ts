@@ -16,12 +16,15 @@ const STATION_SPOTS: Record<Station, THREE.Vector3> = {
   chemistry: new THREE.Vector3(5.0, 0, -4.75),
   physics: new THREE.Vector3(-4.0, 0, 2.25),
   research: new THREE.Vector3(5.0, 0, 2.25),
+  // Beside the student at the fume hood (the hood is against the back wall)
+  hood: new THREE.Vector3(1.0, 0, -10.05),
 };
 const BENCH_CENTRES: Record<Station, THREE.Vector3> = {
   biology: new THREE.Vector3(-4.5, 0, -3.5),
   chemistry: new THREE.Vector3(4.5, 0, -3.5),
   physics: new THREE.Vector3(-4.5, 0, 3.5),
   research: new THREE.Vector3(4.5, 0, 3.5),
+  hood: new THREE.Vector3(0, 0, -11.3),
 };
 const AISLE_X = 1.5; // benches occupy |x| >= 2.7, so |x| <= 1.5 is always clear
 

@@ -1,5 +1,7 @@
 'use client';
 
+import type { Station } from '@/lib/labStore';
+
 import React from 'react';
 import {
   Footprints,
@@ -19,7 +21,7 @@ import {
 import { soundFx } from '@/lib/soundEffects';
 
 export interface SeatedStationToolbarProps {
-  station: 'biology' | 'chemistry' | 'physics' | 'research';
+  station: Station;
   onStandUp: () => void;
   onOpenNotebook: () => void;
   onOpenAssistant: () => void;

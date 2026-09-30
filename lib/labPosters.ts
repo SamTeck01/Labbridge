@@ -1,3 +1,4 @@
+import type { Station } from '@/lib/labStore';
 import * as THREE from 'three';
 import { tagInteractive } from './lab3dEquipment';
 
@@ -45,7 +46,7 @@ export function createFramedPosterMesh({
   interactId?: string;
   label?: string;
   action?: string;
-  station?: 'biology' | 'chemistry' | 'physics' | 'research';
+  station?: Station;
 }): THREE.Group {
   const group = new THREE.Group();
 

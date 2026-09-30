@@ -1,5 +1,7 @@
 'use client';
 
+import type { Station } from '@/lib/labStore';
+
 import React, { useState } from 'react';
 import {
   Pause,
@@ -25,8 +27,8 @@ interface MiniMapRadarProps {
   playerZ: number;
   playerYaw: number;
   isSeated: boolean;
-  seatedStation: 'biology' | 'chemistry' | 'physics' | 'research' | null;
-  onTeleport: (dest: 'center' | 'biology' | 'chemistry' | 'physics' | 'research') => void;
+  seatedStation: Station | null;
+  onTeleport: (dest: 'center' | Station) => void;
   onExitToLanding: () => void;
   onOpenPhone?: () => void;
 }
@@ -63,6 +65,8 @@ export default function MiniMapRadar({
     { id: 'chemistry', label: 'Chem', x: radius + (4.5 / 7.5) * (radius - 8), y: radius + (-3.8 / 7.5) * (radius - 8), color: '#a855f7' },
     { id: 'physics', label: 'Phys', x: radius + (-4.5 / 7.5) * (radius - 8), y: radius + (3.8 / 7.5) * (radius - 8), color: '#f59e0b' },
     { id: 'research', label: 'Ana', x: radius + (4.5 / 7.5) * (radius - 8), y: radius + (3.8 / 7.5) * (radius - 8), color: '#38bdf8' },
+    // Fume hood on the back wall (clamped to the radar edge)
+    { id: 'hood', label: 'Hood', x: radius, y: radius + (-7.2 / 7.5) * (radius - 8), color: '#f43f5e' },
   ];
 
   const handleTogglePause = () => {
@@ -212,6 +216,16 @@ export default function MiniMapRadar({
                   >
                     <Scale className="w-3.5 h-3.5" />
                     Analytical
+                  </button>
+                  <button
+                    onClick={() => {
+                      onTeleport('hood');
+                      setIsPauseMenuOpen(false);
+                    }}
+                    className="p-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-xs font-semibold text-rose-300 flex items-center gap-2 transition-all"
+                  >
+                    <FlaskConical className="w-3.5 h-3.5" />
+                    Flame test
                   </button>
                 </div>
               </div>

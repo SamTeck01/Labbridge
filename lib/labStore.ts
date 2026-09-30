@@ -9,8 +9,18 @@ import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
  * so what the student sees, what the UI shows and what Curie "knows" never disagree.
  */
 
-export type Station = 'biology' | 'chemistry' | 'physics' | 'research';
+export type Station = 'biology' | 'chemistry' | 'physics' | 'research' | 'hood';
 export type Objective = '4x' | '10x' | '40x' | '100x';
+
+/** Salts on the flame-test spotting tile. */
+export type SaltKey = 'li' | 'na' | 'k' | 'ca' | 'cu';
+export const SALTS: Record<SaltKey, { name: string; colour: string; hex: string; nm: number }> = {
+  li: { name: 'Lithium chloride', colour: 'crimson', hex: '#ff1a3c', nm: 671 },
+  na: { name: 'Sodium chloride', colour: 'intense yellow-orange', hex: '#ffb300', nm: 589 },
+  k: { name: 'Potassium chloride', colour: 'lilac', hex: '#c58cff', nm: 766 },
+  ca: { name: 'Calcium chloride', colour: 'brick red', hex: '#ff5a1f', nm: 622 },
+  cu: { name: 'Copper(II) chloride', colour: 'blue-green', hex: '#18e6b4', nm: 510 },
+};
 
 export interface LabState {
   player: { station: Station | null; seated: boolean };
@@ -38,6 +48,14 @@ export interface LabState {
     resistance: number;
     voltage: number;
   };
+  flame: {
+    gasOn: boolean;
+    lit: boolean;
+    /** Air hole open: hot blue non-luminous flame. Closed: yellow luminous (sooty) flame. */
+    airOpen: boolean;
+    /** What's on the wire loop: clean, wet with acid, a salt, or burnt residue. */
+    loop: 'clean' | 'acid' | 'dirty' | SaltKey;
+  };
   research: {
     doorsOpen: boolean;
     /** True mass on the pan (g), including the empty weighing boat. */
@@ -55,6 +73,7 @@ const initialState: LabState = {
   biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false },
   chemistry: { buretteML: 50, flaskAcidML: 25, buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
+  flame: { gasOn: false, lit: false, airOpen: false, loop: 'clean' },
   research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false },
 };
 
@@ -123,6 +142,7 @@ export function describeLabState(s: LabState): string {
     `Biology: microscope objective ${s.biology.objective}, slide "${SPECIMEN_CATALOG[s.biology.slideIndex]?.name}", image sharpness ${Math.round(microscopeSharpness(s.biology) * 100)}%, immersion oil ${s.biology.immersionOil ? 'applied' : 'none'}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
     `Chemistry: burette holds ${s.chemistry.buretteML.toFixed(1)} mL NaOH and is ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into ${s.chemistry.flaskAcidML.toFixed(1)} mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
     `Physics: switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
+    `Flame test (fume hood): gas ${s.flame.gasOn ? 'ON' : 'off'}, burner ${s.flame.lit ? `lit with a ${s.flame.airOpen ? 'blue roaring' : 'yellow luminous'} flame` : 'not lit'}, wire loop ${s.flame.loop}.`,
     `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}.`,
   ].join('\n');
 }
