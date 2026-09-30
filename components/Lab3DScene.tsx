@@ -1510,7 +1510,7 @@ export default function Lab3DScene({
       />
 
       {/* Practical brief / checklist / results */}
-      <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} />
+      <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} onGoTo={sitDownAt} />
 
       {/* Dr. Curie speech bubble */}
       {curieSpeech && !isPhoneOpen && (

@@ -8,7 +8,24 @@ import { soundFx } from '@/lib/soundEffects';
 
 /** Practical brief, live procedure checklist, readings and results for the bench the student is at. */
 /** compact: at a workbench only the current step is shown, keeping the apparatus clear. */
-export default function ExperimentPanel({ station, compact = false }: { station: Station | null; compact?: boolean }) {
+const STATION_NAME: Record<Station, string> = {
+  biology: 'microscope bench',
+  chemistry: 'titration bench',
+  physics: 'circuits bench',
+  research: 'analytical bench',
+  hood: 'fume hood',
+};
+
+export default function ExperimentPanel({
+  station,
+  compact = false,
+  onGoTo,
+}: {
+  station: Station | null;
+  compact?: boolean;
+  /** Take the student to a bench (used by the "Continue" pill when a practical is running elsewhere). */
+  onGoTo?: (station: Station) => void;
+}) {
   const run = useExperiments((s) => s.run);
   const lastResult = useExperiments((s) => s.lastResult);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +95,32 @@ export default function ExperimentPanel({ station, compact = false }: { station:
           className="w-full py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-sm font-medium"
         >
           Start with Dr. Curie
+        </button>
+      </div>
+    );
+  }
+
+  // Practical in progress but the student is somewhere else: a small pill, not a checklist over the view
+  if (station !== active.station) {
+    const next = active.steps.find((st) => !run!.completedSteps.includes(st.id));
+    return (
+      <div className="absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 max-w-[min(80vw,300px)] flex items-center gap-2 bg-slate-900/90 border border-slate-700 rounded-full pl-3 pr-1.5 py-1.5 text-slate-100 shadow-xl">
+        <FlaskConical className="w-4 h-4 text-teal-400 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold truncate">{active.title}</p>
+          <p className="text-[11px] text-slate-400 truncate">Next: {next?.text ?? 'finish up'}</p>
+        </div>
+        {onGoTo && (
+          <button
+            onClick={() => onGoTo(active.station)}
+            className="shrink-0 px-2.5 py-1 rounded-full bg-teal-600 hover:bg-teal-500 text-xs font-medium"
+            title={`Go to the ${STATION_NAME[active.station]}`}
+          >
+            Continue
+          </button>
+        )}
+        <button onClick={() => experiments.abandon()} title="Abandon practical" className="shrink-0 p-1 text-slate-400 hover:text-white">
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
     );
