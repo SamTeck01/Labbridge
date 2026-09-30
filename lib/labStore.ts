@@ -1,0 +1,104 @@
+'use client';
+
+import { useSyncExternalStore } from 'react';
+
+/**
+ * Single source of truth for all experiment state.
+ * The 3D scene, the HUD and Dr. Curie all read and write through this store,
+ * so what the student sees, what the UI shows and what Curie "knows" never disagree.
+ */
+
+export type Station = 'biology' | 'chemistry' | 'physics' | 'research';
+export type Objective = '4x' | '10x' | '40x' | '100x';
+
+export interface LabState {
+  player: { station: Station | null; seated: boolean };
+  biology: {
+    slideIndex: number;
+    objective: Objective;
+    coarseFocus: number;
+    fineFocus: number;
+    lightIntensity: number;
+  };
+  chemistry: {
+    buretteOpen: boolean;
+    dispensedML: number;
+    stirrerRPM: number;
+    indicatorAdded: boolean;
+    phValue: number;
+  };
+  physics: {
+    switchClosed: boolean;
+    resistance: number;
+    voltage: number;
+  };
+  research: {
+    doorsOpen: boolean;
+    balanceWeight: number;
+    centrifugeRunning: boolean;
+  };
+}
+
+const initialState: LabState = {
+  player: { station: null, seated: false },
+  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0 },
+  chemistry: { buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 2.8 },
+  physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
+  research: { doorsOpen: false, balanceWeight: 0.0, centrifugeRunning: false },
+};
+
+let state: LabState = initialState;
+const listeners = new Set<() => void>();
+
+export const labStore = {
+  get: () => state,
+  subscribe(fn: () => void) {
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  },
+  update<K extends keyof LabState>(key: K, patch: Partial<LabState[K]> | ((prev: LabState[K]) => Partial<LabState[K]>)) {
+    const prev = state[key];
+    const next = typeof patch === 'function' ? patch(prev) : patch;
+    state = { ...state, [key]: { ...prev, ...next } };
+    listeners.forEach((l) => l());
+  },
+  reset() {
+    state = initialState;
+    listeners.forEach((l) => l());
+  },
+};
+
+export function useLab<T>(selector: (s: LabState) => T): T {
+  return useSyncExternalStore(labStore.subscribe, () => selector(state), () => selector(initialState));
+}
+
+// --- Pure simulation helpers (testable, no rendering) ---
+
+/** pH of 25 mL 0.1 M HCl titrated with 0.1 M NaOH. Equivalence at 25 mL. */
+export function titrationPH(naohML: number, acidML = 25, conc = 0.1): number {
+  const molAcid = acidML * conc;
+  const molBase = naohML * conc;
+  const vol = (acidML + naohML) / 1000;
+  const diff = molAcid - molBase;
+  if (Math.abs(diff) < 1e-9) return 7;
+  if (diff > 0) return -Math.log10(diff / 1000 / vol);
+  return 14 + Math.log10(-diff / 1000 / vol);
+}
+
+/** Ohm's law: current (A) and power (W) through the bulb circuit. */
+export function circuit(voltage: number, resistance: number, closed: boolean) {
+  const current = closed ? voltage / resistance : 0;
+  return { current, power: current * voltage };
+}
+
+/** Compact human-readable snapshot sent to Dr. Curie with every message. */
+export function describeLabState(s: LabState): string {
+  const { current } = circuit(s.physics.voltage, s.physics.resistance, s.physics.switchClosed);
+  return [
+    `Student location: ${s.player.seated && s.player.station ? `seated at ${s.player.station} bench` : 'walking in the lab'}.`,
+    `Biology: microscope objective ${s.biology.objective}, slide #${s.biology.slideIndex}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
+    `Chemistry: burette ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into 25 mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
+    `Physics: switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
+    `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}.`,
+  ].join('\n');
+}

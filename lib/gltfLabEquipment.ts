@@ -6,21 +6,13 @@ import {
   createRealisticPhysicsBench,
   createRealisticAnalyticalBench,
 } from './lab3dEquipment';
+import { loadLabModel } from './assetLoader';
 
 /**
  * 3D Laboratory Equipment Suite & Procedural Assembly
  * Standardizes real-world metric sizing (meters) for laboratory equipment.
  * Provides guaranteed 0-latency, memory-safe, PBR-rendered laboratory equipment.
  */
-
-// Safe fallback loader for optional custom user models
-export function getGLTFLoader(): null {
-  return null;
-}
-
-export async function loadGLBModel(_url: string): Promise<THREE.Group> {
-  return new THREE.Group();
-}
 
 /**
  * Strict physical metric auto-fitter for 3D equipment
@@ -81,7 +73,7 @@ export function fitModelToDimensions(
  * 1. Biology 3D Compound Microscope Suite
  * Real-world physical dimensions: Height 0.38m (38cm), Base 20cm x 22cm
  */
-export async function createReadyMadeMicroscope(
+async function proceduralMicroscope(
   station: 'biology' | 'chemistry' | 'physics' | 'research' = 'biology'
 ): Promise<THREE.Group> {
   const rootGroup = new THREE.Group();
@@ -152,7 +144,7 @@ export async function createReadyMadeMicroscope(
  * 2. Chemistry Titration Suite & Glassware Station
  * Real-world physical dimensions: Stand height 0.55m, burette 0.45m, 250mL flask
  */
-export async function createReadyMadeChemistryStation(
+async function proceduralChemistryStation(
   station: 'biology' | 'chemistry' | 'physics' | 'research' = 'chemistry'
 ): Promise<THREE.Group> {
   const rootGroup = new THREE.Group();
@@ -221,7 +213,7 @@ export async function createReadyMadeChemistryStation(
  * 3. Physics Circuit & Electronics Bench
  * Real-world physical dimensions: Breadboard 45cm x 32cm, Knife switch 14cm
  */
-export async function createReadyMadePhysicsBench(
+async function proceduralPhysicsBench(
   station: 'biology' | 'chemistry' | 'physics' | 'research' = 'physics'
 ): Promise<THREE.Group> {
   const rootGroup = new THREE.Group();
@@ -252,7 +244,7 @@ export async function createReadyMadePhysicsBench(
  * 4. Analytical & Research Suite
  * Real-world physical dimensions: Balance 28cm x 26cm, Centrifuge 24cm diameter
  */
-export async function createReadyMadeAnalyticalBench(
+async function proceduralAnalyticalBench(
   station: 'biology' | 'chemistry' | 'physics' | 'research' = 'research'
 ): Promise<THREE.Group> {
   const rootGroup = new THREE.Group();
@@ -311,4 +303,34 @@ export async function createReadyMadeAnalyticalBench(
   };
 
   return rootGroup;
+}
+
+// --- Public factories: real .glb from /public/models when present, procedural fallback otherwise ---
+
+export async function createReadyMadeMicroscope(
+  station: 'biology' | 'chemistry' | 'physics' | 'research' = 'biology'
+): Promise<THREE.Group> {
+  const real = await loadLabModel('microscope', { targetHeight: 0.38, centerOrigin: true }, station);
+  return real ? real.root : proceduralMicroscope(station);
+}
+
+export async function createReadyMadeChemistryStation(
+  station: 'biology' | 'chemistry' | 'physics' | 'research' = 'chemistry'
+): Promise<THREE.Group> {
+  const real = await loadLabModel('titration-rig', { targetHeight: 0.62, centerOrigin: true }, station);
+  return real ? real.root : proceduralChemistryStation(station);
+}
+
+export async function createReadyMadePhysicsBench(
+  station: 'biology' | 'chemistry' | 'physics' | 'research' = 'physics'
+): Promise<THREE.Group> {
+  const real = await loadLabModel('physics-bench', { targetWidth: 1.4, centerOrigin: true }, station);
+  return real ? real.root : proceduralPhysicsBench(station);
+}
+
+export async function createReadyMadeAnalyticalBench(
+  station: 'biology' | 'chemistry' | 'physics' | 'research' = 'research'
+): Promise<THREE.Group> {
+  const real = await loadLabModel('analytical-bench', { targetWidth: 1.6, centerOrigin: true }, station);
+  return real ? real.root : proceduralAnalyticalBench(station);
 }

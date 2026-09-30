@@ -46,6 +46,11 @@ import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
 import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
 import { createAllLabWallPosters } from '@/lib/labPosters';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { labStore, useLab, type LabState } from '@/lib/labStore';
+import { curie, useCurie, startCurieWatch } from '@/lib/curie';
+import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
+import { disposeObject } from '@/lib/assetLoader';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
 
@@ -74,6 +79,15 @@ interface CameraTransition {
   progress: number;
   duration: number;
 }
+
+function makeSetter<K extends keyof LabState>(key: K) {
+  return (patch: LabState[K] | ((prev: LabState[K]) => LabState[K])) => labStore.update(key, patch);
+}
+
+const setBiologyState = makeSetter('biology');
+const setChemistryState = makeSetter('chemistry');
+const setPhysicsState = makeSetter('physics');
+const setAnalyticalState = makeSetter('research');
 
 export default function Lab3DScene({
   initialStation = null,
@@ -113,37 +127,12 @@ export default function Lab3DScene({
     category: string;
   } | null>(null);
 
-  // 3D Equipment Live States
-  const [biologyState, setBiologyState] = useState({
-    slideIndex: 0,
-    objective: '10x' as '4x' | '10x' | '40x' | '100x',
-    coarseFocus: 0.5,
-    fineFocus: 0.5,
-    stageX: 0,
-    stageY: 0,
-    lightIntensity: 1.0,
-  });
-
-  const [chemistryState, setChemistryState] = useState({
-    buretteOpen: false,
-    dispensedML: 0,
-    stirrerRPM: 0,
-    indicatorAdded: false,
-    phValue: 2.8,
-  });
-  const chemistryStateRef = useRef(chemistryState);
-
-  const [physicsState, setPhysicsState] = useState({
-    switchClosed: false,
-    resistance: 25,
-    voltage: 12.0,
-  });
-
-  const [analyticalState, setAnalyticalState] = useState({
-    doorsOpen: false,
-    balanceWeight: 0.0,
-    centrifugeRunning: false,
-  });
+  // 3D Equipment Live States (shared lab store: scene, HUD and Dr. Curie all read the same data)
+  const biologyState = useLab((st) => st.biology);
+  const chemistryState = useLab((st) => st.chemistry);
+  const physicsState = useLab((st) => st.physics);
+  const analyticalState = useLab((st) => st.research);
+  const curieSpeech = useCurie((st) => st.speech);
 
   const [isTouch] = useState<boolean>(() => (typeof window !== 'undefined' ? isMobileOrTouchDevice() : false));
 
@@ -230,6 +219,7 @@ export default function Lab3DScene({
 
       setIsSeated(true);
       setSeatedStation(station);
+      labStore.update('player', { station, seated: true });
     }
   }, []);
 
@@ -248,6 +238,7 @@ export default function Lab3DScene({
     soundFx.playStandUp();
     setIsSeated(false);
     setSeatedStation(null);
+    labStore.update('player', { station: null, seated: false });
     setIsViewingEyepieces(false);
 
     if (cameraRef.current) {
@@ -273,6 +264,14 @@ export default function Lab3DScene({
   const handleObjectClick = useCallback((obj: THREE.Object3D) => {
     const data = obj.userData;
     if (!data) return;
+
+    if (data.interactId === 'npc_curie') {
+      soundFx.playClick();
+      setPhoneInitialTab('ai');
+      setPhoneAIPrompt(undefined);
+      setIsPhoneOpen(true);
+      return;
+    }
 
     if (data.category === 'stool') {
       sitDownAt(data.station);
@@ -343,7 +342,7 @@ export default function Lab3DScene({
       }
     } else if (data.station === 'physics') {
       if (data.interactId === 'phys_knife_switch') {
-        soundFx.playSwitchToggle(!physicsState.switchClosed);
+        soundFx.playSwitchToggle(!labStore.get().physics.switchClosed);
         setPhysicsState((prev) => ({ ...prev, switchClosed: !prev.switchClosed }));
       } else if (data.interactId === 'phys_potentiometer') {
         soundFx.playKnobTick();
@@ -364,7 +363,7 @@ export default function Lab3DScene({
         setAnalyticalState((prev) => ({ ...prev, centrifugeRunning: !prev.centrifugeRunning }));
       }
     }
-  }, [sitDownAt, physicsState.switchClosed]);
+  }, [sitDownAt]);
 
   // Teleport helper
   const handleTeleport = useCallback((dest: 'center' | 'biology' | 'chemistry' | 'physics' | 'research') => {
@@ -429,7 +428,22 @@ export default function Lab3DScene({
     };
   }, [isSeated, seatedStation, hoveredAction, sitDownAt, standUp]);
 
-  // Main Three.js Scene Setup & Render Loop
+  // Latest values for the render loop, so the scene is built exactly once
+  const isSeatedRef = useRef(isSeated);
+  const handleObjectClickRef = useRef(handleObjectClick);
+  const standUpRef = useRef(standUp);
+  const hoveredIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    isSeatedRef.current = isSeated;
+    handleObjectClickRef.current = handleObjectClick;
+    standUpRef.current = standUp;
+  });
+
+  useEffect(() => {
+    startCurieWatch();
+  }, []);
+
+  // Main Three.js Scene Setup & Render Loop (runs once)
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
@@ -462,15 +476,22 @@ export default function Lab3DScene({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.3;
+    renderer.toneMappingExposure = 1.0;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Image-based lighting: gives metal, glass and the epoxy floor something real to reflect.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = envTexture;
+    pmrem.dispose();
+
     // Bright Ambient & Hemisphere Illumination (Daylight White 6000K)
-    const ambientLight = new THREE.AmbientLight('#ffffff', 1.35);
+    const ambientLight = new THREE.AmbientLight('#ffffff', 0.25);
     scene.add(ambientLight);
 
-    const hemiLight = new THREE.HemisphereLight('#ffffff', '#cbd5e1', 0.65);
+    const hemiLight = new THREE.HemisphereLight('#ffffff', '#cbd5e1', 0.35);
     scene.add(hemiLight);
 
     const mainCeilingLight = new THREE.DirectionalLight('#ffffff', 1.8);
@@ -502,9 +523,6 @@ export default function Lab3DScene({
       troffer.position.set(tx, ty, tz);
       scene.add(troffer);
 
-      const downLight = new THREE.PointLight('#ffffff', 1.6, 7.5);
-      downLight.position.set(tx, ty - 0.2, tz);
-      scene.add(downLight);
     });
 
     // Laboratory Room Floor (High-Gloss White/Light-Gray Chemical Epoxy Resin)
@@ -519,10 +537,6 @@ export default function Lab3DScene({
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // Epoxy floor grid demarcation lines
-    const gridHelper = new THREE.GridHelper(24, 24, '#0284c7', '#cbd5e1');
-    gridHelper.position.y = 0.01;
-    scene.add(gridHelper);
 
     // Realistic Clean Antimicrobial Laboratory Walls
     const wallMat = new THREE.MeshStandardMaterial({ color: '#f1f5f9', roughness: 0.45, metalness: 0.05 });
@@ -692,6 +706,17 @@ export default function Lab3DScene({
 
     interactiveObjectsRef.current = interactiveList;
 
+    // Dr. Curie, the lab manager NPC
+    let curieNPC: CurieNPC | null = null;
+    let disposed = false;
+    createCurieNPC().then((npc) => {
+      if (disposed) return;
+      curieNPC = npc;
+      scene.add(npc.root);
+      interactiveList.push(npc.root);
+      interactiveObjectsRef.current = [...interactiveList];
+    });
+
     // Raycaster for Center Reticle Hover & Click
     const raycaster = new THREE.Raycaster();
     const centerScreen = new THREE.Vector2(0, 0);
@@ -703,7 +728,7 @@ export default function Lab3DScene({
         cameraEuler.current.x -= e.movementY * sensitivity;
 
         // When seated, constrain head swivel to realistic cervical rotation range
-        if (isSeated) {
+        if (isSeatedRef.current) {
           cameraEuler.current.x = Math.max(-0.9, Math.min(0.65, cameraEuler.current.x));
         } else {
           cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
@@ -723,7 +748,7 @@ export default function Lab3DScene({
         if (hits.length > 0) {
           const hitObj = hits[0].object;
           if (hitObj.userData && hitObj.userData.isInteractive) {
-            handleObjectClick(hitObj);
+            handleObjectClickRef.current(hitObj);
           }
         }
       }
@@ -751,7 +776,7 @@ export default function Lab3DScene({
           const sensitivity = 0.004;
           cameraEuler.current.y -= dx * sensitivity;
           cameraEuler.current.x -= dy * sensitivity;
-          if (isSeated) {
+          if (isSeatedRef.current) {
             cameraEuler.current.x = Math.max(-0.9, Math.min(0.65, cameraEuler.current.x));
           } else {
             cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
@@ -800,8 +825,8 @@ export default function Lab3DScene({
         touchMoveVector.current.x !== 0 ||
         touchMoveVector.current.z !== 0;
 
-      if (isSeated && moveIntent && !transitionRef.current?.active) {
-        standUp();
+      if (isSeatedRef.current && moveIntent && !transitionRef.current?.active) {
+        standUpRef.current();
       }
 
       // Handle Smooth Cinematic Camera Transitions (Sitting down / Standing up)
@@ -825,7 +850,7 @@ export default function Lab3DScene({
           cameraEuler.current.x = THREE.MathUtils.lerp(tr.startYXZ.pitch, tr.targetYXZ.pitch, ease);
           cameraEuler.current.y = THREE.MathUtils.lerp(tr.startYXZ.yaw, tr.targetYXZ.yaw, ease);
         }
-      } else if (!isSeated && cameraRef.current) {
+      } else if (!isSeatedRef.current && cameraRef.current) {
         // First-Person Walking Physics & Eye Height Enforcement
         const moveVector = new THREE.Vector3();
         if (keysPressed.current['KeyW'] || keysPressed.current['ArrowUp']) moveVector.z -= 1;
@@ -879,7 +904,7 @@ export default function Lab3DScene({
         // Laboratory Boundaries
         cameraRef.current.position.x = Math.max(-10.5, Math.min(10.5, cameraRef.current.position.x));
         cameraRef.current.position.z = Math.max(-10.5, Math.min(10.5, cameraRef.current.position.z));
-      } else if (isSeated && cameraRef.current && !transitionRef.current?.active) {
+      } else if (isSeatedRef.current && cameraRef.current && !transitionRef.current?.active) {
         // Gentle seated breathing
         idleTimerRef.current += delta * 1.5;
         const breathY = Math.sin(idleTimerRef.current) * 0.0018;
@@ -895,7 +920,8 @@ export default function Lab3DScene({
         const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
         if (hits.length > 0) {
           const hit = hits[0].object;
-          if (hit.userData && hit.userData.isInteractive) {
+          if (hit.userData && hit.userData.isInteractive && hoveredIdRef.current !== hit.userData.interactId) {
+            hoveredIdRef.current = hit.userData.interactId;
             setHoveredAction({
               id: hit.userData.interactId,
               label: hit.userData.label,
@@ -904,7 +930,8 @@ export default function Lab3DScene({
               category: hit.userData.category,
             });
           }
-        } else {
+        } else if (hoveredIdRef.current !== null) {
+          hoveredIdRef.current = null;
           setHoveredAction(null);
         }
 
@@ -923,7 +950,7 @@ export default function Lab3DScene({
       if (scientistRigRef.current) {
         updateScientistRig(scientistRigRef.current, {
           isWalking: isWalkingRef.current,
-          isSeated,
+          isSeated: isSeatedRef.current,
           walkTimer: isWalkingRef.current ? walkTimerRef.current : idleTimerRef.current,
           delta,
           pitch: cameraEuler.current.x,
@@ -933,10 +960,12 @@ export default function Lab3DScene({
       // Animate Chemistry Stirrer
       if (chemEquipmentRef.current) {
         const uData = chemEquipmentRef.current.userData;
-        if (uData && uData.stirBar && chemistryStateRef.current.stirrerRPM > 0) {
-          uData.stirBar.rotation.y += (chemistryStateRef.current.stirrerRPM / 60) * Math.PI * 2 * delta;
+        if (uData && uData.stirBar && labStore.get().chemistry.stirrerRPM > 0) {
+          uData.stirBar.rotation.y += (labStore.get().chemistry.stirrerRPM / 60) * Math.PI * 2 * delta;
         }
       }
+
+      if (curieNPC) curieNPC.update(delta, camera.position, curie.get().targetStation);
 
       renderer.render(scene, camera);
     };
@@ -963,11 +992,15 @@ export default function Lab3DScene({
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('resize', handleResize);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-      if (rendererRef.current && rendererRef.current.domElement) {
-        container.removeChild(rendererRef.current.domElement);
+      disposed = true;
+      disposeObject(scene);
+      envTexture.dispose();
+      renderer.dispose();
+      if (renderer.domElement.parentNode === container) {
+        container.removeChild(renderer.domElement);
       }
     };
-  }, [handleObjectClick, isSeated, isTouch, standUp]);
+  }, [isTouch]);
 
   // Update 3D Microscope Mesh States
   useEffect(() => {
@@ -992,7 +1025,6 @@ export default function Lab3DScene({
 
   // Update 3D Chemistry Mesh States
   useEffect(() => {
-    chemistryStateRef.current = chemistryState;
     if (!chemEquipmentRef.current) return;
     const uData = chemEquipmentRef.current.userData;
     if (!uData) return;
@@ -1005,7 +1037,7 @@ export default function Lab3DScene({
       const mat = uData.flaskLiquid.material as THREE.MeshStandardMaterial;
       if (mat) {
         if (chemistryState.indicatorAdded) {
-          mat.color.set(chemistryState.dispensedML >= 25.0 ? '#f43f5e' : '#fce7f3');
+          mat.color.set(chemistryState.phValue >= 8.2 ? '#f472b6' : '#f8fafc');
         } else {
           mat.color.set('#e0f2fe');
         }
@@ -1042,6 +1074,21 @@ export default function Lab3DScene({
     <div className="relative w-full h-screen bg-slate-950 overflow-hidden select-none">
       {/* 3D WebGL Canvas Container */}
       <div ref={mountRef} className="w-full h-full cursor-crosshair" />
+
+      {/* Dr. Curie speech bubble */}
+      {curieSpeech && !isPhoneOpen && (
+        <button
+          onClick={() => {
+            setPhoneInitialTab('ai');
+            setPhoneAIPrompt(undefined);
+            setIsPhoneOpen(true);
+          }}
+          className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 max-w-[min(92vw,520px)] text-left bg-white/95 text-slate-900 rounded-2xl px-4 py-3 shadow-2xl border border-slate-200 animate-in fade-in slide-in-from-bottom-2"
+        >
+          <span className="block text-xs font-semibold text-teal-700 mb-0.5">Dr. Curie · Lab Manager</span>
+          <span className="block text-sm leading-snug">{curieSpeech}</span>
+        </button>
+      )}
 
       {/* Center Reticle Crosshair ("The Dot") */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">

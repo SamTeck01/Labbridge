@@ -4,12 +4,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { X, Sparkles, Send, Bot, User, BookOpen, Lightbulb } from 'lucide-react';
 import { soundFx } from '@/lib/soundEffects';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-}
+import { curie, useCurie } from '@/lib/curie';
 
 interface AILabAssistantModalProps {
   initialPrompt?: string;
@@ -17,119 +12,26 @@ interface AILabAssistantModalProps {
   onClose: () => void;
 }
 
-export default function AILabAssistantModal({
-  initialPrompt,
-  initialContext,
-  onClose,
-}: AILabAssistantModalProps) {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const initial: Message[] = [];
-    if (initialPrompt) {
-      initial.push({
-        role: 'user',
-        content: initialPrompt,
-        timestamp: new Date().toLocaleTimeString(),
-      });
-    } else {
-      initial.push({
-        role: 'assistant',
-        content: 'Greetings! I am Dr. Curie, your LabBridge Science Assistant. What practical question or specimen would you like to explore today?',
-        timestamp: new Date().toLocaleTimeString(),
-      });
-    }
-    return initial;
-  });
+export default function AILabAssistantModal({ initialPrompt, onClose }: AILabAssistantModalProps) {
+  const messages = useCurie((s) => s.messages);
+  const isLoading = useCurie((s) => s.loading);
   const [inputValue, setInputValue] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(() => !!initialPrompt);
 
-  const sendMessage = async (userText: string, context?: string) => {
+  const sendMessage = (userText: string) => {
     if (!userText.trim()) return;
-
     soundFx.playClick();
-    const newMsg: Message = {
-      role: 'user',
-      content: userText,
-      timestamp: new Date().toLocaleTimeString(),
-    };
-    setMessages((prev) => [...prev, newMsg]);
     setInputValue('');
-    setIsLoading(true);
-
-    try {
-      const res = await fetch('/api/assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: userText,
-          context: context || 'General Laboratory Exploration',
-        }),
-      });
-      const data = await res.json();
-      const assistantReply: Message = {
-        role: 'assistant',
-        content: data.text || 'Observation logged.',
-        timestamp: new Date().toLocaleTimeString(),
-      };
-      setMessages((prev) => [...prev, assistantReply]);
-      soundFx.playSuccessChime();
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: 'Unable to reach the lab assistant server. Please check your connection.',
-          timestamp: new Date().toLocaleTimeString(),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+    curie.ask(userText);
   };
 
-  // Perform initial fetch if initialPrompt was provided
+  // Ask the initial prompt once when opened with one
+  const askedRef = React.useRef(false);
   React.useEffect(() => {
-    if (!initialPrompt) return;
-    let isCancelled = false;
-
-    fetch('/api/assistant', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: initialPrompt,
-        context: initialContext || 'General Laboratory Exploration',
-      }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (isCancelled) return;
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: data.text || 'Observation logged.',
-            timestamp: new Date().toLocaleTimeString(),
-          },
-        ]);
-        setIsLoading(false);
-        soundFx.playSuccessChime();
-      })
-      .catch(() => {
-        if (isCancelled) return;
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: 'Unable to reach the lab assistant server. Please check your connection.',
-            timestamp: new Date().toLocaleTimeString(),
-          },
-        ]);
-        setIsLoading(false);
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [initialPrompt, initialContext]);
+    if (initialPrompt && !askedRef.current) {
+      askedRef.current = true;
+      curie.ask(initialPrompt);
+    }
+  }, [initialPrompt]);
 
   const quickPrompts = [
     'How do I calculate total magnification on the microscope?',
@@ -189,6 +91,8 @@ export default function AILabAssistantModal({
                   className={`max-w-[80%] p-3.5 rounded-2xl leading-relaxed whitespace-pre-wrap ${
                     isUser
                       ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
+                      : m.isError
+                      ? 'bg-rose-950/80 text-rose-200 border border-rose-700/80 rounded-tl-none'
                       : 'bg-slate-800/90 text-slate-200 border border-slate-700/80 rounded-tl-none'
                   }`}
                 >

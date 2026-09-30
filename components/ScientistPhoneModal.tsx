@@ -32,6 +32,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import { soundFx } from '@/lib/soundEffects';
+import { curie, useCurie } from '@/lib/curie';
 import { SnapshotItem } from '@/components/LabNotebookModal';
 import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
 
@@ -51,11 +52,6 @@ interface ScientistPhoneModalProps {
   onSaveSnapshot?: (snapshot: SnapshotItem) => void;
 }
 
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-}
 
 export default function ScientistPhoneModal({
   isOpen,
@@ -67,7 +63,6 @@ export default function ScientistPhoneModal({
   snapshots,
   initialTab = 'home',
   initialAIPrompt,
-  initialAIContext,
 }: ScientistPhoneModalProps) {
   const [activeTab, setActiveTab] = useState<PhoneAppTab>(initialTab || 'home');
   const [timeStr, setTimeStr] = useState<string>('12:00');
@@ -78,16 +73,10 @@ export default function ScientistPhoneModal({
     setActiveTab(initialTab || 'home');
   }
 
-  // AI Chat State
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: 'assistant',
-      content: 'Hello, Scientist! I am Dr. Curie, your LabBridge AI companion. How can I assist your laboratory experiments today?',
-      timestamp: '12:00',
-    },
-  ]);
+  // AI Chat State (shared with every other Curie surface)
+  const messages = useCurie((st) => st.messages);
+  const isAILoading = useCurie((st) => st.loading);
   const [inputVal, setInputVal] = useState('');
-  const [isAILoading, setIsAILoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   // Protocol Checklist State
@@ -114,50 +103,21 @@ export default function ScientistPhoneModal({
   // Sound Mute State
   const [isMuted, setIsMuted] = useState(false);
 
-  const handleSendAIMessage = async (text: string, context?: string) => {
+  const handleSendAIMessage = (text: string) => {
     if (!text.trim()) return;
     soundFx.playClick();
-
-    const userMsg: ChatMessage = {
-      role: 'user',
-      content: text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
     setInputVal('');
-    setIsAILoading(true);
-
-    try {
-      const res = await fetch('/api/assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: text,
-          context: context || (seatedStation ? `Currently at ${seatedStation} workstation` : 'General Laboratory Exploration'),
-        }),
-      });
-      const data = await res.json();
-      const assistantReply: ChatMessage = {
-        role: 'assistant',
-        content: data.text || 'Observation noted in lab telemetry.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, assistantReply]);
-      soundFx.playSuccessChime();
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: 'I am currently processing offline lab telemetry. What experiment would you like to conduct next?',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ]);
-    } finally {
-      setIsAILoading(false);
-    }
+    curie.ask(text);
   };
+
+  // Send a prompt handed in from the 3D world (e.g. clicking a poster) once
+  const lastAskedRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (isOpen && initialAIPrompt && lastAskedRef.current !== initialAIPrompt) {
+      lastAskedRef.current = initialAIPrompt;
+      curie.ask(initialAIPrompt);
+    }
+  }, [isOpen, initialAIPrompt]);
 
   // Sync clock
   useEffect(() => {
@@ -423,13 +383,7 @@ export default function ScientistPhoneModal({
                 <button
                   onClick={() => {
                     soundFx.playClick();
-                    setMessages([
-                      {
-                        role: 'assistant',
-                        content: 'Chat history cleared. How may I assist your scientific analysis?',
-                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                      },
-                    ]);
+                    curie.clear();
                   }}
                   className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white text-xs"
                   title="Clear Chat"
