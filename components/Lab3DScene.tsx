@@ -56,7 +56,7 @@ import { curie, useCurie, startCurieWatch } from '@/lib/curie';
 import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
 import { disposeObject, loadLabModel, swapInModel } from '@/lib/assetLoader';
-import { mergeStaticMeshes, AdaptiveResolution } from '@/lib/scenePerf';
+import { mergeStaticMeshes, QualityManager } from '@/lib/scenePerf';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { TitrationBench } from '@/lib/workbench/titrationBench';
 import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench } from '@/lib/workbench/benches';
@@ -707,7 +707,10 @@ export default function Lab3DScene({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
     renderer.shadowMap.enabled = !isTouch; // phones: no real-time shadows (AO/env light carry the look)
-    renderer.shadowMap.type = isTouch ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    // The room is static: shadows are re-rendered a few times a second, not every frame
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1173,8 +1176,20 @@ export default function Lab3DScene({
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-    // Phones never drop below native CSS resolution (1.0): lower looked blurry. Desktop unchanged.
-    const adaptive = new AdaptiveResolution(renderer, Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2), isTouch ? 1.0 : 0.7);
+    // Adaptive quality: keeps every device smooth by trading AO, then resolution, then shadows
+    let useComposer = !!composer;
+    const quality = new QualityManager(renderer, isTouch, (t) => {
+      useComposer = t.ao && !!composer;
+      renderer.shadowMap.enabled = t.shadows;
+      renderer.shadowMap.needsUpdate = true;
+      composer?.setSize(container.clientWidth, container.clientHeight);
+      scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+        if (m) m.needsUpdate = true; // shadow on/off changes shaders
+      });
+    });
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __quality: quality });
+    let shadowFrame = 0;
 
     // Animation & Physics Loop
     let lastTime = performance.now();
@@ -1186,7 +1201,8 @@ export default function Lab3DScene({
       const now = performance.now();
       const frameMs = now - lastTime;
       const delta = Math.min(frameMs / 1000, 0.1);
-      adaptive.frame(frameMs, () => composer?.setSize(container.clientWidth, container.clientHeight));
+      quality.frame(frameMs);
+      if (renderer.shadowMap.enabled && ++shadowFrame % 6 === 0) renderer.shadowMap.needsUpdate = true;
       lastTime = now;
 
       // Check for motion key intent to auto-stand up if seated
@@ -1385,7 +1401,7 @@ export default function Lab3DScene({
         if (atTarget && c.pending.length && !c.operating) curie.arrived();
       }
 
-      if (composer) composer.render(delta);
+      if (useComposer && composer) composer.render(delta);
       else renderer.render(scene, camera);
     };
 

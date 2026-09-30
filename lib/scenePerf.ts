@@ -137,3 +137,78 @@ export class AdaptiveResolution {
     }
   }
 }
+
+/** One rung of the quality ladder. */
+export interface QualityTier {
+  name: string;
+  pixelRatio: number;
+  ao: boolean;
+  shadows: boolean;
+}
+
+/**
+ * Measures real frame times on this device and steps quality down only as far as needed to stay
+ * smooth (and back up when there is clear headroom). Order of sacrifice: ambient occlusion first
+ * (the heaviest effect), then resolution, then shadows. Phones never go below native resolution.
+ */
+export class QualityManager {
+  private samples: number[] = [];
+  private tier = 0;
+  private lastChange = 0;
+  private drops = 0;
+  private locked = false;
+  readonly tiers: QualityTier[];
+
+  constructor(private renderer: THREE.WebGLRenderer, isTouch: boolean, private apply: (t: QualityTier) => void) {
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
+    const cap = (r: number) => Math.min(dpr, r);
+    this.tiers = isTouch
+      ? [
+          { name: 'phone-high', pixelRatio: cap(1.5), ao: false, shadows: false },
+          { name: 'phone-medium', pixelRatio: cap(1.25), ao: false, shadows: false },
+          { name: 'phone-low', pixelRatio: Math.min(dpr, 1.0), ao: false, shadows: false },
+        ]
+      : [
+          { name: 'ultra', pixelRatio: cap(1.5), ao: true, shadows: true },
+          { name: 'high', pixelRatio: cap(1.5), ao: false, shadows: true },
+          { name: 'medium', pixelRatio: cap(1.25), ao: false, shadows: true },
+          { name: 'low', pixelRatio: cap(1.0), ao: false, shadows: false },
+        ];
+    // Desktop starts without AO and earns it with measured headroom (no laggy first seconds on weak laptops)
+    this.set(isTouch ? 0 : 1, performance.now());
+  }
+
+  get current() {
+    return this.tiers[this.tier];
+  }
+
+  private set(i: number, now: number) {
+    this.tier = i;
+    this.lastChange = now;
+    const t = this.tiers[i];
+    this.renderer.setPixelRatio(t.pixelRatio);
+    this.apply(t);
+  }
+
+  /** Call once per frame with the time since the previous frame (ms). */
+  frame(deltaMs: number) {
+    const now = performance.now();
+    // Ignore the first seconds (shader compiles, model uploads) and hitches from tab switches
+    // (a percentile over many frames, so one-off hitches don't matter; multi-second gaps are tab switches)
+    if (now - this.lastChange < 1500 || deltaMs > 2000) return;
+    this.samples.push(deltaMs);
+    if (this.samples.length < 45 && !(this.samples.length >= 8 && deltaMs > 100)) return;
+    const sorted = [...this.samples].sort((a, b) => a - b);
+    const typical = sorted[Math.floor(sorted.length * 0.6)];
+    this.samples = [];
+    if (typical > 21 && this.tier < this.tiers.length - 1) {
+      // Below ~48 fps: step down
+      this.drops++;
+      this.set(this.tier + 1, now);
+    } else if (!this.locked && typical < 11 && this.tier > 0 && now - this.lastChange > 6000) {
+      // Lots of headroom for a while: try one step up (stop trying after repeated oscillation)
+      if (this.drops >= 3) this.locked = true;
+      else this.set(this.tier - 1, now);
+    }
+  }
+}
