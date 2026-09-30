@@ -57,6 +57,7 @@ import { curie, useCurie, startCurieWatch } from '@/lib/curie';
 import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
 import { disposeObject, loadLabModel, swapInModel } from '@/lib/assetLoader';
+import { mergeStaticMeshes, AdaptiveResolution } from '@/lib/scenePerf';
 
 export type StationType = 'biology' | 'chemistry' | 'physics' | 'research' | null;
 
@@ -128,6 +129,22 @@ function applyResearchState(root: THREE.Object3D | null, analyticalState: LabSta
   }
 }
 
+/** Mini-map that polls the player pose at 8 Hz, isolating its re-renders from the 3D scene component. */
+function LiveMiniMap({
+  poseRef,
+  ...rest
+}: { poseRef: React.RefObject<{ x: number; z: number; yaw: number }> } & Omit<React.ComponentProps<typeof MiniMapRadar>, 'playerX' | 'playerZ' | 'playerYaw'>) {
+  const [pose, setPose] = useState({ x: 0, z: 5.5, yaw: Math.PI });
+  useEffect(() => {
+    const id = setInterval(() => {
+      const p = poseRef.current;
+      setPose((prev) => (Math.abs(prev.x - p.x) + Math.abs(prev.z - p.z) + Math.abs(prev.yaw - p.yaw) > 0.01 ? { ...p } : prev));
+    }, 125);
+    return () => clearInterval(id);
+  }, [poseRef]);
+  return <MiniMapRadar playerX={pose.x} playerZ={pose.z} playerYaw={pose.yaw} {...rest} />;
+}
+
 export default function Lab3DScene({
   initialStation = null,
   onOpenNotebook,
@@ -151,11 +168,8 @@ export default function Lab3DScene({
   const [phoneAIContext, setPhoneAIContext] = useState<string | undefined>(undefined);
 
   // Live Player Coordinates for Radar Mini-Map
-  const [playerCoords, setPlayerCoords] = useState<{ x: number; z: number; yaw: number }>({
-    x: 0,
-    z: 5.5,
-    yaw: Math.PI,
-  });
+  // Written by the render loop; only the mini-map polls it, so the scene never re-renders for movement
+  const poseRef = useRef<{ x: number; z: number; yaw: number }>({ x: 0, z: 5.5, yaw: Math.PI });
 
   // Center Reticle Hover Target
   const [hoveredAction, setHoveredAction] = useState<{
@@ -529,13 +543,14 @@ export default function Lab3DScene({
     const renderer = new THREE.WebGLRenderer({ antialias: !isTouch, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.25 : 2));
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = !isTouch; // phones: no real-time shadows (AO/env light carry the look)
     renderer.shadowMap.type = isTouch ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __renderer: renderer, __scene: scene });
 
     // Ambient occlusion: soft contact shadows in corners, under benches and around equipment.
     // Desktop only; phones render directly to keep the frame rate up.
@@ -566,8 +581,18 @@ export default function Lab3DScene({
       interactiveObjectsRef.current = list;
     };
 
+    // Bake static geometry into a few big meshes once models stop arriving (debounced)
+    let mergeTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleMerge = () => {
+      if (mergeTimer) clearTimeout(mergeTimer);
+      mergeTimer = setTimeout(() => {
+        if (!disposed) mergeStaticMeshes(scene);
+      }, 1500);
+    };
+
     // Procedural room shell; replaced by /models/lab-room.glb when that asset exists
     const proceduralRoom = new THREE.Group();
+    proceduralRoom.userData.placeholder = true;
     scene.add(proceduralRoom);
     loadLabModel('lab-room', null).then((room) => {
       if (disposed) return;
@@ -580,6 +605,7 @@ export default function Lab3DScene({
       scene.remove(proceduralRoom);
       disposeObject(proceduralRoom);
       scene.add(room.root);
+      scheduleMerge();
     });
 
     // Bright Ambient & Hemisphere Illumination (Daylight White 6000K)
@@ -676,14 +702,14 @@ export default function Lab3DScene({
     const fumeHood = createFumeHood();
     fumeHood.position.set(0, 0, -11.3);
     scene.add(fumeHood);
-    swapInModel(fumeHood, 'fume-hood');
+    swapInModel(fumeHood, 'fume-hood').then(scheduleMerge);
 
     // Add Emergency Safety Shower & Eye Wash Station
     const safetyShower = createSafetyShower();
     safetyShower.position.set(11.2, 0, 4.0);
     safetyShower.rotation.y = -Math.PI / 2;
     scene.add(safetyShower);
-    swapInModel(safetyShower, 'safety-shower');
+    swapInModel(safetyShower, 'safety-shower').then(scheduleMerge);
 
     // Add Science Whiteboard on Front Wall
     const whiteboard = createLabWhiteboard();
@@ -694,7 +720,7 @@ export default function Lab3DScene({
       const notes = createWhiteboardNotes();
       notes.position.z = 0.012; // just proud of the board surface (model front is local +z)
       model.add(notes);
-    });
+    }).then(scheduleMerge);
 
     // 4 Workstation Benches with Overhead Shelves & Swivel Stools
     const interactiveList: THREE.Object3D[] = [];
@@ -752,7 +778,7 @@ export default function Lab3DScene({
       const shelf = createReagentShelf();
       shelf.position.set(cfg.x, 2.1, cfg.z + (cfg.z < 0 ? -0.6 : 0.6));
       scene.add(shelf);
-      swapInModel(shelf, 'reagent-shelf');
+      swapInModel(shelf, 'reagent-shelf').then(scheduleMerge);
 
       // Add Swivel Lab Stool (Seat cushion at 0.62m)
       const stool = createLabStool(cfg.station, cfg.x, cfg.stoolZ, cfg.stoolZ > 0 ? Math.PI : 0);
@@ -760,6 +786,7 @@ export default function Lab3DScene({
       swapInModel(stool, 'lab-stool', (model) => {
         model.traverse((o) => tagInteractive(o, `stool_${cfg.station}`, 'Lab Swivel Stool', 'Sit Down on Chair', cfg.station, 'stool'));
         collectInteractives();
+      scheduleMerge();
       });
       stool.traverse((c) => {
         if (c.userData && c.userData.isInteractive) {
@@ -777,6 +804,7 @@ export default function Lab3DScene({
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
       collectInteractives();
+      scheduleMerge();
     });
 
     // 2. Chemistry 3D Titration Suite & Ready-Made Glassware GLB Setup
@@ -788,6 +816,7 @@ export default function Lab3DScene({
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
       collectInteractives();
+      scheduleMerge();
     });
 
     // 3. Physics 3D Circuit & Apparatus Ready-Made Setup
@@ -800,6 +829,7 @@ export default function Lab3DScene({
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
       collectInteractives();
+      scheduleMerge();
     });
 
     // 4. Research 3D Analytical Suite Ready-Made Setup
@@ -812,6 +842,7 @@ export default function Lab3DScene({
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
       collectInteractives();
+      scheduleMerge();
     });
 
     interactiveObjectsRef.current = interactiveList;
@@ -825,6 +856,7 @@ export default function Lab3DScene({
       scene.add(npc.root);
       interactiveList.push(npc.root);
       collectInteractives();
+      scheduleMerge();
     });
 
     // Raycaster for Center Reticle Hover & Click
@@ -911,6 +943,8 @@ export default function Lab3DScene({
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
 
+    const adaptive = new AdaptiveResolution(renderer, Math.min(window.devicePixelRatio, isTouch ? 1.25 : 2));
+
     // Animation & Physics Loop
     let lastTime = performance.now();
     let coordUpdateCounter = 0;
@@ -919,7 +953,9 @@ export default function Lab3DScene({
       animationFrameId.current = requestAnimationFrame(animateLoop);
 
       const now = performance.now();
-      const delta = Math.min((now - lastTime) / 1000, 0.1);
+      const frameMs = now - lastTime;
+      const delta = Math.min(frameMs / 1000, 0.1);
+      adaptive.frame(frameMs, () => composer?.setSize(container.clientWidth, container.clientHeight));
       lastTime = now;
 
       // Check for motion key intent to auto-stand up if seated
@@ -1050,11 +1086,11 @@ export default function Lab3DScene({
         // Update coordinates for Mini Map Radar throttled
         coordUpdateCounter++;
         if (coordUpdateCounter % 4 === 0) {
-          setPlayerCoords({
+          poseRef.current = {
             x: cameraRef.current.position.x,
             z: cameraRef.current.position.z,
             yaw: cameraEuler.current.y,
-          });
+          };
         }
       }
 
@@ -1114,6 +1150,7 @@ export default function Lab3DScene({
       window.removeEventListener('resize', handleResize);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       disposed = true;
+      if (mergeTimer) clearTimeout(mergeTimer);
       disposeObject(scene);
       envTexture.dispose();
       composer?.dispose();
@@ -1286,10 +1323,8 @@ export default function Lab3DScene({
       </div>
 
       {/* Top-Right Round Mini Map Radar (Click to Pause) */}
-      <MiniMapRadar
-        playerX={playerCoords.x}
-        playerZ={playerCoords.z}
-        playerYaw={playerCoords.yaw}
+      <LiveMiniMap
+        poseRef={poseRef}
         isSeated={isSeated}
         seatedStation={seatedStation}
         onTeleport={handleTeleport}

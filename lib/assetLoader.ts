@@ -4,6 +4,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { fitModelToDimensions } from '@/lib/gltfLabEquipment';
+import { cheapGlass } from '@/lib/scenePerf';
 import { tagInteractive } from '@/lib/lab3dEquipment';
 
 /**
@@ -142,6 +143,7 @@ export async function loadLabModel(
       m.receiveShadow = true;
     }
   });
+  cheapGlass(model);
   if (fit) fitModelToDimensions(model, fit);
   root.add(model);
   if (station) wireInteractiveNodes(root, station);
@@ -168,6 +170,7 @@ export function disposeObject(root: THREE.Object3D) {
  * The group keeps its transform, so placement code stays the same. Resolves true if swapped.
  */
 export async function swapInModel(group: THREE.Group, name: string, onLoaded?: (model: THREE.Object3D) => void) {
+  group.userData.placeholder = true;
   const loaded = await loadLabModel(name, null);
   if (!loaded || !group.parent) return false;
   [...group.children].forEach((c) => {
@@ -175,6 +178,7 @@ export async function swapInModel(group: THREE.Group, name: string, onLoaded?: (
     disposeObject(c);
   });
   group.add(loaded.root);
+  group.userData.placeholder = false;
   onLoaded?.(loaded.root);
   return true;
 }
