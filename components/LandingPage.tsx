@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { soundFx } from '@/lib/soundEffects';
 import { useInstall, enterImmersive } from '@/lib/pwa';
+import ProgressModal from '@/components/ProgressModal';
 
 interface LandingPageProps {
   onEnterLab: (initialStation?: 'biology' | 'chemistry' | 'physics' | 'research') => void;
@@ -26,6 +27,7 @@ interface LandingPageProps {
 export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: LandingPageProps) {
   const { mode: installMode, install } = useInstall();
   const [showIosHelp, setShowIosHelp] = React.useState(false);
+  const [showProgress, setShowProgress] = React.useState(false);
 
   const handleStart = (station?: 'biology' | 'chemistry' | 'physics' | 'research') => {
     soundFx.playSuccessChime();
@@ -35,6 +37,8 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-white flex flex-col justify-between relative overflow-hidden">
+      {showProgress && <ProgressModal onClose={() => setShowProgress(false)} />}
+
       {showIosHelp && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-6" onClick={() => setShowIosHelp(false)}>
           <div className="max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-5 text-sm text-slate-200">
@@ -66,6 +70,12 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
         </div>
 
         <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setShowProgress(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-700 transition-all"
+          >
+            <span>My progress</span>
+          </button>
           {installMode && (
             <button
               onClick={() => (installMode === 'prompt' ? install() : setShowIosHelp(true))}
