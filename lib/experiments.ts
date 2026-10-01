@@ -91,7 +91,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       { id: 'fill', text: 'Fill the burette with 0.1 M NaOH to 0.00 mL', coach: 'Pick up the NaOH bottle and pour it through the funnel into the burette until it reaches the zero mark.', done: (l) => l.chemistry.buretteML >= 49.5 },
       { id: 'acid', text: 'Pour 25.0 mL of 0.1 M HCl into the flask', coach: 'Now the measuring cylinder of HCl. Pour all 25 mL into the conical flask.', done: (l) => l.chemistry.flaskAcidML >= 24.5 },
       { id: 'indicator', text: 'Add 2–3 drops of phenolphthalein to the flask', coach: 'Take the dropper from the indicator bottle and squeeze a few drops into the flask.', done: (l) => l.chemistry.indicatorAdded },
-      { id: 'stir', text: 'Switch on the magnetic stirrer', coach: 'Turn on the stirrer so each addition mixes in. Around 400 rpm is fine.', done: (l) => l.chemistry.stirrerRPM > 0 },
+      { id: 'stir', text: 'Mix: switch on the stirrer, or swirl the flask', coach: 'Each addition has to mix in. Switch on the stirrer, or hold the flask and swirl it by hand (tap the flask).', done: (l, r) => l.chemistry.stirrerRPM > 0 || (r.events.swirled ?? 0) > 0 },
       { id: 'titrate', text: 'Open the burette and titrate', coach: 'Open the stopcock. Run it steadily at first; the endpoint is near 25 mL.', done: (l) => l.chemistry.dispensedML > 0.5 },
       { id: 'endpoint', text: 'Close the burette at the first permanent pink', coach: 'Near 24 mL, close it and add single drops. Stop at the first faint pink that stays.', done: (l) => l.chemistry.phValue >= 8.2 && !l.chemistry.buretteOpen },
       { id: 'record', text: 'Record the titre', coach: 'Read the burette at eye level and record your titre.', done: (_l, r) => r.readings.length >= 1 },

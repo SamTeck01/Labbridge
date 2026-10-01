@@ -3,6 +3,7 @@ import { loadLabModel } from '@/lib/assetLoader';
 import { tagInteractive } from '@/lib/lab3dEquipment';
 import { labStore, titrationPH } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
+import { experiments } from '@/lib/experiments';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { Drops, LiquidColumn, LiquidInVessel, PourStream } from '@/lib/workbench/liquids';
 
@@ -125,6 +126,7 @@ export class TitrationBench {
     };
     if (id === 'chem_naoh_bottle') run(() => this.fillBurette());
     else if (id === 'chem_hcl_cylinder') run(() => this.pourAcid());
+    else if (id === 'chem_flask' && labStore.get().chemistry.indicatorAdded) run(() => this.swirl());
     else if (id === 'chem_indicator' || id === 'chem_dropper' || id === 'chem_flask') run(() => this.addIndicator());
     else if (id === 'chem_stopcock') run(() => this.turnStopcock());
     else if (id === 'chem_stirrer_knob') run(() => this.turnStirrer());
@@ -268,6 +270,29 @@ export class TitrationBench {
   private stopcockHandParked = false;
 
   /** Left hand opens the stopcock and stays on it (as in a real titration) so closing is instant. */
+  /** Hold the flask neck and swirl it: mixes the base in, so a fading pink flash clears. */
+  private async swirl() {
+    const H = this.hands;
+    const mouth = this.anchor('anchor_flask_mouth');
+    if (!mouth) return;
+    const neck = mouth.clone().add(new THREE.Vector3(0.03, -0.03, 0.04));
+    await H.move('right', { wrist: neck.clone().add(new THREE.Vector3(0.02, 0.04, 0.03)), grip: 0.15, twist: 0, flex: 0 }, 0.4);
+    await H.move('right', { wrist: neck, grip: 0.6 }, 0.2);
+    // Small circles at the wrist; the liquid forms a vortex while swirling
+    this.swirling = 1;
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 4;
+      await H.move('right', { wrist: neck.clone().add(new THREE.Vector3(Math.cos(a) * 0.006, 0, Math.sin(a) * 0.006)) }, 0.09);
+    }
+    this.swirling = 0;
+    this.flash = 0;
+    experiments.event('swirled');
+    await H.move('right', { grip: 0.15 }, 0.12);
+    await H.rest('right', 0.45);
+  }
+
+  private swirling = 0;
+
   private async turnStopcock() {
     const H = this.hands;
     const sc = this.rig.getObjectByName('chem_stopcock');
@@ -343,7 +368,7 @@ export class TitrationBench {
     this.buretteStem.setFraction(c.buretteML > 0.3 ? 1 : 0);
     this.buretteMain.setFraction(c.buretteML / 50);
     const flaskMl = c.flaskAcidML + c.dispensedML + (c.indicatorAdded ? 0.15 : 0);
-    this.flask.update(flaskMl, Math.min(1, c.stirrerRPM / 800));
+    this.flask.update(flaskMl, Math.max(this.swirling * 0.7, Math.min(1, c.stirrerRPM / 800)));
     this.bottleLiquid?.setFraction(this.bottleML / 500);
     this.cylinderLiquid?.setFraction(this.cylinderML / 25);
     if (force) this.flask.material.color.copy(CLEAR);
