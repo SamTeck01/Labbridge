@@ -1279,6 +1279,21 @@ export default function Lab3DScene({
     }
     const poke = () => scheduler.poke();
     const unsubscribeLab = labStore.subscribe(poke); // any state change animates for a moment
+
+    // Lab sounds follow the apparatus state
+    const updateSounds = () => {
+      const lab = labStore.get();
+      const lit = lab.flame.lit;
+      soundFx.setLoop('burner', lit && !lab.flame.airOpen ? 1 : 0);
+      soundFx.setLoop('burnerBlue', lit && lab.flame.airOpen ? 1 : 0);
+      soundFx.setLoop('stirrer', lab.chemistry.stirrerRPM / 800);
+      soundFx.setLoop('centrifuge', lab.research.centrifugeRunning ? 1 : 0);
+      soundFx.setLoop('bubbles', lab.chemistry.buretteOpen ? 0.5 : 0);
+      soundFx.setLoop('ambience', 1);
+    };
+    const unsubscribeSounds = labStore.subscribe(updateSounds);
+    const soundKick = () => updateSounds(); // audio can only start after a user gesture
+    window.addEventListener('pointerdown', soundKick, { once: true });
     const pokeEvents = ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart', 'touchmove'] as const;
     pokeEvents.forEach((ev) => window.addEventListener(ev, poke, { passive: true }));
 
@@ -1538,6 +1553,9 @@ export default function Lab3DScene({
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       disposed = true;
       unsubscribeLab();
+      unsubscribeSounds();
+      window.removeEventListener('pointerdown', soundKick);
+      soundFx.stopAllLoops();
       window.removeEventListener('labbridge:graphics', onGraphics);
       pokeEvents.forEach((ev) => window.removeEventListener(ev, poke));
       if (mergeTimer) clearTimeout(mergeTimer);
