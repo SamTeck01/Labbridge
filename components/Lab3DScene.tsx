@@ -55,7 +55,7 @@ import { labStore, useLab, type LabState, type Station } from '@/lib/labStore';
 import { curie, useCurie, startCurieWatch } from '@/lib/curie';
 import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
-import { disposeObject, loadLabModel, swapInModel, clearModelCache } from '@/lib/assetLoader';
+import { disposeObject, loadLabModel, swapInModel, clearModelCache, wireInteractiveNodes } from '@/lib/assetLoader';
 import { mergeStaticMeshes, QualityManager, FrameScheduler, releaseCanvasAfterUpload } from '@/lib/scenePerf';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { TitrationBench } from '@/lib/workbench/titrationBench';
@@ -897,7 +897,14 @@ export default function Lab3DScene({
     const fumeHood = createFumeHood();
     fumeHood.position.set(0, 0, -11.3);
     scene.add(fumeHood);
-    swapInModel(fumeHood, 'fume-hood').then(scheduleMerge);
+    swapInModel(fumeHood, 'fume-hood', (model) => {
+      // Sash is a moving, tappable part; its glass must not catch taps meant for the kit behind it
+      wireInteractiveNodes(model, 'hood');
+      model.traverse((o) => {
+        if (o.name.startsWith('sash_glass')) o.raycast = () => {};
+      });
+      collectInteractives();
+    }).then(scheduleMerge);
 
     // Add Emergency Safety Shower & Eye Wash Station
     const safetyShower = createSafetyShower();

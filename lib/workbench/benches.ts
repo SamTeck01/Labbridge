@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { tagInteractive } from '@/lib/lab3dEquipment';
-import { labStore, circuit, type Objective } from '@/lib/labStore';
+import { labStore, circuit, rotorImbalance, type Objective } from '@/lib/labStore';
 import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
 import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
 import { FirstPersonHands } from '@/lib/workbench/hands';
+import { Drops } from '@/lib/workbench/liquids';
 
 /**
  * Hands-on benches beyond titration. Each bench turns taps into hand actions on its apparatus and
@@ -29,7 +30,12 @@ export abstract class BenchBase implements Workbench {
   constructor(protected scene: THREE.Scene, protected rig: THREE.Object3D, protected hands: FirstPersonHands, protected focus: Focus) {}
 
   get isBusy() {
-    return this.busy;
+    return this.busy || this.isAnimatingExtra();
+  }
+
+  /** Benches with their own short animations (e.g. a centrifuge wobble) override this. */
+  protected isAnimatingExtra() {
+    return false;
   }
 
   private queued: string | null = null;
@@ -108,11 +114,15 @@ const TURRET_ANGLE: Record<Objective, number> = { '4x': 0, '10x': Math.PI / 2, '
 const OBJECTIVES: Objective[] = ['4x', '10x', '40x', '100x'];
 
 export class MicroscopeBench extends BenchBase {
-  protected ids = ['micro_slide', 'micro_turret', 'micro_coarse_focus', 'coarse_knob_r', 'micro_fine_focus', 'fine_knob_r', 'micro_light_switch', 'micro_eyepieces'];
+  protected ids = ['micro_slide', 'micro_turret', 'micro_coarse_focus', 'coarse_knob_r', 'micro_fine_focus', 'fine_knob_r', 'micro_light_switch', 'micro_eyepieces', 'micro_stage_knob', 'micro_oil'];
   private turretAngle = 0;
   private stageBaseY: number | null = null;
   private knobSpin = { coarse: 0, fine: 0 };
   private looseSlide: THREE.Mesh;
+  private oilBottle: THREE.Group;
+  private oilDrops: Drops;
+  private slideBaseX: number | null = null;
+  private stageKnobSpin = 0;
 
   constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus, private openEyepieces: () => void) {
     super(scene, rig, hands, focus);
@@ -133,6 +143,24 @@ export class MicroscopeBench extends BenchBase {
     scene.add(glass);
     const t = rig.getObjectByName('micro_turret');
     if (t) this.turretAngle = t.rotation.y;
+
+    // Immersion oil dropper bottle beside the microscope (needed for the 100x objective)
+    this.oilBottle = new THREE.Group();
+    const amber = new THREE.MeshStandardMaterial({ color: '#7a3b0a', transparent: true, opacity: 0.85, roughness: 0.1 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.015, 0.05, 16), amber);
+    body.position.y = 0.025;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.009, 0.025, 12), new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.6 }));
+    cap.position.y = 0.062;
+    const label = new THREE.Mesh(new THREE.CylinderGeometry(0.0152, 0.0152, 0.02, 16, 1, true), new THREE.MeshStandardMaterial({ color: '#e9e4d6', roughness: 0.9 }));
+    label.position.y = 0.025;
+    this.oilBottle.add(body, cap, label);
+    const base = rig.getWorldPosition(new THREE.Vector3());
+    this.oilBottle.position.set(base.x + 0.17, base.y, base.z + 0.09);
+    this.oilBottle.traverse((o) => tagInteractive(o, 'micro_oil', 'Immersion Oil', 'Put a drop of oil on the slide (for 100x)', 'biology', 'primary'));
+    this.oilBottle.userData.keepSeparate = true;
+    scene.add(this.oilBottle);
+    this.oilDrops = new Drops(scene, '#f2c46a', 0.0018, 4);
+    this.node('micro_stage_knob');
   }
 
   protected async perform(id: string) {
@@ -187,6 +215,41 @@ export class MicroscopeBench extends BenchBase {
         this.knobSpin[coarse ? 'coarse' : 'fine'] += step * 20;
         soundFx.playKnobTick();
       });
+    } else if (id === 'micro_stage_knob') {
+      // Each turn moves the slide across the field of view (back and forth across the specimen)
+      const at = this.pos('micro_stage_knob');
+      if (!at) return;
+      await this.turn(this.hands.sideFor(at), at, 0.8, () => {
+        const x = bio().stageX;
+        labStore.update('biology', { stageX: x >= 0.6 ? -0.6 : Math.round((x + 0.3) * 10) / 10 });
+        this.stageKnobSpin += 1.2;
+        soundFx.playKnobTick();
+      });
+    } else if (id === 'micro_oil') {
+      const H = this.hands;
+      const stage = this.pos('micro_stage');
+      if (!stage) return;
+      const home = this.oilBottle.position.clone();
+      const grab = home.clone().add(new THREE.Vector3(0, 0.04, 0));
+      await H.move('right', { wrist: grab.clone().add(new THREE.Vector3(0.03, 0.05, 0.07)), grip: 0.15, twist: 0, flex: 0 }, 0.45);
+      await H.move('right', { wrist: grab.clone().add(new THREE.Vector3(0.03, 0.0, 0.05)) }, 0.2);
+      await H.move('right', { grip: 0.65 }, 0.15);
+      H.grab('right', this.oilBottle);
+      const over = stage.clone().add(new THREE.Vector3(0.0, 0.11, 0));
+      await H.move('right', { wrist: over.clone().add(new THREE.Vector3(0.03, 0.0, 0.05)), twist: 1.6 }, 0.7);
+      const tip = this.oilBottle.localToWorld(new THREE.Vector3(0, 0.075, 0));
+      this.oilDrops.spawn(tip, stage.y + 0.012, () => {
+        labStore.update('biology', { immersionOil: true });
+        soundFx.playDropLiquid();
+      });
+      await H.wait(0.8);
+      await H.move('right', { twist: 0 }, 0.4);
+      await H.move('right', { wrist: grab.clone().add(new THREE.Vector3(0.03, 0.0, 0.05)) }, 0.6);
+      H.release('right', this.scene);
+      this.oilBottle.position.copy(home);
+      this.oilBottle.quaternion.identity();
+      await H.move('right', { grip: 0.15 }, 0.12);
+      await H.rest('right', 0.45);
     } else if (id === 'micro_light_switch') {
       const at = this.pos('micro_light_switch');
       if (!at) return;
@@ -208,6 +271,15 @@ export class MicroscopeBench extends BenchBase {
 
   update(delta: number) {
     const b = labStore.get().biology;
+    this.oilDrops.update(delta);
+    // The stage knob moves the slide on the stage
+    const slide = this.node('glass_slide');
+    if (slide) {
+      if (this.slideBaseX === null) this.slideBaseX = slide.position.x;
+      slide.position.x = damp(slide.position.x, this.slideBaseX + b.stageX * 0.02, 8, delta);
+    }
+    const sk = this.node('micro_stage_knob');
+    if (sk) sk.rotation.y = damp(sk.rotation.y, this.stageKnobSpin, 8, delta); // vertical knob
     const turret = this.node('micro_turret');
     if (turret) {
       // Rotate the short way round to the selected objective
@@ -233,7 +305,8 @@ export class MicroscopeBench extends BenchBase {
 // ---------------------------------------------------------------------------------------------
 
 export class CircuitBench extends BenchBase {
-  protected ids = ['phys_knife_switch', 'phys_potentiometer'];
+  protected ids = ['phys_knife_switch', 'phys_potentiometer', 'phys_voltage_knob'];
+  private voltSpin = 0;
   private needle = 0.87;
   private needleVel = 0;
   private glow = 0;
@@ -255,6 +328,17 @@ export class CircuitBench extends BenchBase {
       await H.move(side, { wrist: handle.clone().add(new THREE.Vector3(0.02, closing ? 0.0 : 0.09, 0.06)) }, 0.3);
       await H.move(side, { grip: 0.2 }, 0.12);
       await H.rest(side, 0.45);
+    } else if (id === 'phys_voltage_knob') {
+      const at = this.pos('phys_voltage_knob');
+      if (!at) return;
+      await this.turn(this.hands.sideFor(at), at, 1.0, () => {
+        const v = p().voltage;
+        const next = v >= 12 ? 3 : v + 3;
+        labStore.update('physics', { voltage: next });
+        this.voltSpin = ((next - 3) / 9) * Math.PI * 1.5;
+        soundFx.playKnobTick();
+        curie.say(`Power supply set to ${next} V.`);
+      });
     } else if (id === 'phys_potentiometer') {
       const at = this.pos('phys_potentiometer');
       if (!at) return;
@@ -269,6 +353,8 @@ export class CircuitBench extends BenchBase {
   update(delta: number) {
     const s = labStore.get().physics;
     const u = this.rig.userData;
+    const vk = this.node('phys_voltage_knob');
+    if (vk) vk.rotation.z = damp(vk.rotation.z, -this.voltSpin, 8, delta); // knob faces the student: spins about z
     const blade = u.blade as THREE.Object3D | undefined;
     if (blade) blade.rotation.z = damp(blade.rotation.z, s.switchClosed ? 0 : 0.6, 10, delta);
     const knob = u.potKnob as THREE.Object3D | undefined;
@@ -298,7 +384,13 @@ export class CircuitBench extends BenchBase {
 const BOAT_MASS = 1.2034;
 
 export class BalanceBench extends BenchBase {
-  protected ids = ['res_balance_door', 'res_weigh_boat', 'res_tare_btn', 'res_centrifuge_start', 'res_centrifuge_lid', 'sample_jar', 'spatula'];
+  protected ids = ['res_balance_door', 'res_weigh_boat', 'res_tare_btn', 'res_centrifuge_start', 'res_centrifuge_lid', 'sample_jar', 'spatula', ...Array.from({ length: 8 }, (_, i) => `rotor_slot_${i}`)];
+  private lidAngle = 0;
+  private rigRest: THREE.Vector3 | null = null;
+  private wobble = 0;
+  private slotTubes: THREE.Object3D[][] = Array.from({ length: 8 }, () => []);
+  private slotPoints: THREE.Vector3[] = [];
+  private looseTube: THREE.Mesh;
   private doorBaseZ: number | null = null;
   private spatula: THREE.Group;
   private spatulaHome = new THREE.Matrix4();
@@ -361,6 +453,36 @@ export class BalanceBench extends BenchBase {
     this.grains.userData.keepSeparate = true;
     scene.add(this.grains);
     [this.jar, this.spatula].forEach((o) => (o.userData.keepSeparate = true));
+
+    // ---- Centrifuge: rotor slots the student loads tubes into ----
+    const rotor = this.node('res_centrifuge_rotor');
+    const centre = rotor ? rotor.getWorldPosition(new THREE.Vector3()) : rigPos.clone();
+    rotor?.traverse((o) => {
+      if (!(o as THREE.Mesh).isMesh || !/^rotor_(tube|cap)/.test(o.name)) return;
+      const p = (o as THREE.Mesh).geometry.boundingBox ?? ((o as THREE.Mesh).geometry.computeBoundingBox(), (o as THREE.Mesh).geometry.boundingBox!);
+      const w = o.localToWorld(p.getCenter(new THREE.Vector3()));
+      const a = Math.atan2(-(w.z - centre.z), w.x - centre.x);
+      const i = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
+      this.slotTubes[i].push(o);
+      o.visible = false; // the rotor starts empty
+    });
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const pt = centre.clone().add(new THREE.Vector3(Math.cos(a) * 0.1, 0.035, -Math.sin(a) * 0.1));
+      this.slotPoints.push(pt);
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), hitMat);
+      hit.position.copy(pt);
+      tagInteractive(hit, `rotor_slot_${i}`, `Rotor position ${i + 1}`, 'Load / unload a sample tube', 'research', 'primary');
+      scene.add(hit);
+    }
+    this.looseTube = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0075, 0.006, 0.07, 12),
+      new THREE.MeshStandardMaterial({ color: '#e6e6dc', transparent: true, opacity: 0.75, roughness: 0.2 })
+    );
+    this.looseTube.visible = false;
+    this.looseTube.userData.keepSeparate = true;
+    scene.add(this.looseTube);
   }
 
   protected async perform(id: string) {
@@ -384,13 +506,80 @@ export class BalanceBench extends BenchBase {
         labStore.update('research', { tareOffset: r().massOnPan });
         soundFx.playBeep();
       });
-    } else if (id === 'res_centrifuge_start' || id === 'res_centrifuge_lid') {
+    } else if (id === 'res_centrifuge_lid') {
+      if (r().centrifugeRunning) {
+        curie.say('Never open a centrifuge while the rotor is spinning. Stop it and wait.');
+        return;
+      }
+      const lid = this.node('res_centrifuge_lid');
+      if (!lid) return;
+      const front = lid.localToWorld(new THREE.Vector3(0, 0, 0.16));
+      const opening = !r().centrifugeLidOpen;
+      const side = this.hands.sideFor(front);
+      await H.move(side, { wrist: front.clone().add(new THREE.Vector3(0, 0.05, 0.07)), grip: 0.2, twist: 0, flex: 0 }, 0.45);
+      await H.move(side, { grip: 0.55 }, 0.15);
+      labStore.update('research', { centrifugeLidOpen: opening });
+      soundFx.playClick();
+      await H.move(side, { wrist: front.clone().add(new THREE.Vector3(0, opening ? 0.18 : 0.02, opening ? -0.05 : 0.06)) }, 0.5);
+      await H.move(side, { grip: 0.2 }, 0.12);
+      await H.rest(side, 0.45);
+    } else if (id.startsWith('rotor_slot_')) {
+      if (!r().centrifugeLidOpen) {
+        curie.say('Open the centrifuge lid first.');
+        return;
+      }
+      const i = Number(id.slice('rotor_slot_'.length));
+      const slots = [...r().rotorSlots];
+      const rack = this.rig.localToWorld(new THREE.Vector3(0.62, 0.08, 0.05));
+      const slot = this.slotPoints[i];
+      const loading = !slots[i];
+      // Carry a tube between the rack and the rotor position
+      const from = loading ? rack : slot;
+      const to = loading ? slot : rack;
+      await H.move('right', { wrist: from.clone().add(new THREE.Vector3(0.03, 0.08, 0.06)), grip: 0.15, twist: 0, flex: 0 }, 0.5);
+      await H.move('right', { wrist: from.clone().add(new THREE.Vector3(0.03, 0.03, 0.05)) }, 0.2);
+      await H.move('right', { grip: 0.6 }, 0.12);
+      this.looseTube.position.copy(from).add(new THREE.Vector3(0, 0.02, 0));
+      this.looseTube.quaternion.identity();
+      this.looseTube.visible = true;
+      if (!loading) {
+        slots[i] = false;
+        labStore.update('research', { rotorSlots: slots });
+      }
+      H.grab('right', this.looseTube);
+      await H.move('right', { wrist: to.clone().add(new THREE.Vector3(0.03, 0.1, 0.06)) }, 0.6);
+      await H.move('right', { wrist: to.clone().add(new THREE.Vector3(0.03, 0.03, 0.05)) }, 0.25);
+      H.release('right', this.scene);
+      this.looseTube.visible = false;
+      if (loading) {
+        slots[i] = true;
+        labStore.update('research', { rotorSlots: slots });
+      }
+      soundFx.playGlassSlide();
+      await H.move('right', { grip: 0.15 }, 0.12);
+      await H.rest('right', 0.45);
+    } else if (id === 'res_centrifuge_start') {
       const at = this.pos('res_centrifuge_start');
-      if (at) await this.press(this.hands.sideFor(at), at, () => {
-        const running = !r().centrifugeRunning;
-        labStore.update('research', { centrifugeRunning: running });
-        if (running) soundFx.playCentrifugeSpin();
-        else soundFx.playBeep();
+      if (!at) return;
+      await this.press(this.hands.sideFor(at), at, () => {
+        const st = r();
+        if (st.centrifugeRunning) {
+          labStore.update('research', { centrifugeRunning: false });
+          soundFx.playBeep();
+        } else if (st.centrifugeLidOpen) {
+          curie.say('The lid must be closed and latched before it will start.');
+          soundFx.playBeep();
+        } else if (!st.rotorSlots.some(Boolean)) {
+          curie.say('The rotor is empty. Load your sample tubes first, opposite each other.');
+        } else if (rotorImbalance(st.rotorSlots) > 0.05) {
+          // Unbalanced: violent wobble, then the safety cut-out stops it
+          this.wobble = 1.6;
+          soundFx.playCentrifugeSpin();
+          curie.say('Stop! The rotor is unbalanced. Tubes must be placed opposite each other, equal weight, or it shakes itself apart.');
+        } else {
+          labStore.update('research', { centrifugeRunning: true });
+          soundFx.playCentrifugeSpin();
+        }
       });
     } else if (id === 'res_weigh_boat' || id === 'sample_jar' || id === 'spatula') {
       if (!r().doorsOpen) {
@@ -443,6 +632,21 @@ export class BalanceBench extends BenchBase {
 
   update(delta: number) {
     const s = labStore.get().research;
+    // Lid hinge, loaded tubes, imbalance wobble
+    const lid = this.node('res_centrifuge_lid');
+    this.lidAngle = damp(this.lidAngle, s.centrifugeLidOpen ? -1.3 : 0, 7, delta);
+    if (lid) lid.rotation.x = this.lidAngle;
+    this.slotTubes.forEach((meshes, i) => meshes.forEach((m) => (m.visible = s.rotorSlots[i])));
+    if (this.wobble > 0 || this.rigRest) {
+      if (!this.rigRest) this.rigRest = this.rig.position.clone();
+      this.wobble = Math.max(0, this.wobble - delta);
+      const t = performance.now() / 1000;
+      this.rig.position.copy(this.rigRest).add(new THREE.Vector3(Math.sin(t * 90), 0, Math.cos(t * 77)).multiplyScalar(0.004 * this.wobble));
+      if (this.wobble === 0) {
+        this.rig.position.copy(this.rigRest);
+        this.rigRest = null;
+      }
+    }
     const door = this.node('res_balance_door');
     if (door) {
       if (this.doorBaseZ === null) this.doorBaseZ = door.position.z;
@@ -468,7 +672,12 @@ export class BalanceBench extends BenchBase {
     this.grains.instanceMatrix.needsUpdate = true;
   }
 
+  protected isAnimatingExtra() {
+    return this.wobble > 0;
+  }
+
   reset() {
     this.falling = [];
+    this.wobble = 0;
   }
 }

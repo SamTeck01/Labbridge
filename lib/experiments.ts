@@ -226,14 +226,16 @@ export const EXPERIMENTS: ExperimentDef[] = [
     title: 'Flame Tests for Metal Ions',
     objective: 'Identify the characteristic flame colour of five metal ions (Li⁺, Na⁺, K⁺, Ca²⁺, Cu²⁺) using a clean nichrome loop in a blue Bunsen flame.',
     safety: ['Work inside the fume hood with the sash lowered.', 'Never leave gas on without a flame.', 'Clean the loop in acid and flame between samples.'],
-    intro: 'Flame tests today, in the fume hood. Turn on the gas tap, then light the burner straight away with the lighter.',
+    intro: 'Flame tests today, in the fume hood. Lower the sash to working height first, then gas on and light the burner straight away.',
     steps: [
+      { id: 'sash', text: 'Lower the fume hood sash to working height', coach: 'First, pull the fume hood sash down to working height. It shields your face and keeps the fumes in the hood.', done: (l) => l.flame.sashDown },
       { id: 'light', text: 'Turn on the gas and light the Bunsen burner', coach: 'Gas tap on, then the lighter to the top of the barrel. Never leave gas running unlit.', done: (l) => l.flame.lit },
       { id: 'blue', text: 'Open the air hole for a blue, non-luminous flame', coach: 'Turn the air collar to open the air hole. A yellow flame would hide the colours.', done: (l) => l.flame.lit && l.flame.airOpen },
       { id: 'tests', text: 'Test all five samples, cleaning the loop between each', coach: 'Pick up the loop. For each sample: dip in the acid, heat until no colour, dip in the sample, then hold it at the edge of the flame.', done: (_l, r) => new Set(r.readings.map((x) => x.label)).size >= 5 },
       { id: 'off', text: 'Turn the gas off', coach: "All five done. Turn the gas off at the tap, and don't touch the barrel: it stays hot.", done: (l, r) => !l.flame.gasOn && r.readings.length >= 5 },
     ],
     mistakes: [
+      { id: 'sashUp', message: 'Sash down! Never work at a flame in the hood with the sash raised.', check: (l) => l.flame.lit && !l.flame.sashDown },
       { id: 'gasUnlit', message: 'Gas is running with no flame! Light it now or turn it off. Unburnt gas is a fire and explosion risk.', check: (_l, r) => (r.events.gasUnlit ?? 0) > 0 },
       { id: 'contaminated', message: "That loop wasn't cleaned. The old sample will mix colours. Dip it in acid and heat it until the flame shows no colour first.", check: (_l, r) => (r.events.contaminated ?? 0) > 0 },
       { id: 'luminous', message: 'That was a yellow flame: its own colour masks the sample. Open the air hole for a blue flame.', check: (_l, r) => (r.events.luminousTest ?? 0) > 0 },
@@ -248,7 +250,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
         { label: 'Samples tested', points: tested * 10, max: 50, note: `${tested}/5 metal ions observed.` },
         { label: 'Clean technique', points: Math.max(0, 30 - dirty * 15), max: 30, note: dirty ? `Loop not cleaned ${dirty} time(s): colours contaminated.` : 'Loop cleaned between every sample.' },
         { label: 'Correct flame', points: r.events.luminousTest ? 0 : 10, max: 10, note: r.events.luminousTest ? 'Tested in a yellow luminous flame.' : 'All tests in a blue flame.' },
-        { label: 'Gas safety', points: (r.events.gasUnlit ? 0 : 5) + (!l.flame.gasOn ? 5 : 0), max: 10, note: r.events.gasUnlit ? 'Gas left running unlit.' : 'Gas handled safely.' },
+        { label: 'Gas & hood safety', points: (r.events.gasUnlit ? 0 : 4) + (!l.flame.gasOn ? 3 : 0) + (r.mistakes.includes('sashUp') ? 0 : 3), max: 10, note: r.events.gasUnlit ? 'Gas left running unlit.' : r.mistakes.includes('sashUp') ? 'Worked at the flame with the sash raised.' : 'Gas and sash handled safely.' },
       ];
     },
   },
@@ -386,7 +388,7 @@ export const experiments = {
     // Fresh apparatus for the practical
     if (def.id === 'titration') labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
     if (def.id === 'weighing') labStore.update('research', { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0 });
-    if (def.id === 'flame') labStore.update('flame', { gasOn: false, lit: false, airOpen: false, loop: 'clean' });
+    if (def.id === 'flame') labStore.update('flame', { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false });
     if (def.id === 'microscopy') labStore.update('biology', { objective: '10x', coarseFocus: 0.2, fineFocus: 0.5, immersionOil: false });
     set({ run: { experimentId: id, startedAt: Date.now(), completedSteps: [], readings: [], mistakes: [], events: {} }, lastResult: null });
     emit({ type: 'started', message: def.intro });

@@ -128,6 +128,30 @@ function buildPlaceholder() {
   return { group: g, head, arms, legs };
 }
 
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _qw = new THREE.Quaternion();
+const _qp = new THREE.Quaternion();
+
+/** Rotate the upper arm so the arm points at `target` (world), blended by `amount` on top of the animation. */
+function applyReach(arm: THREE.Bone, fore: THREE.Bone, target: THREE.Vector3, amount: number) {
+  arm.updateWorldMatrix(true, true);
+  const shoulder = arm.getWorldPosition(_a);
+  const elbow = fore.getWorldPosition(_b);
+  const current = _c.subVectors(elbow, shoulder).normalize();
+  const desired = target.clone().sub(shoulder).normalize();
+  const delta = _q.setFromUnitVectors(current, desired);
+  delta.slerp(new THREE.Quaternion(), 1 - amount);
+  // Apply the world-space rotation in the bone's local frame
+  arm.getWorldQuaternion(_qw);
+  arm.parent!.getWorldQuaternion(_qp);
+  arm.quaternion.copy(_qp.invert().multiply(delta.multiply(_qw)));
+  // Slightly bend the elbow toward the work
+  fore.rotateX(-0.35 * amount);
+}
+
 export async function createCurieNPC(): Promise<CurieNPC> {
   const root = new THREE.Group();
   root.name = 'drCurie';
@@ -138,6 +162,8 @@ export async function createCurieNPC(): Promise<CurieNPC> {
   let idle: THREE.AnimationAction | null = null;
   let walk: THREE.AnimationAction | null = null;
   let head: THREE.Object3D | null = null;
+  let armBone: THREE.Bone | null = null;
+  let foreBone: THREE.Bone | null = null;
   let parts: ReturnType<typeof buildPlaceholder> | null = null;
 
   if (real) {
@@ -163,6 +189,8 @@ export async function createCurieNPC(): Promise<CurieNPC> {
     if (walkClip) (walk = mixer.clipAction(walkClip)).play().setEffectiveWeight(0);
     real.root.traverse((o) => {
       if (!head && /head/i.test(o.name) && (o as THREE.Bone).isBone) head = o;
+      if (/RightArm$/.test(o.name)) armBone = o as THREE.Bone;
+      if (/RightForeArm$/.test(o.name)) foreBone = o as THREE.Bone;
     });
   } else {
     parts = buildPlaceholder();
@@ -227,6 +255,10 @@ export async function createCurieNPC(): Promise<CurieNPC> {
         idle?.setEffectiveWeight(1 - walkBlend);
         walk?.setEffectiveWeight(walkBlend);
         mixer.update(delta);
+        // Reach for the apparatus: swing the right arm (real skeleton) to point at the bench
+        if (reach > 0.01 && armBone && foreBone && target) {
+          applyReach(armBone, foreBone, BENCH_CENTRES[target].clone().setY(1.0), reach);
+        }
       } else if (parts) {
         const swing = Math.sin(t * 7) * 0.5 * walkBlend;
         parts.legs[0].rotation.x = swing;

@@ -33,7 +33,7 @@ function flameMaterial(color: THREE.ColorRepresentation, opacity: number) {
 }
 
 export class FlameBench extends BenchBase {
-  protected ids = ['flame_gas_tap', 'flame_air_collar', 'flame_lighter', 'flame_loop', 'flame_acid', 'flame_zone', ...Object.keys(SALT_IDS)];
+  protected ids = ['hood_sash', 'flame_gas_tap', 'flame_air_collar', 'flame_lighter', 'flame_loop', 'flame_acid', 'flame_zone', ...Object.keys(SALT_IDS)];
   private holding = false;
   private loopHome = new THREE.Matrix4();
   private loopParent: THREE.Object3D | null = null;
@@ -48,6 +48,8 @@ export class FlameBench extends BenchBase {
   private warnedGas = false;
   private collarAngle = 0;
   private tapAngle = 0;
+  private sash: THREE.Object3D | null = null;
+  private sashBaseY: number | null = null;
 
   constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus) {
     super(scene, rig, hands, focus);
@@ -135,7 +137,20 @@ export class FlameBench extends BenchBase {
     const H = this.hands;
     const f = () => this.f();
 
-    if (id === 'flame_gas_tap') {
+    if (id === 'hood_sash') {
+      const sash = this.findSash();
+      if (!sash) return;
+      // Grip the handle along the bottom of the sash and slide it
+      const handle = sash.getWorldPosition(new THREE.Vector3());
+      const down = !f().sashDown;
+      await H.move('right', { wrist: handle.clone().add(new THREE.Vector3(0.12, -0.02, 0.06)), grip: 0.2, twist: 0, flex: 0 }, 0.45);
+      await H.move('right', { grip: 0.6 }, 0.15);
+      labStore.update('flame', { sashDown: down });
+      soundFx.playGlassSlide();
+      await H.move('right', { wrist: handle.clone().add(new THREE.Vector3(0.12, down ? -0.55 : 0.5, 0.06)) }, 0.6);
+      await H.move('right', { grip: 0.2 }, 0.12);
+      await H.rest('right', 0.45);
+    } else if (id === 'flame_gas_tap') {
       const at = this.pos('flame_gas_tap');
       if (!at) return;
       await this.turn('left', at, 0.7, () => {
@@ -267,9 +282,20 @@ export class FlameBench extends BenchBase {
     await this.tipTo(edge.clone().add(new THREE.Vector3(0.05, 0.08, 0.05)), 0.4);
   }
 
+  private findSash() {
+    if (!this.sash) this.sash = this.scene.getObjectByName('hood_sash') ?? null;
+    return this.sash;
+  }
+
   update(delta: number) {
     this.t += delta;
     const s = this.f();
+    // Sash slides between raised (open, +0.5 m) and lowered to the working height
+    const sash = this.findSash();
+    if (sash) {
+      if (this.sashBaseY === null) this.sashBaseY = sash.position.y;
+      sash.position.y = THREE.MathUtils.damp(sash.position.y, this.sashBaseY + (s.sashDown ? 0 : 0.5), 6, delta);
+    }
 
     // Gas running with no flame: Curie steps in after a few seconds
     if (s.gasOn && !s.lit) {

@@ -29,7 +29,9 @@ px = -0.52
 box("psu_case", (0.24, 0.2, 0.12), (px, 0.04, Z + 0.06), grey, bev=0.008)
 box("psu_front", (0.22, 0.004, 0.1), (px, -0.061, Z + 0.06), panel, bev=0.001)
 box("psu_display", (0.08, 0.002, 0.025), (px - 0.05, -0.064, Z + 0.09), seg, bev=0)
-cyl("psu_knob", 0.014, 0.015, (px + 0.04, -0.07, Z + 0.085), blk, verts=32, rot=(math.pi / 2, 0, 0), bev=0.002)
+vk = empty("phys_voltage_knob", (px + 0.04, -0.07, Z + 0.085))
+parent(cyl("psu_knob", 0.014, 0.015, (px + 0.04, -0.07, Z + 0.085), blk, verts=32, rot=(math.pi / 2, 0, 0), bev=0.002), vk)
+parent(box("psu_knob_pointer", (0.002, 0.004, 0.01), (px + 0.04, -0.078, Z + 0.093), mat("pointer_white", (0.9, 0.9, 0.9), rough=0.5), bev=0), vk)
 for dx, m in ((0.03, red), (0.07, blk)):
     cyl("psu_post", 0.007, 0.018, (px + dx, -0.07, Z + 0.035), m, verts=20, rot=(math.pi / 2, 0, 0), bev=0.001)
 

@@ -31,6 +31,9 @@ export interface LabState {
     fineFocus: number;
     lightIntensity: number;
     immersionOil: boolean;
+    /** Mechanical stage position (-1..1) set by the stage knobs. */
+    stageX: number;
+    stageY: number;
   };
   chemistry: {
     /** NaOH currently in the burette (mL); 50 = filled to the 0.00 mark. */
@@ -55,6 +58,8 @@ export interface LabState {
     airOpen: boolean;
     /** What's on the wire loop: clean, wet with acid, a salt, or burnt residue. */
     loop: 'clean' | 'acid' | 'dirty' | SaltKey;
+    /** Fume hood sash lowered to the safe working height. */
+    sashDown: boolean;
   };
   research: {
     doorsOpen: boolean;
@@ -65,16 +70,19 @@ export interface LabState {
     /** Displayed reading (g): massOnPan - tareOffset, drifting with air currents while the shield is open. */
     balanceWeight: number;
     centrifugeRunning: boolean;
+    centrifugeLidOpen: boolean;
+    /** Which of the 8 rotor positions hold a tube (index 0 = front, going round). */
+    rotorSlots: boolean[];
   };
 }
 
 const initialState: LabState = {
   player: { station: null, seated: false, goggles: false },
-  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false },
+  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false, stageX: 0, stageY: 0 },
   chemistry: { buretteML: 50, flaskAcidML: 25, buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
-  flame: { gasOn: false, lit: false, airOpen: false, loop: 'clean' },
-  research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false },
+  flame: { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false },
+  research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false, centrifugeLidOpen: false, rotorSlots: [false, false, false, false, false, false, false, false] },
 };
 
 let state: LabState = initialState;
@@ -108,6 +116,18 @@ export function useLab<T>(selector: (s: LabState) => T): T {
 }
 
 // --- Pure simulation helpers (testable, no rendering) ---
+
+/** A centrifuge is balanced when the loaded tubes' centre of mass sits on the spindle. */
+export function rotorImbalance(slots: boolean[]): number {
+  let x = 0;
+  let y = 0;
+  slots.forEach((on, i) => {
+    if (!on) return;
+    x += Math.cos((i * Math.PI) / 4);
+    y += Math.sin((i * Math.PI) / 4);
+  });
+  return Math.hypot(x, y);
+}
 
 /** Image sharpness through the eyepieces, 0.02 (blurred) to 1 (crisp). Shared by the eyepiece view, experiments and Curie. */
 export function microscopeSharpness(b: LabState['biology']): number {
@@ -147,7 +167,7 @@ export function describeLabState(s: LabState): string {
     `Biology: microscope objective ${s.biology.objective}, slide "${SPECIMEN_CATALOG[s.biology.slideIndex]?.name}", image sharpness ${Math.round(microscopeSharpness(s.biology) * 100)}%, immersion oil ${s.biology.immersionOil ? 'applied' : 'none'}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
     `Chemistry: burette holds ${s.chemistry.buretteML.toFixed(1)} mL NaOH and is ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into ${s.chemistry.flaskAcidML.toFixed(1)} mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
     `Physics: switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
-    `Flame test (fume hood): gas ${s.flame.gasOn ? 'ON' : 'off'}, burner ${s.flame.lit ? `lit with a ${s.flame.airOpen ? 'blue roaring' : 'yellow luminous'} flame` : 'not lit'}, wire loop ${s.flame.loop}.`,
-    `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}.`,
+    `Flame test (fume hood): gas ${s.flame.gasOn ? 'ON' : 'off'}, fume hood sash ${s.flame.sashDown ? 'lowered (safe)' : 'RAISED'}, burner ${s.flame.lit ? `lit with a ${s.flame.airOpen ? 'blue roaring' : 'yellow luminous'} flame` : 'not lit'}, wire loop ${s.flame.loop}.`,
+    `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}, lid ${s.research.centrifugeLidOpen ? 'open' : 'closed'}, tubes in slots [${s.research.rotorSlots.map((v, i) => (v ? i : '')).filter((v) => v !== '').join(',')}] (imbalance ${rotorImbalance(s.research.rotorSlots).toFixed(2)}).`,
   ].join('\n');
 }

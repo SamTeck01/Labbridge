@@ -48,8 +48,9 @@ export default function EyepieceOcularOverlay({
   const setCoarseFocus = (v: number) => labStore.update('biology', { coarseFocus: v });
   const setFineFocus = (v: number) => labStore.update('biology', { fineFocus: v });
   const setImmersionOil = (v: boolean) => labStore.update('biology', { immersionOil: v });
-  const [stageX, setStageX] = useState<number>(0);
-  const [stageY, setStageY] = useState<number>(0);
+  const { stageX, stageY } = bio;
+  const setStageX = (f: (v: number) => number) => labStore.update('biology', (b) => ({ stageX: f(b.stageX) }));
+  const setStageY = (f: (v: number) => number) => labStore.update('biology', (b) => ({ stageY: f(b.stageY) }));
   const [diaphragmAperture, setDiaphragmAperture] = useState<number>(0.8);
   const [showMicrometer, setShowMicrometer] = useState<boolean>(false);
   const [capturedFlash, setCapturedFlash] = useState<boolean>(false);
@@ -74,8 +75,8 @@ export default function EyepieceOcularOverlay({
       canvas.height,
       selectedSpecimenId,
       magnificationFactor,
-      stageX,
-      stageY,
+      stageX * 150, // stage position (-1..1) -> pixels across the field of view
+      stageY * 150,
       1, // drawn sharp; focus blur is applied by the GPU (CSS filter) so focusing never redraws
       lightIntensity,
       diaphragmAperture
@@ -195,9 +196,12 @@ export default function EyepieceOcularOverlay({
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current) return;
-    const k = 1 / magnificationFactor;
-    setStageX((v) => Math.max(-1, Math.min(1, v - (e.clientX - drag.current!.x) * k)));
-    setStageY((v) => Math.max(-1, Math.min(1, v - (e.clientY - drag.current!.y) * k)));
+    // The image follows the finger/mouse (canvas is 600 px drawn into ~500 px, 150 px per stage unit)
+    const k = 1 / 130;
+    const dx = (e.clientX - drag.current!.x) * k;
+    const dy = (e.clientY - drag.current!.y) * k;
+    setStageX((v) => Math.max(-1, Math.min(1, v + dx)));
+    setStageY((v) => Math.max(-1, Math.min(1, v + dy)));
     drag.current = { x: e.clientX, y: e.clientY };
   };
   const onPointerUp = () => {
