@@ -161,18 +161,20 @@ export const EXPERIMENTS: ExperimentDef[] = [
     title: "Verifying Ohm's Law",
     objective: 'Measure the current through the circuit at three or more resistances and show that V = I × R.',
     safety: ['Keep current under 1 A to protect the bulb and meter.', 'Open the switch when you finish.'],
-    intro: "We'll verify Ohm's law. Close the knife switch, then record the current at at least three rheostat settings.",
+    intro: "We'll verify Ohm's law. First complete the circuit: the return lead is unplugged. Then close the switch and record the current at three rheostat settings.",
     steps: [
+      { id: 'wire', text: 'Plug the return lead into the power supply', coach: 'The circuit is incomplete: pick up the loose red lead and plug it into the power supply terminal.', done: (l) => l.physics.wired },
       { id: 'close', text: 'Close the knife switch', coach: 'Close the knife switch to complete the circuit.', done: (l) => l.physics.switchClosed },
       { id: 'measure', text: 'Record current at 3 different resistances', coach: 'Record the ammeter reading, change the rheostat, and repeat. Three settings at least.', done: (_l, r) => new Set(r.readings.map((x) => x.extra?.R)).size >= 3 },
       { id: 'open', text: 'Open the switch when finished', coach: 'Good data. Open the switch to make the circuit safe.', done: (l, r) => !l.physics.switchClosed && r.readings.length >= 3 },
     ],
     mistakes: [
-      { id: 'overcurrent', message: "That's over 1 A. Turn the resistance up before you burn out the bulb.", check: (l) => l.physics.switchClosed && l.physics.voltage / l.physics.resistance > 1 },
+      { id: 'overcurrent', message: "That's over 1 A. Turn the resistance up before you burn out the bulb.", check: (l) => l.physics.wired && l.physics.switchClosed && l.physics.voltage / l.physics.resistance > 1 },
     ],
     recordLabel: 'Record ammeter reading',
     readingsNeeded: 3,
     record: (l) => {
+      if (!l.physics.wired) return 'The circuit is incomplete: plug in the return lead.';
       if (!l.physics.switchClosed) return 'Close the switch first: no current is flowing.';
       const I = l.physics.voltage / l.physics.resistance;
       return { label: `I at R = ${l.physics.resistance} Ω`, value: Math.round(I * 1000) / 1000, unit: 'A', extra: { R: l.physics.resistance, V: l.physics.voltage } };
@@ -388,6 +390,7 @@ export const experiments = {
     // Fresh apparatus for the practical
     if (def.id === 'titration') labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
     if (def.id === 'weighing') labStore.update('research', { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0 });
+    if (def.id === 'ohms-law') labStore.update('physics', { wired: false, switchClosed: false, resistance: 25, voltage: 12 });
     if (def.id === 'flame') labStore.update('flame', { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false });
     if (def.id === 'microscopy') labStore.update('biology', { objective: '10x', coarseFocus: 0.2, fineFocus: 0.5, immersionOil: false });
     set({ run: { experimentId: id, startedAt: Date.now(), completedSteps: [], readings: [], mistakes: [], events: {} }, lastResult: null });

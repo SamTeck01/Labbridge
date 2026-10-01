@@ -305,7 +305,7 @@ export class MicroscopeBench extends BenchBase {
 // ---------------------------------------------------------------------------------------------
 
 export class CircuitBench extends BenchBase {
-  protected ids = ['phys_knife_switch', 'phys_potentiometer', 'phys_voltage_knob'];
+  protected ids = ['phys_knife_switch', 'phys_potentiometer', 'phys_voltage_knob', 'phys_return_lead'];
   private voltSpin = 0;
   private needle = 0.87;
   private needleVel = 0;
@@ -327,6 +327,24 @@ export class CircuitBench extends BenchBase {
       soundFx.playSwitchToggle(closing);
       await H.move(side, { wrist: handle.clone().add(new THREE.Vector3(0.02, closing ? 0.0 : 0.09, 0.06)) }, 0.3);
       await H.move(side, { grip: 0.2 }, 0.12);
+      await H.rest(side, 0.45);
+    } else if (id === 'phys_return_lead') {
+      // Pick up the plug and push it into the supply's terminal (or pull it out)
+      const plug = this.node('lead_return_plug');
+      const terminal = this.rig.localToWorld(new THREE.Vector3(-0.45, 0.055, 0.08));
+      const loose = plug ? plug.getWorldPosition(new THREE.Vector3()) : terminal;
+      const plugging = !p().wired;
+      const from = plugging ? loose : terminal;
+      const to = plugging ? terminal : loose;
+      const side = this.hands.sideFor(from);
+      await H.move(side, { wrist: from.clone().add(new THREE.Vector3(0.02, 0.06, 0.06)), grip: 0.15, twist: 0, flex: 0 }, 0.45);
+      await H.move(side, { wrist: from.clone().add(new THREE.Vector3(0.02, 0.02, 0.05)), grip: 0.6 }, 0.2);
+      if (!plugging) labStore.update('physics', { wired: false });
+      await H.move(side, { wrist: to.clone().add(new THREE.Vector3(0.02, 0.04, 0.05)) }, 0.55);
+      await H.move(side, { wrist: to.clone().add(new THREE.Vector3(0.02, 0.015, 0.05)) }, 0.15);
+      if (plugging) labStore.update('physics', { wired: true });
+      soundFx.playClick();
+      await H.move(side, { grip: 0.15 }, 0.1);
       await H.rest(side, 0.45);
     } else if (id === 'phys_voltage_knob') {
       const at = this.pos('phys_voltage_knob');
@@ -353,6 +371,13 @@ export class CircuitBench extends BenchBase {
   update(delta: number) {
     const s = labStore.get().physics;
     const u = this.rig.userData;
+    // Return lead: plugged-in or loose on the bench
+    const on = this.node('lead_return_connected');
+    if (on) on.visible = s.wired;
+    const off = this.node('lead_return_loose');
+    if (off) off.visible = !s.wired;
+    const plugMesh = this.node('lead_return_plug');
+    if (plugMesh) plugMesh.visible = !s.wired;
     const vk = this.node('phys_voltage_knob');
     if (vk) vk.rotation.z = damp(vk.rotation.z, -this.voltSpin, 8, delta); // knob faces the student: spins about z
     const blade = u.blade as THREE.Object3D | undefined;
@@ -361,7 +386,7 @@ export class CircuitBench extends BenchBase {
     if (knob) knob.rotation.y = damp(knob.rotation.y, -(s.resistance / 100) * Math.PI * 1.5, 8, delta);
 
     // Ammeter needle: a damped spring, so it swings and settles like a real moving-coil meter
-    const { current, power } = circuit(s.voltage, s.resistance, s.switchClosed);
+    const { current, power } = circuit(s.voltage, s.resistance, s.switchClosed, s.wired);
     const target = 0.87 - Math.min(1, current) * 1.74;
     this.needleVel += ((target - this.needle) * 60 - this.needleVel * 9) * delta;
     this.needle += this.needleVel * delta;

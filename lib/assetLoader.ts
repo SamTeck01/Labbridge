@@ -113,6 +113,7 @@ export const INTERACTIVE_NODES: Record<string, InteractiveSpec> = {
   flame_salt_cu: { label: 'Sample E: Copper(II) chloride', action: 'Dip the loop in the sample', category: 'primary' },
   hood_sash: { label: 'Fume Hood Sash', action: 'Raise / lower the sash', category: 'primary', ref: 'sash' },
   micro_stage_knob: { label: 'Stage Control Knob', action: 'Move the slide on the stage', category: 'knob' },
+  phys_return_lead: { label: 'Return Lead', action: 'Plug into / unplug from the power supply', category: 'primary' },
   phys_voltage_knob: { label: 'Power Supply Voltage', action: 'Turn to change the voltage', category: 'knob' },
   res_balance_door: { label: 'Analytical Balance Door', action: 'Open / close draft shield', category: 'primary', ref: 'balanceDoor' },
   res_balance_display: { label: 'Balance Readout', action: 'Mass reading', category: 'primary', ref: 'balanceDisplay' },

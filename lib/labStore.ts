@@ -47,6 +47,8 @@ export interface LabState {
     phValue: number;
   };
   physics: {
+    /** Return lead plugged into the power supply (circuit complete). */
+    wired: boolean;
     switchClosed: boolean;
     resistance: number;
     voltage: number;
@@ -80,7 +82,7 @@ const initialState: LabState = {
   player: { station: null, seated: false, goggles: false },
   biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false, stageX: 0, stageY: 0 },
   chemistry: { buretteML: 50, flaskAcidML: 25, buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
-  physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
+  physics: { wired: true, switchClosed: false, resistance: 25, voltage: 12.0 },
   flame: { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false },
   research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false, centrifugeLidOpen: false, rotorSlots: [false, false, false, false, false, false, false, false] },
 };
@@ -154,19 +156,19 @@ export function titrationPH(naohML: number, acidML = 25, conc = 0.1): number {
 }
 
 /** Ohm's law: current (A) and power (W) through the bulb circuit. */
-export function circuit(voltage: number, resistance: number, closed: boolean) {
-  const current = closed ? voltage / resistance : 0;
+export function circuit(voltage: number, resistance: number, closed: boolean, wired = true) {
+  const current = closed && wired ? voltage / resistance : 0;
   return { current, power: current * voltage };
 }
 
 /** Compact human-readable snapshot sent to Dr. Curie with every message. */
 export function describeLabState(s: LabState): string {
-  const { current } = circuit(s.physics.voltage, s.physics.resistance, s.physics.switchClosed);
+  const { current } = circuit(s.physics.voltage, s.physics.resistance, s.physics.switchClosed, s.physics.wired);
   return [
     `Student location: ${s.player.seated && s.player.station ? `at the ${s.player.station} bench` : 'walking in the lab'}; safety goggles ${s.player.goggles ? 'ON' : 'OFF'}.`,
     `Biology: microscope objective ${s.biology.objective}, slide "${SPECIMEN_CATALOG[s.biology.slideIndex]?.name}", image sharpness ${Math.round(microscopeSharpness(s.biology) * 100)}%, immersion oil ${s.biology.immersionOil ? 'applied' : 'none'}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
     `Chemistry: burette holds ${s.chemistry.buretteML.toFixed(1)} mL NaOH and is ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into ${s.chemistry.flaskAcidML.toFixed(1)} mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
-    `Physics: switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
+    `Physics: return lead ${s.physics.wired ? 'connected' : 'UNPLUGGED'}, switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
     `Flame test (fume hood): gas ${s.flame.gasOn ? 'ON' : 'off'}, fume hood sash ${s.flame.sashDown ? 'lowered (safe)' : 'RAISED'}, burner ${s.flame.lit ? `lit with a ${s.flame.airOpen ? 'blue roaring' : 'yellow luminous'} flame` : 'not lit'}, wire loop ${s.flame.loop}.`,
     `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}, lid ${s.research.centrifugeLidOpen ? 'open' : 'closed'}, tubes in slots [${s.research.rotorSlots.map((v, i) => (v ? i : '')).filter((v) => v !== '').join(',')}] (imbalance ${rotorImbalance(s.research.rotorSlots).toFixed(2)}).`,
   ].join('\n');

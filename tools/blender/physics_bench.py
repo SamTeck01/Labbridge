@@ -79,8 +79,15 @@ leads = [
     [(bx + 0.03, -0.05, Z + 0.01), (bx + 0.1, -0.1, Z + 0.01), (ax - 0.04, -0.03, Z + 0.012)],
     [(ax + 0.04, -0.03, Z + 0.012), (ax, -0.18, Z + 0.01), (0, -0.2, Z + 0.01), (px + 0.07, -0.12, Z + 0.01), (px + 0.07, -0.08, Z + 0.035)],
 ]
-for i, pts in enumerate(leads):
+for i, pts in enumerate(leads[:4]):
     wire(f"lead_{i}", pts, red if i % 2 == 0 else blk)
+# Return lead (ammeter -> supply): the student plugs it in. Two states, shown/hidden at runtime.
+ret = empty("phys_return_lead", (ax + 0.04, -0.03, Z + 0.012))
+parent(wire("lead_return_connected", leads[4], red), ret)
+parent(wire("lead_return_loose", [(ax + 0.04, -0.03, Z + 0.012), (ax, -0.16, Z + 0.006), (0.25, -0.2, Z + 0.006), (0.12, -0.19, Z + 0.006)], red), ret)
+box("plug_tip", (0.008, 0.008, 0.012), (0.12, -0.19, Z + 0.008), red, bev=0.002)
+bpy.data.objects["plug_tip"].name = "lead_return_plug"
+parent(bpy.data.objects["lead_return_plug"], ret)
 
 out = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../public/models/physics-bench.glb"))
 export(out)
