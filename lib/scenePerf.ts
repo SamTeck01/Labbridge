@@ -196,6 +196,17 @@ export class QualityManager {
     return this.tiers[this.tier];
   }
 
+  private forced: 'low' | 'high' | null = null;
+  /** Manual override from the graphics setting: 'low' = lightest tier, 'high' = best tier, null = auto. */
+  force(mode: 'low' | 'high' | null) {
+    this.forced = mode;
+    this.samples = [];
+    this.locked = false;
+    this.drops = 0;
+    if (mode === 'low') this.set(this.tiers.length - 1, performance.now());
+    else if (mode === 'high') this.set(0, performance.now());
+  }
+
   private set(i: number, now: number) {
     this.tier = i;
     this.lastChange = now;
@@ -206,6 +217,7 @@ export class QualityManager {
 
   /** Call once per frame with the time since the previous frame (ms). */
   frame(deltaMs: number) {
+    if (this.forced) return;
     const now = performance.now();
     // Ignore the first seconds (shader compiles, model uploads) and hitches from tab switches
     // (a percentile over many frames, so one-off hitches don't matter; multi-second gaps are tab switches)

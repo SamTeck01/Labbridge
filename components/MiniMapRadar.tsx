@@ -1,6 +1,7 @@
 'use client';
 
 import type { Station } from '@/lib/labStore';
+import { getGraphics, setGraphics, type GraphicsSetting } from '@/lib/graphicsSetting';
 
 import React, { useState } from 'react';
 import {
@@ -68,6 +69,8 @@ export default function MiniMapRadar({
     // Fume hood on the back wall (clamped to the radar edge)
     { id: 'hood', label: 'Hood', x: radius, y: radius + (-7.2 / 7.5) * (radius - 8), color: '#f43f5e' },
   ];
+
+  const [graphics, setGraphicsState] = useState<GraphicsSetting>(() => (typeof window === 'undefined' ? 'auto' : getGraphics()));
 
   const handleTogglePause = () => {
     soundFx.playClick();
@@ -228,6 +231,26 @@ export default function MiniMapRadar({
                     Flame test
                   </button>
                 </div>
+              </div>
+
+              {/* Graphics quality */}
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+                <p className="text-xs font-medium text-slate-200 mb-2">Graphics</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['auto', 'low', 'high'] as const).map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => {
+                        setGraphicsState(g);
+                        setGraphics(g);
+                      }}
+                      className={`py-1.5 rounded-lg text-xs font-semibold border capitalize ${graphics === g ? 'bg-teal-600 border-teal-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">Low = coolest and lightest. Auto adjusts to your device.</p>
               </div>
 
               {/* Audio Toggle */}

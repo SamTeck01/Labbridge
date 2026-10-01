@@ -40,6 +40,7 @@ import {
 import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
 import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
 import ExperimentPanel from '@/components/ExperimentPanel';
+import LabTutorial from '@/components/LabTutorial';
 import MiniMapRadar from '@/components/MiniMapRadar';
 import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
@@ -61,6 +62,7 @@ import { TitrationBench } from '@/lib/workbench/titrationBench';
 import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench } from '@/lib/workbench/benches';
 import { FlameBench } from '@/lib/workbench/flameBench';
 import { experiments } from '@/lib/experiments';
+import { getGraphics, type GraphicsSetting } from '@/lib/graphicsSetting';
 
 export type StationType = Station | null;
 
@@ -1193,6 +1195,11 @@ export default function Lab3DScene({
       }
     });
     if (process.env.NODE_ENV !== 'production') Object.assign(window, { __quality: quality });
+    // Student's graphics setting (Auto / Low / High) from the pause menu
+    const applyGraphics = (g: GraphicsSetting) => quality.force(g === 'auto' ? null : g);
+    applyGraphics(getGraphics());
+    const onGraphics = (e: Event) => applyGraphics((e as CustomEvent<GraphicsSetting>).detail);
+    window.addEventListener('labbridge:graphics', onGraphics);
     let shadowFrame = 0;
 
     // ---- Frame scheduling: what counts as "something is happening" ----
@@ -1479,6 +1486,7 @@ export default function Lab3DScene({
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       disposed = true;
       unsubscribeLab();
+      window.removeEventListener('labbridge:graphics', onGraphics);
       pokeEvents.forEach((ev) => window.removeEventListener(ev, poke));
       if (mergeTimer) clearTimeout(mergeTimer);
       disposeObject(scene);
@@ -1520,6 +1528,8 @@ export default function Lab3DScene({
 
       {/* Practical brief / checklist / results */}
       <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} onGoTo={sitDownAt} />
+
+      {labReady && <LabTutorial isTouch={isTouch} />}
 
       {/* Dr. Curie speech bubble */}
       {curieSpeech && !isPhoneOpen && (

@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { X, Trophy, CheckCircle2, Circle } from 'lucide-react';
 import { EXPERIMENTS, experiments, useExperiments } from '@/lib/experiments';
+import { openLabReport } from '@/lib/report';
 
 const STATION_LABEL: Record<string, string> = {
   chemistry: 'Chemistry',
@@ -59,6 +60,10 @@ export default function ProgressModal({ onClose }: { onClose: () => void }) {
             );
           })}
         </ul>
+
+        <button onClick={openLabReport} className="w-full mb-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-sm font-semibold">
+          Download lab report (PDF)
+        </button>
 
         <h3 className="text-sm font-semibold mb-2">Recent results</h3>
         {history.length === 0 ? (

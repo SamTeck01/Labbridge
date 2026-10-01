@@ -159,7 +159,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
           initial={{ opacity: 0, y: 25 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="mt-16 w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-left"
+          className="mt-16 w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-left"
         >
           {/* Biology */}
           <div
@@ -199,6 +199,25 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
               Volumetric burette acid-base titration with pH indicator shifts, Erlenmeyer flasks, and Bunsen burner.
+            </p>
+          </div>
+
+          {/* Flame test */}
+          <div
+            onClick={() => handleStart('hood')}
+            className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-rose-500/50 transition-all cursor-pointer group shadow-lg"
+          >
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              🔥
+            </div>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-bold text-white">Flame Tests</h3>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 font-mono">
+                Fume hood
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Bunsen burner in the fume hood: identify Li, Na, K, Ca and Cu ions by the colour they turn the flame.
             </p>
           </div>
 
