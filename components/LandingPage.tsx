@@ -159,7 +159,7 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
           initial={{ opacity: 0, y: 25 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="mt-16 w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-left"
+          className="mt-16 w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-left"
         >
           {/* Biology */}
           <div
@@ -218,6 +218,78 @@ export default function LandingPage({ onEnterLab, onDirectOpenMicroscope }: Land
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
               Bunsen burner in the fume hood: identify Li, Na, K, Ca and Cu ions by the colour they turn the flame.
+            </p>
+          </div>
+
+          <div
+            onClick={() => handleStart('pendulum')}
+            className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-violet-500/50 transition-all cursor-pointer group shadow-lg"
+          >
+            <div className="w-10 h-10 rounded-xl bg-violet-500/20 text-violet-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              ⏱️
+            </div>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-bold text-white">Pendulum: measuring g</h3>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-950 text-violet-300 font-mono">
+                Physics
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Time ten swings at different lengths and calculate the acceleration due to gravity.
+            </p>
+          </div>
+
+          <div
+            onClick={() => handleStart('rates')}
+            className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-yellow-500/50 transition-all cursor-pointer group shadow-lg"
+          >
+            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 text-yellow-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              ✖️
+            </div>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-bold text-white">Rates of Reaction</h3>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-950 text-yellow-300 font-mono">
+                Chemistry
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              The disappearing cross: how thiosulfate concentration changes the speed of the reaction.
+            </p>
+          </div>
+
+          <div
+            onClick={() => handleStart('osmosis')}
+            className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-lime-500/50 transition-all cursor-pointer group shadow-lg"
+          >
+            <div className="w-10 h-10 rounded-xl bg-lime-500/20 text-lime-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              🥔
+            </div>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-bold text-white">Osmosis in Potato</h3>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-lime-950 text-lime-300 font-mono">
+                Biology
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Weigh potato strips before and after sucrose solutions and find the isotonic point.
+            </p>
+          </div>
+
+          <div
+            onClick={() => handleStart('chroma')}
+            className="p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-pink-500/50 transition-all cursor-pointer group shadow-lg"
+          >
+            <div className="w-10 h-10 rounded-xl bg-pink-500/20 text-pink-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              🎨
+            </div>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-bold text-white">Paper Chromatography</h3>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-pink-950 text-pink-300 font-mono">
+                Chemistry
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Separate ink dyes on paper, identify an unknown and calculate Rf values.
             </p>
           </div>
 

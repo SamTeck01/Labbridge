@@ -9,7 +9,7 @@ import { SPECIMEN_CATALOG } from '@/lib/specimenGenerator';
  * so what the student sees, what the UI shows and what Curie "knows" never disagree.
  */
 
-export type Station = 'biology' | 'chemistry' | 'physics' | 'research' | 'hood';
+export type Station = 'biology' | 'chemistry' | 'physics' | 'research' | 'hood' | 'pendulum' | 'rates' | 'osmosis' | 'chroma';
 export type Objective = '4x' | '10x' | '40x' | '100x';
 
 /** Salts on the flame-test spotting tile. */
@@ -63,6 +63,34 @@ export interface LabState {
     /** Fume hood sash lowered to the safe working height. */
     sashDown: boolean;
   };
+  pendulum: {
+    /** Pivot to bob centre (m). */
+    length: number;
+    swinging: boolean;
+  };
+  rates: {
+    /** Volume of sodium thiosulfate stock in the 50 cm3 mix (10-50 cm3); 0 = flask empty. */
+    thioCm3: number;
+    acidAdded: boolean;
+    /** performance.now() when the acid went in (null = not reacting). */
+    startedAt: number | null;
+    /** Seconds until the cross disappears for this mixture. */
+    obscureAfter: number;
+  };
+  osmosis: {
+    /** Minutes the strips have been in solution. */
+    minutes: number;
+    /** Per tube (0.0, 0.2, 0.4, 0.6, 0.8 M sucrose): strip in tube, initial and final mass (g). */
+    tubes: { inTube: boolean; initial: number | null; final: number | null }[];
+  };
+  chroma: {
+    baseline: boolean;
+    spots: number;
+    inSolvent: boolean;
+    /** Solvent front height as a fraction of the run (0..1). */
+    front: number;
+    removed: boolean;
+  };
   research: {
     doorsOpen: boolean;
     /** True mass on the pan (g), including the empty weighing boat. */
@@ -84,6 +112,10 @@ const initialState: LabState = {
   chemistry: { buretteML: 50, flaskAcidML: 25, buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { wired: true, switchClosed: false, resistance: 25, voltage: 12.0 },
   flame: { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false },
+  pendulum: { length: 0.45, swinging: false },
+  rates: { thioCm3: 0, acidAdded: false, startedAt: null, obscureAfter: 0 },
+  osmosis: { minutes: 0, tubes: Array.from({ length: 5 }, () => ({ inTube: false, initial: null, final: null })) },
+  chroma: { baseline: false, spots: 0, inSolvent: false, front: 0, removed: false },
   research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false, centrifugeLidOpen: false, rotorSlots: [false, false, false, false, false, false, false, false] },
 };
 
@@ -118,6 +150,23 @@ export function useLab<T>(selector: (s: LabState) => T): T {
 }
 
 // --- Pure simulation helpers (testable, no rendering) ---
+
+export const G = 9.81;
+/** Period of a simple pendulum (s). */
+export const pendulumPeriod = (length: number) => 2 * Math.PI * Math.sqrt(length / G);
+
+/** Seconds for the sulfur precipitate to hide the cross: rate is proportional to thiosulfate concentration. */
+export const obscureTime = (thioCm3: number) => (60 * 10) / thioCm3;
+
+/** Osmosis: % mass change of a potato strip after 30 min in sucrose of molarity c (isotonic near 0.3 M). */
+export const osmosisChange = (c: number) => 30 * ((0.3 - c) / 0.5);
+
+/** Chromatography dyes (retention factors) in each ink. */
+export const INKS = [
+  { name: 'Ink A', dyes: [{ colour: '#1d4ed8', rf: 0.28 }, { colour: '#eab308', rf: 0.72 }] },
+  { name: 'Ink B', dyes: [{ colour: '#dc2626', rf: 0.47 }] },
+  { name: 'Unknown', dyes: [{ colour: '#1d4ed8', rf: 0.28 }, { colour: '#dc2626', rf: 0.47 }] },
+];
 
 /** A centrifuge is balanced when the loaded tubes' centre of mass sits on the spindle. */
 export function rotorImbalance(slots: boolean[]): number {
@@ -170,6 +219,10 @@ export function describeLabState(s: LabState): string {
     `Chemistry: burette holds ${s.chemistry.buretteML.toFixed(1)} mL NaOH and is ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into ${s.chemistry.flaskAcidML.toFixed(1)} mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
     `Physics: return lead ${s.physics.wired ? 'connected' : 'UNPLUGGED'}, switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
     `Flame test (fume hood): gas ${s.flame.gasOn ? 'ON' : 'off'}, fume hood sash ${s.flame.sashDown ? 'lowered (safe)' : 'RAISED'}, burner ${s.flame.lit ? `lit with a ${s.flame.airOpen ? 'blue roaring' : 'yellow luminous'} flame` : 'not lit'}, wire loop ${s.flame.loop}.`,
+    `Pendulum: length ${(s.pendulum.length * 100).toFixed(0)} cm, ${s.pendulum.swinging ? 'swinging' : 'at rest'}.`,
+    `Rates (thiosulfate + HCl): ${s.rates.thioCm3 ? `${s.rates.thioCm3} cm3 thiosulfate + ${50 - s.rates.thioCm3} cm3 water in flask` : 'flask empty'}, acid ${s.rates.acidAdded ? 'added (reacting)' : 'not added'}.`,
+    `Osmosis: ${s.osmosis.minutes} min elapsed; tubes ${s.osmosis.tubes.map((t, i) => `${(i * 0.2).toFixed(1)}M:${t.inTube ? 'strip in' : t.final != null ? `done ${t.initial}->${t.final}g` : t.initial != null ? 'weighed' : 'empty'}`).join(', ')}.`,
+    `Chromatography: baseline ${s.chroma.baseline ? 'drawn' : 'not drawn'}, ${s.chroma.spots} ink spots, paper ${s.chroma.inSolvent ? `in solvent (front ${(s.chroma.front * 100).toFixed(0)}%)` : s.chroma.removed ? 'removed and dried' : 'not in solvent'}.`,
     `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}, lid ${s.research.centrifugeLidOpen ? 'open' : 'closed'}, tubes in slots [${s.research.rotorSlots.map((v, i) => (v ? i : '')).filter((v) => v !== '').join(',')}] (imbalance ${rotorImbalance(s.research.rotorSlots).toFixed(2)}).`,
   ].join('\n');
 }

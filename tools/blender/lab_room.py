@@ -101,7 +101,8 @@ def bench(cx, cy):
         cyl("gas_nozzle", 0.005, 0.07, (tx - side * 0.04, cy + 0.1, top_h + 0.16), steel, verts=12, rot=(0, math.pi / 2, 0))
         box("socket", (0.005, 0.08, 0.08), (tx - side * 0.071, cy - 0.06, top_h + 0.06), socket, bev=0.002)
 
-for x, z in [(-4.5, -3.5), (4.5, -3.5), (-4.5, 3.5), (4.5, 3.5)]:
+# Four original islands + two side benches (left: osmosis / chromatography, right: pendulum / rates)
+for x, z in [(-4.5, -3.5), (4.5, -3.5), (-4.5, 3.5), (4.5, 3.5), (-9.2, 0.0), (9.2, 0.0)]:
     bench(x, -z)
 
 out = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../public/models/lab-room.glb"))

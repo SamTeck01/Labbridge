@@ -375,6 +375,21 @@ export default function ScientistPhoneModal({
                       <span className="text-[10px] text-rose-300">Fume hood</span>
                     </div>
                   </button>
+                  {([['pendulum', 'Pendulum', 'Measure g'], ['rates', 'Rates', 'Disappearing cross'], ['osmosis', 'Osmosis', 'Potato strips'], ['chroma', 'Chromatography', 'Ink dyes']] as const).map(([id, name, sub]) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        onTeleport(id);
+                        onClose();
+                      }}
+                      className="p-2.5 rounded-2xl bg-slate-800/50 hover:bg-slate-700/60 border border-slate-600/40 flex items-center gap-2 text-left transition-all"
+                    >
+                      <div>
+                        <span className="text-xs font-bold text-white block">{name}</span>
+                        <span className="text-[10px] text-slate-300">{sub}</span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>

@@ -67,6 +67,11 @@ export default function MiniMapRadar({
     { id: 'physics', label: 'Phys', x: radius + (-4.5 / 7.5) * (radius - 8), y: radius + (3.8 / 7.5) * (radius - 8), color: '#f59e0b' },
     { id: 'research', label: 'Ana', x: radius + (4.5 / 7.5) * (radius - 8), y: radius + (3.8 / 7.5) * (radius - 8), color: '#38bdf8' },
     // Fume hood on the back wall (clamped to the radar edge)
+    // Side benches (left: osmosis / chromatography, right: pendulum / rates)
+    { id: 'pendulum', label: 'Pend', x: radius + (7.2 / 7.5) * (radius - 8), y: radius - 4, color: '#8b5cf6' },
+    { id: 'rates', label: 'Rate', x: radius + (7.4 / 7.5) * (radius - 8), y: radius + 4, color: '#eab308' },
+    { id: 'osmosis', label: 'Osm', x: radius - (7.4 / 7.5) * (radius - 8), y: radius + 4, color: '#84cc16' },
+    { id: 'chroma', label: 'Chr', x: radius - (7.2 / 7.5) * (radius - 8), y: radius - 4, color: '#ec4899' },
     { id: 'hood', label: 'Hood', x: radius, y: radius + (-7.2 / 7.5) * (radius - 8), color: '#f43f5e' },
   ];
 
@@ -230,6 +235,18 @@ export default function MiniMapRadar({
                     <FlaskConical className="w-3.5 h-3.5" />
                     Flame test
                   </button>
+                  {([['pendulum', 'Pendulum'], ['rates', 'Rates'], ['osmosis', 'Osmosis'], ['chroma', 'Chromatography']] as const).map(([id, name]) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        onTeleport(id);
+                        setIsPauseMenuOpen(false);
+                      }}
+                      className="p-2 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-600/40 text-xs font-semibold text-slate-200 flex items-center gap-2 transition-all"
+                    >
+                      {name}
+                    </button>
+                  ))}
                 </div>
               </div>
 

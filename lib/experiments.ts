@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { labStore, microscopeSharpness, titrationPH, SALTS, type LabState, type Station } from '@/lib/labStore';
+import { stopwatches } from '@/lib/workbench/kit';
 
 /**
  * Practical experiments: objective, ordered procedure Dr. Curie tracks, readings the student
@@ -62,6 +63,10 @@ export interface ExperimentDef {
   /** How many readings finish the data-collection step. */
   readingsNeeded: number;
   evaluate: (run: RunState, lab: LabState) => ScoreLine[];
+  /** Extra buttons in the practical panel (e.g. "Leave for 30 minutes"). */
+  panelActions?: (lab: LabState) => { label: string; run: () => void }[];
+  /** A final numeric answer the student works out (recorded as the reading 'Answer'). */
+  answer?: { prompt: string; unit: string };
 }
 
 export interface RunState {
@@ -256,7 +261,157 @@ export const EXPERIMENTS: ExperimentDef[] = [
       ];
     },
   },
+  {
+    id: 'pendulum',
+    station: 'pendulum',
+    title: 'Measuring g with a Simple Pendulum',
+    objective: 'Time 10 swings at three or more string lengths and use T = 2π√(L/g) to find the acceleration due to gravity.',
+    safety: ['Keep the swing small (under 10°) so the formula holds.', 'Clear the area the bob swings through.'],
+    intro: "Let's measure g. Pull the bob aside a little and let go, then time ten full swings with the stopwatch.",
+    steps: [
+      { id: 'release', text: 'Pull the bob aside a little and release it', coach: 'Tap the bob: a small angle only, then let go cleanly.', done: (l) => l.pendulum.swinging },
+      { id: 'time', text: 'Time 10 complete swings and record', coach: 'Start the stopwatch as the bob passes the centre, count ten swings, stop. Then record.', done: (_l, r) => r.readings.length >= 1 },
+      { id: 'lengths', text: 'Repeat for at least 3 different lengths', coach: 'Change the length at the clamp and repeat. Three lengths at least.', done: (_l, r) => new Set(r.readings.map((x) => x.extra?.L)).size >= 3 },
+    ],
+    mistakes: [
+      {
+        id: 'badTiming',
+        message: "That time doesn't match the swing: count ten FULL swings (there and back), starting the clock as it passes the middle.",
+        check: (_l, r) =>
+          r.readings.some((x) => {
+            const T = 2 * Math.PI * Math.sqrt((x.extra?.L ?? 1) / 9.81);
+            return Math.abs(x.value / 10 - T) / T > 0.2;
+          }),
+      },
+    ],
+    recordLabel: 'Record 10 swings',
+    readingsNeeded: 3,
+    record: (l) => {
+      const w = stopwatchTime('pend_watch');
+      if (w === null) return 'Stop the stopwatch first.';
+      if (w < 1) return 'Time ten swings with the stopwatch first.';
+      return { label: `L = ${(l.pendulum.length * 100).toFixed(0)} cm`, value: Math.round(w * 100) / 100, unit: 's for 10 swings', extra: { L: l.pendulum.length } };
+    },
+    evaluate: (r) => {
+      const gs = r.readings.map((x) => (4 * Math.PI * Math.PI * (x.extra?.L ?? 0)) / Math.pow(x.value / 10, 2));
+      const g = gs.length ? gs.reduce((a, b) => a + b, 0) / gs.length : 0;
+      const err = Math.abs(g - 9.81) / 9.81;
+      const Ls = new Set(r.readings.map((x) => x.extra?.L)).size;
+      return [
+        { label: 'Value of g', points: band(err, [[0.03, 50], [0.07, 38], [0.15, 22], [0.3, 8]]), max: 50, note: `Your data give g = ${g.toFixed(2)} m/s² (accepted 9.81).` },
+        { label: 'Range of data', points: Math.min(3, Ls) * 10, max: 30, note: `${Ls} different string lengths.` },
+        { label: 'Timing technique', points: r.mistakes.includes('badTiming') ? 5 : 20, max: 20, note: r.mistakes.includes('badTiming') ? 'At least one timing was well off.' : 'Ten-swing timings were consistent.' },
+      ];
+    },
+  },
+  {
+    id: 'rates',
+    station: 'rates',
+    title: 'Rate of Reaction: the Disappearing Cross',
+    objective: 'Find how the concentration of sodium thiosulfate affects how quickly it reacts with hydrochloric acid (sulfur clouds the solution and hides the cross).',
+    safety: ['Sulfur dioxide is produced: keep the room ventilated.', 'Rinse the flask straight after each run.'],
+    intro: 'Disappearing cross today. Pour a thiosulfate mixture into the flask, then add the acid and start the stopwatch at the same moment.',
+    steps: [
+      { id: 'mix', text: 'Pour a thiosulfate mixture into the flask', coach: 'Pick one of the five mixtures and pour it into the flask on the cross.', done: (l, r) => l.rates.thioCm3 > 0 || r.readings.length > 0 },
+      { id: 'react', text: 'Add the acid and start the stopwatch', coach: 'Add the HCl and start the clock at the same moment.', done: (l, r) => l.rates.acidAdded || r.readings.length > 0 },
+      { id: 'time', text: 'Stop the clock when the cross disappears, and record', coach: 'Look straight down through the flask. Stop the clock the moment the cross vanishes, then record.', done: (_l, r) => r.readings.length >= 1 },
+      { id: 'repeat', text: 'Repeat for at least 4 concentrations', coach: 'Empty and rinse the flask (tap it), then repeat with a different mixture. Four concentrations at least.', done: (_l, r) => new Set(r.readings.map((x) => x.extra?.thio)).size >= 4 },
+    ],
+    mistakes: [],
+    recordLabel: 'Record time',
+    readingsNeeded: 4,
+    record: (l) => {
+      const w = stopwatchTime('rates_watch');
+      if (!l.rates.acidAdded) return 'Start a run first: mixture, then acid.';
+      if (w === null) return 'Stop the stopwatch first.';
+      if (w < 1) return 'Time the reaction with the stopwatch.';
+      return { label: `${l.rates.thioCm3} cm³ thiosulfate`, value: Math.round(w * 10) / 10, unit: 's', extra: { thio: l.rates.thioCm3, actual: l.rates.obscureAfter } };
+    },
+    evaluate: (r) => {
+      const runs = r.readings;
+      const n = new Set(runs.map((x) => x.extra?.thio)).size;
+      const errs = runs.map((x) => Math.abs(x.value - (x.extra?.actual ?? x.value)) / (x.extra?.actual ?? 1));
+      const meanErr = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : 1;
+      // Trend: higher concentration should give a shorter time
+      const sorted = [...runs].sort((a, b) => (a.extra?.thio ?? 0) - (b.extra?.thio ?? 0));
+      const trendOk = sorted.every((x, i) => i === 0 || x.value <= sorted[i - 1].value * 1.1);
+      return [
+        { label: 'Concentrations tested', points: Math.min(4, n) * 10, max: 40, note: `${n} different concentrations.` },
+        { label: 'Timing accuracy', points: band(meanErr, [[0.08, 35], [0.15, 25], [0.3, 12]]), max: 35, note: `Your times were within ${(meanErr * 100).toFixed(0)}% of when the cross actually vanished.` },
+        { label: 'Trend', points: trendOk ? 25 : 8, max: 25, note: trendOk ? 'Higher concentration → faster reaction, as expected.' : 'Your times don’t show a clear trend; check the timings.' },
+      ];
+    },
+  },
+  {
+    id: 'osmosis',
+    station: 'osmosis',
+    title: 'Osmosis in Potato Strips',
+    objective: 'Measure the % change in mass of potato strips in sucrose solutions (0.0-0.8 M) and estimate the concentration of the potato cells’ contents.',
+    safety: ['Take care with cutting tools (the strips are pre-cut here).', 'Blot every strip the same way.'],
+    intro: 'Osmosis today. Weigh each potato strip, put it in its sucrose tube, leave them 30 minutes, then blot and reweigh.',
+    steps: [
+      { id: 'setup', text: 'Weigh each strip and put it in a sucrose tube (all 5)', coach: 'Tap the strips to weigh one, then tap a tube to put it in. Do all five.', done: (l) => l.osmosis.tubes.every((t) => t.inTube || t.final != null) },
+      { id: 'wait', text: 'Leave them for 30 minutes', coach: 'Now leave them. Use “Leave for 30 minutes”.', done: (l) => l.osmosis.minutes >= 30 },
+      { id: 'reweigh', text: 'Remove, blot and reweigh every strip', coach: 'Take each strip out (tap its tube): it is blotted on the towel and weighed. Clear the balance between strips.', done: (l) => l.osmosis.tubes.every((t) => t.final != null) },
+      { id: 'answer', text: 'Estimate the concentration where mass doesn’t change', coach: 'Look at your % changes: where would the line cross zero? That is the isotonic point.', done: (_l, r) => r.readings.some((x) => x.label === 'Answer') },
+    ],
+    mistakes: [],
+    recordLabel: '',
+    readingsNeeded: 0,
+    record: () => 'Masses are read from the balance automatically.',
+    panelActions: (l) =>
+      l.osmosis.minutes < 30 && l.osmosis.tubes.some((t) => t.inTube)
+        ? [{ label: '⏱ Leave for 30 minutes', run: () => labStore.update('osmosis', { minutes: 30 }) }]
+        : [],
+    answer: { prompt: 'Isotonic concentration (where % change = 0)', unit: 'M' },
+    evaluate: (r, l) => {
+      const done = l.osmosis.tubes.filter((t) => t.final != null).length;
+      const ans = r.readings.find((x) => x.label === 'Answer')?.value ?? -1;
+      const err = Math.abs(ans - 0.3);
+      return [
+        { label: 'Measurements', points: done * 8, max: 40, note: `${done}/5 strips weighed before and after.` },
+        { label: 'Conclusion', points: band(err, [[0.05, 45], [0.1, 30], [0.2, 12]]), max: 45, note: `You estimated ${ans.toFixed(2)} M; the data cross zero near 0.30 M.` },
+        { label: 'Method', points: 15, max: 15, note: 'Strips blotted and weighed consistently.' },
+      ];
+    },
+  },
+  {
+    id: 'chroma',
+    station: 'chroma',
+    title: 'Paper Chromatography of Inks',
+    objective: 'Separate the dyes in two known inks and an unknown, and calculate the Rf value of the red dye.',
+    safety: ['Use a pencil baseline: pen ink would run with the solvent.', 'Keep the baseline above the solvent level.'],
+    intro: 'Chromatography today. Draw a pencil baseline, spot the three inks on it, then hang the paper in the solvent.',
+    steps: [
+      { id: 'baseline', text: 'Draw a pencil baseline', coach: 'Pencil, not pen: graphite doesn’t dissolve, so it won’t run up the paper.', done: (l) => l.chroma.baseline },
+      { id: 'spots', text: 'Spot the three inks on the baseline', coach: 'Small, concentrated spots on the line: A, B and the unknown.', done: (l) => l.chroma.spots >= 3 },
+      { id: 'run', text: 'Hang the paper in the solvent', coach: 'Lower it so the baseline sits just above the solvent.', done: (l) => l.chroma.inSolvent || l.chroma.removed },
+      { id: 'remove', text: 'Remove the paper near the top and let it dry', coach: 'Take it out before the front reaches the top.', done: (l) => l.chroma.removed },
+      { id: 'answer', text: 'Measure and calculate the Rf of the red dye', coach: 'Rf = distance moved by the dye ÷ distance moved by the solvent, both from the baseline.', done: (_l, r) => r.readings.some((x) => x.label === 'Answer') },
+    ],
+    mistakes: [{ id: 'noBaseline', message: 'Spotting without a baseline: you won’t be able to measure the distances.', check: (l) => l.chroma.spots > 0 && !l.chroma.baseline }],
+    recordLabel: '',
+    readingsNeeded: 0,
+    record: () => 'Measure the paper to calculate Rf.',
+    answer: { prompt: 'Rf of the red dye (0 to 1)', unit: '' },
+    evaluate: (r) => {
+      const ans = r.readings.find((x) => x.label === 'Answer')?.value ?? -1;
+      const err = Math.abs(ans - 0.47);
+      return [
+        { label: 'Rf value', points: band(err, [[0.03, 50], [0.07, 35], [0.15, 15]]), max: 50, note: `You calculated ${ans.toFixed(2)}; the red dye’s Rf is about 0.47.` },
+        { label: 'Technique', points: r.mistakes.includes('noBaseline') ? 15 : 35, max: 35, note: r.mistakes.includes('noBaseline') ? 'Spotted before drawing the baseline.' : 'Pencil baseline, small spots, removed in time.' },
+        { label: 'Interpretation', points: 15, max: 15, note: 'The unknown contains the blue dye of A and the red dye of B (matching Rf values).' },
+      ];
+    },
+  },
 ];
+
+/** Time on a bench stopwatch: null while it is still running. */
+function stopwatchTime(id: string): number | null {
+  const w = stopwatches[id];
+  if (!w) return 0;
+  return w.running ? null : w.elapsed;
+}
 
 /** Flame colour of each salt, for observations. */
 export const FLAME_COLOURS = SALTS;
@@ -358,6 +513,10 @@ const STATION_STATE: Record<Station, keyof LabState> = {
   physics: 'physics',
   research: 'research',
   hood: 'flame',
+  pendulum: 'pendulum',
+  rates: 'rates',
+  osmosis: 'osmosis',
+  chroma: 'chroma',
 };
 
 /** Clean the bench after a practical: glassware emptied, switches off, gas off. */
@@ -390,6 +549,7 @@ export const experiments = {
     // Fresh apparatus for the practical
     if (def.id === 'titration') labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
     if (def.id === 'weighing') labStore.update('research', { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0 });
+    if (['pendulum', 'rates', 'osmosis', 'chroma'].includes(def.station)) labStore.resetKey(STATION_STATE[def.station]);
     if (def.id === 'ohms-law') labStore.update('physics', { wired: false, switchClosed: false, resistance: 25, voltage: 12 });
     if (def.id === 'flame') labStore.update('flame', { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false });
     if (def.id === 'microscopy') labStore.update('biology', { objective: '10x', coarseFocus: 0.2, fineFocus: 0.5, immersionOil: false });

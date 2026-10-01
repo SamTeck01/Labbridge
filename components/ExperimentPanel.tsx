@@ -6,6 +6,7 @@ import { experiments, experimentForStation, getExperiment, useExperiments } from
 import { labStore, titrationPH, useLab, type Station } from '@/lib/labStore';
 import { curie } from '@/lib/curie';
 import BuretteReading from '@/components/BuretteReading';
+import PracticalExtras from '@/components/PracticalExtras';
 import { soundFx } from '@/lib/soundEffects';
 
 /** Practical brief, live procedure checklist, readings and results for the bench the student is at. */
@@ -16,6 +17,10 @@ const STATION_NAME: Record<Station, string> = {
   physics: 'circuits bench',
   research: 'analytical bench',
   hood: 'fume hood',
+  pendulum: 'pendulum bench',
+  rates: 'reaction rates bench',
+  osmosis: 'osmosis bench',
+  chroma: 'chromatography bench',
 };
 
 export default function ExperimentPanel({
@@ -210,6 +215,7 @@ export default function ExperimentPanel({
           {run_.readings.map((r, i) => <p key={i}>{r.label}: {r.value} {r.unit}</p>)}
         </div>
       )}
+      <PracticalExtras def={active} answered={run_.readings.some((x) => x.label === 'Answer')} />
       {active.readingsNeeded > 0 && (
         <div className="flex gap-2">
           {active.id === 'titration' && (

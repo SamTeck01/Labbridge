@@ -61,6 +61,10 @@ import { FirstPersonHands } from '@/lib/workbench/hands';
 import { TitrationBench } from '@/lib/workbench/titrationBench';
 import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench } from '@/lib/workbench/benches';
 import { FlameBench } from '@/lib/workbench/flameBench';
+import { PendulumBench } from '@/lib/workbench/pendulumBench';
+import { RatesBench } from '@/lib/workbench/ratesBench';
+import { OsmosisBench } from '@/lib/workbench/osmosisBench';
+import { ChromaBench } from '@/lib/workbench/chromaBench';
 import { experiments } from '@/lib/experiments';
 import { getGraphics, type GraphicsSetting } from '@/lib/graphicsSetting';
 
@@ -89,6 +93,8 @@ const OBSTACLES: [number, number, number, number][] = [
   [4.5, 3.5, 1.8, 0.9], // analytical bench
   [0, -11.3, 1.2, 0.6], // fume hood
   [11.2, 4.0, 0.5, 0.5], // safety shower
+  [-9.2, 0, 1.8, 0.9], // side bench: osmosis / chromatography
+  [9.2, 0, 1.8, 0.9], // side bench: pendulum / rates
 ];
 
 interface CameraTransition {
@@ -396,6 +402,27 @@ export default function Lab3DScene({
       lookAt: new THREE.Vector3(0, 1.02, -11.0),
       baseYaw: 0,
     },
+    // Side benches (kits at the +z front edge; the student stands in the aisle facing -z)
+    pendulum: {
+      pos: new THREE.Vector3(8.3, 1.44, 1.55),
+      lookAt: new THREE.Vector3(8.3, 1.0, 0.45),
+      baseYaw: 0,
+    },
+    rates: {
+      pos: new THREE.Vector3(10.1, 1.44, 1.55),
+      lookAt: new THREE.Vector3(10.1, 1.0, 0.45),
+      baseYaw: 0,
+    },
+    osmosis: {
+      pos: new THREE.Vector3(-10.1, 1.44, 1.55),
+      lookAt: new THREE.Vector3(-10.1, 1.0, 0.45),
+      baseYaw: 0,
+    },
+    chroma: {
+      pos: new THREE.Vector3(-8.3, 1.44, 1.55),
+      lookAt: new THREE.Vector3(-8.3, 1.0, 0.45),
+      baseYaw: 0,
+    },
   });
 
   // Sitting down mechanic with smooth transition
@@ -447,9 +474,12 @@ export default function Lab3DScene({
 
     if (cameraRef.current) {
       const curr = cameraRef.current.position.clone();
-      // Step back from the stool into the laboratory aisle
-      const standZ = curr.z < 0 ? curr.z + 0.85 : curr.z - 0.85;
-      const targetPos = new THREE.Vector3(curr.x, EYE_HEIGHT_STANDING, standZ);
+      // Step back from the work (away from what the bench position looks at) into the aisle
+      const st = seatedStation;
+      const away = st
+        ? seatAnchors.current[st].pos.clone().sub(seatAnchors.current[st].lookAt).setY(0).normalize()
+        : new THREE.Vector3(0, 0, 1);
+      const targetPos = new THREE.Vector3(curr.x + away.x * 0.6, EYE_HEIGHT_STANDING, curr.z + away.z * 0.6);
 
       transitionRef.current = {
         active: true,
@@ -462,7 +492,7 @@ export default function Lab3DScene({
         duration: 0.55,
       };
     }
-  }, []);
+  }, [seatedStation]);
 
   // Handle direct 3D raycast click
   const handleObjectClick = useCallback((obj: THREE.Object3D) => {
@@ -1069,6 +1099,18 @@ export default function Lab3DScene({
           collectInteractives();
         }
       });
+    });
+
+    // 6. Side-bench practicals (pendulum, rates of reaction, osmosis, chromatography)
+    handsPromise.then((ok) => {
+      if (!ok || disposed) return;
+      const top = 0.94;
+      benchesRef.current.pendulum = new PendulumBench(scene, new THREE.Vector3(8.3, top, 0.45), hands, setFocus);
+      benchesRef.current.rates = new RatesBench(scene, new THREE.Vector3(10.1, top, 0.45), hands, setFocus);
+      benchesRef.current.osmosis = new OsmosisBench(scene, new THREE.Vector3(-10.1, top, 0.45), hands, setFocus);
+      benchesRef.current.chroma = new ChromaBench(scene, new THREE.Vector3(-8.3, top, 0.45), hands, setFocus);
+      collectInteractives();
+      scheduleMerge();
     });
 
     // 4. Research 3D Analytical Suite Ready-Made Setup
