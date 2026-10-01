@@ -101,7 +101,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       { id: 'noAcid', message: "There's no acid in the flask yet. Measure the 25 mL of HCl in first, or there's nothing to titrate.", check: (l) => l.chemistry.dispensedML > 0 && l.chemistry.flaskAcidML < 24.5 },
       { id: 'overshoot', message: "That's well past the endpoint. Deep pink means excess base. Close the burette and note it.", check: (l) => l.chemistry.dispensedML > 26.5 },
     ],
-    recordLabel: 'Record titre',
+    recordLabel: 'Read the burette',
     readingsNeeded: 1,
     record: (l) => {
       if (l.chemistry.buretteOpen) return 'Close the burette before reading it.';
@@ -113,7 +113,12 @@ export const EXPERIMENTS: ExperimentDef[] = [
       const err = Math.abs(titre - 25.0);
       const indicatorFirst = !r.mistakes.includes('noIndicator');
       return [
-        { label: 'Accuracy', points: band(err, [[0.1, 50], [0.3, 40], [0.6, 25], [1.5, 10]]), max: 50, note: `Titre ${titre.toFixed(2)} mL vs 25.00 mL expected (error ${err.toFixed(2)} mL).` },
+        { label: 'Accuracy', points: band(err, [[0.1, 40], [0.3, 32], [0.6, 20], [1.5, 8]]), max: 40, note: `Titre ${titre.toFixed(2)} mL vs 25.00 mL expected (error ${err.toFixed(2)} mL).` },
+        (() => {
+          const actual = r.readings[0]?.extra?.actual ?? titre;
+          const readErr = Math.abs(titre - actual);
+          return { label: 'Burette reading', points: readErr <= 0.05 ? 10 : readErr <= 0.15 ? 5 : 0, max: 10, note: `You read ${titre.toFixed(2)} mL; the meniscus was at ${actual.toFixed(2)} mL.` };
+        })(),
         { label: 'Technique', points: (indicatorFirst ? 15 : 0) + (r.completedSteps.includes('stir') ? 15 : 0), max: 30, note: indicatorFirst ? 'Indicator added before titrating.' : 'Titrated before adding indicator.' },
         { label: 'Safety & control', points: r.mistakes.includes('overshoot') ? 5 : 20, max: 20, note: r.mistakes.includes('overshoot') ? 'Overshot the endpoint by more than 1.5 mL.' : 'Controlled approach to the endpoint.' },
       ];
@@ -280,7 +285,7 @@ function load(): ExperimentState {
 let state: ExperimentState = { run: null, lastResult: null, history: [] };
 let loaded = false;
 const listeners = new Set<() => void>();
-type Listener = (e: { type: 'step' | 'mistake' | 'finished' | 'started'; message: string; result?: ExperimentResult }) => void;
+type Listener = (e: { type: 'step' | 'mistake' | 'finished' | 'started' | 'reset'; message: string; result?: ExperimentResult }) => void;
 const eventListeners = new Set<Listener>();
 
 function set(patch: Partial<ExperimentState>) {
@@ -343,6 +348,20 @@ function finish() {
   emit({ type: 'finished', message: `Practical complete: ${result.score}/100.`, result });
 }
 
+const STATION_STATE: Record<Station, keyof LabState> = {
+  chemistry: 'chemistry',
+  biology: 'biology',
+  physics: 'physics',
+  research: 'research',
+  hood: 'flame',
+};
+
+/** Clean the bench after a practical: glassware emptied, switches off, gas off. */
+function cleanUp(def: ExperimentDef) {
+  labStore.resetKey(STATION_STATE[def.station]);
+  emit({ type: 'reset', message: '' });
+}
+
 export const experiments = {
   get: () => state,
   subscribe(fn: () => void) {
@@ -374,10 +393,14 @@ export const experiments = {
     evaluate();
   },
   abandon() {
+    const def = getExperiment(state.run?.experimentId);
     set({ run: null });
+    if (def) cleanUp(def);
   },
   dismissResult() {
+    const def = getExperiment(state.lastResult?.experimentId);
     set({ lastResult: null });
+    if (def) cleanUp(def);
   },
   /** Take a reading for the active experiment. Returns an error message, or null on success. */
   record(): string | null {
@@ -389,6 +412,13 @@ export const experiments = {
     set({ run: { ...run, readings: [...run.readings, r] } });
     evaluate();
     return null;
+  },
+  /** A reading the student took themselves (e.g. read off the burette scale). */
+  recordManual(reading: Reading) {
+    const run = state.run;
+    if (!run) return;
+    set({ run: { ...run, readings: [...run.readings, reading] } });
+    evaluate();
   },
   /** An observation recorded by the apparatus itself (e.g. a flame colour). Ignored if no practical is running. */
   addReading(reading: Reading) {

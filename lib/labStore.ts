@@ -23,7 +23,7 @@ export const SALTS: Record<SaltKey, { name: string; colour: string; hex: string;
 };
 
 export interface LabState {
-  player: { station: Station | null; seated: boolean };
+  player: { station: Station | null; seated: boolean; goggles: boolean };
   biology: {
     slideIndex: number;
     objective: Objective;
@@ -69,7 +69,7 @@ export interface LabState {
 }
 
 const initialState: LabState = {
-  player: { station: null, seated: false },
+  player: { station: null, seated: false, goggles: false },
   biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false },
   chemistry: { buretteML: 50, flaskAcidML: 25, buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { switchClosed: false, resistance: 25, voltage: 12.0 },
@@ -90,6 +90,11 @@ export const labStore = {
     const prev = state[key];
     const next = typeof patch === 'function' ? patch(prev) : patch;
     state = { ...state, [key]: { ...prev, ...next } };
+    listeners.forEach((l) => l());
+  },
+  /** Put one part of the lab back to its starting state (clean glassware, switches off). */
+  resetKey(key: keyof LabState) {
+    state = { ...state, [key]: initialState[key] };
     listeners.forEach((l) => l());
   },
   reset() {
@@ -138,7 +143,7 @@ export function circuit(voltage: number, resistance: number, closed: boolean) {
 export function describeLabState(s: LabState): string {
   const { current } = circuit(s.physics.voltage, s.physics.resistance, s.physics.switchClosed);
   return [
-    `Student location: ${s.player.seated && s.player.station ? `seated at ${s.player.station} bench` : 'walking in the lab'}.`,
+    `Student location: ${s.player.seated && s.player.station ? `at the ${s.player.station} bench` : 'walking in the lab'}; safety goggles ${s.player.goggles ? 'ON' : 'OFF'}.`,
     `Biology: microscope objective ${s.biology.objective}, slide "${SPECIMEN_CATALOG[s.biology.slideIndex]?.name}", image sharpness ${Math.round(microscopeSharpness(s.biology) * 100)}%, immersion oil ${s.biology.immersionOil ? 'applied' : 'none'}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
     `Chemistry: burette holds ${s.chemistry.buretteML.toFixed(1)} mL NaOH and is ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into ${s.chemistry.flaskAcidML.toFixed(1)} mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
     `Physics: switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,

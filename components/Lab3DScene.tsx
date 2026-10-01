@@ -80,6 +80,17 @@ interface Lab3DSceneProps {
 const EYE_HEIGHT_STANDING = 1.68;
 const EYE_HEIGHT_SITTING = 1.28;
 
+// Furniture the student can't walk through: [centre x, centre z, half-width x, half-depth z]
+const PLAYER_RADIUS = 0.3;
+const OBSTACLES: [number, number, number, number][] = [
+  [-4.5, -3.5, 1.8, 0.9], // biology bench
+  [4.5, -3.5, 1.8, 0.9], // chemistry bench
+  [-4.5, 3.5, 1.8, 0.9], // physics bench
+  [4.5, 3.5, 1.8, 0.9], // analytical bench
+  [0, -11.3, 1.2, 0.6], // fume hood
+  [11.2, 4.0, 0.5, 0.5], // safety shower
+];
+
 interface CameraTransition {
   active: boolean;
   type: 'sit' | 'stand';
@@ -259,6 +270,22 @@ function ApparatusSync({
   }, [analyticalState, researchVersion, resEquipmentRef]);
 
   return null;
+}
+
+/** Thin goggle rims around the view while safety goggles are on (static CSS, no rendering cost). */
+function GogglesFrame() {
+  const on = useLab((st) => st.player.goggles);
+  if (!on) return null;
+  return (
+    <div
+      className="absolute inset-0 z-20 pointer-events-none"
+      style={{
+        background:
+          'radial-gradient(ellipse 120% 115% at 50% 50%, transparent 82%, rgba(20,45,65,0.18) 90%, rgba(15,35,55,0.45) 100%)',
+        boxShadow: 'inset 0 0 0 3px rgba(40,70,90,0.25)',
+      }}
+    />
+  );
 }
 
 export default function Lab3DScene({
@@ -664,7 +691,7 @@ export default function Lab3DScene({
     const onDrop = () => titrationBenchRef.current?.visualDrop();
     window.addEventListener('labbridge:drop', onDrop);
     const off = experiments.onEvent((e) => {
-      if (e.type === 'started') Object.values(benchesRef.current).forEach((b) => b?.reset());
+      if (e.type === 'started' || e.type === 'reset') Object.values(benchesRef.current).forEach((b) => b?.reset());
     });
     return () => {
       window.removeEventListener('labbridge:drop', onDrop);
@@ -1358,6 +1385,24 @@ export default function Lab3DScene({
         // Laboratory Boundaries
         cameraRef.current.position.x = Math.max(-10.5, Math.min(10.5, cameraRef.current.position.x));
         cameraRef.current.position.z = Math.max(-10.5, Math.min(10.5, cameraRef.current.position.z));
+        // Solid furniture: slide along benches, hood and shower instead of walking through them
+        const pos = cameraRef.current.position;
+        for (const [cx, cz, hx, hz] of OBSTACLES) {
+          const dx = pos.x - cx;
+          const dz = pos.z - cz;
+          const px = hx + PLAYER_RADIUS - Math.abs(dx);
+          const pz = hz + PLAYER_RADIUS - Math.abs(dz);
+          if (px > 0 && pz > 0) {
+            // Push out along the shallower axis and stop velocity into the obstacle
+            if (px < pz) {
+              pos.x += Math.sign(dx || 1) * px;
+              playerVelocity.current.x = 0;
+            } else {
+              pos.z += Math.sign(dz || 1) * pz;
+              playerVelocity.current.z = 0;
+            }
+          }
+        }
       } else if (isSeatedRef.current && cameraRef.current && !transitionRef.current?.active) {
         // Gentle seated breathing
         idleTimerRef.current += delta * 1.5;
@@ -1529,6 +1574,7 @@ export default function Lab3DScene({
       {/* Practical brief / checklist / results */}
       <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} onGoTo={sitDownAt} />
 
+      <GogglesFrame />
       {labReady && <LabTutorial isTouch={isTouch} />}
 
       {/* Dr. Curie speech bubble */}
