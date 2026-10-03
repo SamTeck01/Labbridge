@@ -436,6 +436,7 @@ export class TitrationBench {
     m.socket = null;
     this.tilt = 0;
     this.input.tilt = 0;
+    this.hudTilt = false;
     // Pick it straight up a little, keeping where it is
     const bottomY = m.obj.position.y - m.bottom;
     const floor = this.floorAt(m.obj.position.x, m.obj.position.z);
@@ -458,6 +459,7 @@ export class TitrationBench {
     if (!m) return;
     this.held = null;
     this.tiltDrag = false;
+    this.hudTilt = false;
     const p = m.obj.position;
     let target: THREE.Vector3;
     let quat = new THREE.Quaternion().setFromAxisAngle(UP, m.yaw);
@@ -502,9 +504,13 @@ export class TitrationBench {
   private pointerTarget(m: Movable, extraY = 0) {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const y = this.benchY + this.lift + m.bottom + extraY;
-    const plane = new THREE.Plane(UP.clone(), -y);
     const hit = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
+    // Where the crosshair meets the bench is where it goes (held above that spot); looking up
+    // above the bench, it follows the crosshair at the carrying height instead
+    const onBench = this.raycaster.ray.intersectPlane(new THREE.Plane(UP.clone(), -this.benchY), new THREE.Vector3());
+    if (onBench && Math.abs(onBench.x - this.tip.x) < 0.6 && onBench.z - this.tip.z < 0.4 && onBench.z - this.tip.z > -0.4) {
+      hit.copy(onBench).setY(y);
+    } else if (!this.raycaster.ray.intersectPlane(new THREE.Plane(UP.clone(), -y), hit)) return null;
     // Keep it on the bench in front of the student
     hit.x = THREE.MathUtils.clamp(hit.x, this.tip.x - 0.55, this.tip.x + 0.55);
     hit.z = THREE.MathUtils.clamp(hit.z, this.tip.z - 0.32, this.tip.z + 0.36);
@@ -803,8 +809,7 @@ export class TitrationBench {
 
   pointerUp(button: number): boolean {
     if (button === 2 && this.tiltDrag) {
-      this.tiltDrag = false;
-      this.tilt = 0; // let go of the tilt: it rights itself
+      this.tiltDrag = false; // let go of the tilt: it rights itself
       return true;
     }
     return false;
@@ -871,6 +876,7 @@ export class TitrationBench {
       this.input[name] = v;
     },
     setTilt: (rad) => {
+      this.hudTilt = rad > 0;
       if (this.held?.canTilt) this.tilt = THREE.MathUtils.clamp(rad, 0, this.maxTilt(this.held));
     },
     tiltBy: (rad) => {
@@ -917,6 +923,7 @@ export class TitrationBench {
     },
   };
   private carryOverride: THREE.Vector3 | null = null;
+  private hudTilt = false;
 
   /** Compatibility with the bench interface: clicks are handled by pointerDown. */
   tap(id: string): boolean {
@@ -941,7 +948,9 @@ export class TitrationBench {
 
     const m = this.held;
     if (m) {
-      if (m.canTilt && tiltIn !== 0) this.tilt = THREE.MathUtils.clamp(this.tilt + tiltIn * 1.2 * dt, 0, this.maxTilt(m));
+      if (m.canTilt && tiltIn > 0) this.tilt = THREE.MathUtils.clamp(this.tilt + tiltIn * 1.0 * dt, 0, this.maxTilt(m));
+      // Hold to pour: let go (no key, no drag, no pour button) and it rights itself, F faster
+      else if (!this.tiltDrag && !this.hudTilt && this.tilt > 0) this.tilt = Math.max(0, this.tilt - (tiltIn < 0 ? 4 : 2.2) * dt);
       if (liftIn !== 0) this.lift = THREE.MathUtils.clamp(this.lift + liftIn * 0.25 * dt, 0, 0.62);
       // Pipette filler: up draws, down lets out
       if (m.kind === 'pipette') {

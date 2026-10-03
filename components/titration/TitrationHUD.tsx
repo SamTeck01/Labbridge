@@ -51,7 +51,7 @@ function hints(h: HandsUI): string[] {
     if (k === 'dropper') return ['Move to carry', 'E squeeze one drop', 'Click or Q put down'];
     if (k === 'funnel') return ['Move to carry', 'Scroll lift', 'Click or Q put down'];
     if (k === 'flask') return ['Move to carry', 'Circle the mouse to swirl', 'Click put it down (tile = under the burette)'];
-    return ['Move to carry', 'Scroll lift', 'Right-drag or R / F tilt to pour', 'Click or Q put down'];
+    return ['Move to carry', 'Scroll lift', 'Hold R (or right-drag) to pour', 'Click or Q put down'];
   }
   return ['Click glassware to pick it up', 'Click the tap to hold it', 'W swirl', 'Space read', 'S lab sheet', 'X step back'];
 }
