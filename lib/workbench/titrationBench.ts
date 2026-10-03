@@ -252,7 +252,7 @@ export class TitrationBench {
       this.sockets.push({ id: 'buretteTop', pos: seat, accepts: ['chem_funnel'], quat: fq });
       this.tag(funnel, 'chem_funnel', 'Filter funnel', 'Pick up (take it out before titrating)');
       this.addMovable({ id: 'chem_funnel', name: 'Funnel', kind: 'funnel', obj: funnel, radius: 0.032 * s, height: 0.072 * s, bottom: 0.02 * s, grip: 0.03 * s, yaw: 0, lip: new THREE.Vector3(-0.0035, -0.02, 0), heavy: 18, socket: 'buretteTop', canTilt: false });
-      this.openings.push({ id: 'funnel', pos: () => (this.movables.get('chem_funnel')!.socket === 'buretteTop' ? funnel.localToWorld(new THREE.Vector3(0, 0.05, 0)) : new THREE.Vector3(0, -99, 0)), r: 0.03 * s });
+      this.openings.push({ id: 'funnel', pos: () => (this.movables.get('chem_funnel')!.socket === 'buretteTop' ? funnel.localToWorld(new THREE.Vector3(0, 0.05, 0)) : new THREE.Vector3(0, -99, 0)), r: 0.042 * s });
     }
     this.openings.push({ id: 'burette', pos: () => (this.movables.get('chem_funnel')?.socket === 'buretteTop' ? new THREE.Vector3(0, -99, 0) : this.buretteTop.clone()), r: 0.0075 * s });
 
@@ -563,7 +563,7 @@ export class TitrationBench {
   /** What is directly below a point (a pouring lip, a pipette tip), within reach of falling liquid. */
   private targetBelow(p: THREE.Vector3): { id: PourTarget; at: THREE.Vector3 } {
     let best: { id: PourTarget; at: THREE.Vector3 } | null = null;
-    let bestD = Infinity;
+    let bestD = -Infinity;
     for (const o of this.openings) {
       const at = o.pos();
       if (at.y < -50) continue;
@@ -571,9 +571,10 @@ export class TitrationBench {
       if (this.held && o.id === 'flask' && this.held.id === 'chem_flask') continue;
       if (this.held && o.id === 'waste' && this.held.id === 'chem_waste') continue;
       const d = Math.hypot(p.x - at.x, p.z - at.z);
-      if (d < o.r + 0.004 && d < bestD) {
+      // Falling liquid lands in the highest opening under it (the funnel, not the flask below it)
+      if (d < o.r + 0.004 && at.y > bestD) {
         best = { id: o.id, at };
-        bestD = d;
+        bestD = at.y;
       }
     }
     return best ?? { id: null, at: new THREE.Vector3(p.x, this.floorAt(p.x, p.z), p.z) };
@@ -882,7 +883,7 @@ export class TitrationBench {
   private q = new THREE.Quaternion();
 
   update(delta: number) {
-    const dt = Math.min(0.05, delta);
+    const dt = Math.min(0.25, delta); // low frame rates still pour and fill at real speed
     // Keyboard / HUD continuous inputs
     const k = (a: string, b: string) => (this.keys.has(a) ? 1 : 0) - (this.keys.has(b) ? 1 : 0);
     const tiltIn = k('KeyR', 'KeyF') + this.input.tilt;

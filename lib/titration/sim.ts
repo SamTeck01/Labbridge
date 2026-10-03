@@ -204,6 +204,7 @@ export const SPLASH_TILT = THREE_DEG(105);
 
 let dropAccumulator = 0;
 let overshootSaid = false;
+let lastSpillSaid = 0;
 
 function tick(dt: number) {
   let s = state;
@@ -406,8 +407,13 @@ export const titration = {
     } else if (target === 'waste' || target === 'sink') {
       set({ wasteML: state.wasteML + into });
     } else if (target !== 'stock') {
-      set({ spills: state.spills + 1 });
-      emit({ type: 'spill', what: 'NaOH on the bench' });
+      // Spill size counts in mL (≈1 per 5 mL), and the warning is not repeated every frame
+      set({ spills: state.spills + into * 0.2 });
+      const now = Date.now();
+      if (now - lastSpillSaid > 4000) {
+        lastSpillSaid = now;
+        emit({ type: 'spill', what: 'NaOH on the bench' });
+      }
     }
     if (miss > 0.3) emit({ type: 'spill', what: 'a splash of NaOH' });
     return into;
