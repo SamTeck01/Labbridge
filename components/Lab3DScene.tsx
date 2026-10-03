@@ -43,8 +43,9 @@ import ExperimentPanel from '@/components/ExperimentPanel';
 import TitrationHUD from '@/components/titration/TitrationHUD';
 import BenchHandHUD from '@/components/BenchHandHUD';
 import ControlsHelp from '@/components/ControlsHelp';
+import { useFreePointer } from '@/lib/useFreePointer';
 import { titration } from '@/lib/titration/sim';
-import { titrationControls } from '@/lib/titration/ui';
+import { titrationControls, useHandsUI } from '@/lib/titration/ui';
 import LabSheet from '@/components/titration/LabSheet';
 import LabTutorial from '@/components/LabTutorial';
 import MiniMapRadar from '@/components/MiniMapRadar';
@@ -328,6 +329,9 @@ export default function Lab3DScene({
   // Mouse captured for aiming (desktop): a crosshair is shown, also at the benches
   const [isAiming, setIsAiming] = useState<boolean>(false);
   const [showHelp, setShowHelp] = useState<boolean>(false);
+  const isReading = useHandsUI((h) => !!h.reading);
+  // Panels that need the mouse give it back (the phone, the eyepiece view)
+  useFreePointer(isPhoneOpen || isViewingEyepieces);
   // The next step's object: where it is on screen (for the marker / edge arrow)
   const [goal, setGoal] = useState<null | { x: number; y: number; on: boolean; angle: number; label: string }>(null);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
@@ -1854,13 +1858,13 @@ export default function Lab3DScene({
 
       {showHelp && <ControlsHelp onClose={() => setShowHelp(false)} />}
       {/* At a bench on a laptop, before the mouse is captured: how to start aiming */}
-      {atWorkbench && !isAiming && !isTouch && !isSheetOpen && !isViewingEyepieces && (
+      {atWorkbench && !isAiming && !isTouch && !isSheetOpen && !isViewingEyepieces && !isReading && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-10 z-30 pointer-events-none px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-200">
           Click to aim with the mouse · <b>H</b> controls
         </div>
       )}
       {/* Next step: a tag on the object, or an arrow at the edge pointing to it */}
-      {goal && !isSheetOpen && !isViewingEyepieces && (
+      {goal && !isSheetOpen && !isViewingEyepieces && !isReading && (
         goal.on ? (
           <div className="absolute z-30 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: `${goal.x * 100}%`, top: `calc(${goal.y * 100}% - 34px)` }}>
             <div className="flex flex-col items-center animate-bounce">

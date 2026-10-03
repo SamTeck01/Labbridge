@@ -7,6 +7,7 @@ import { labStore, useLab, type Station } from '@/lib/labStore';
 import { curie } from '@/lib/curie';
 import PracticalExtras from '@/components/PracticalExtras';
 import AmmeterReading from '@/components/AmmeterReading';
+import { useFreePointer } from '@/lib/useFreePointer';
 import { soundFx } from '@/lib/soundEffects';
 
 /** Practical brief, live procedure checklist, readings and results for the bench the student is at. */
@@ -40,6 +41,7 @@ export default function ExperimentPanel({
   const goggles = useLab((st) => st.player.goggles);
 
   const active = getExperiment(run?.experimentId);
+  useFreePointer(!!lastResult);
   const available = experimentForStation(station);
 
   if (lastResult) {

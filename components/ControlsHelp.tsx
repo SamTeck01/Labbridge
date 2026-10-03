@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useFreePointer } from '@/lib/useFreePointer';
 
 /** The laptop controls on one card (H), like the controls screen of any sim. */
 const ROWS: [string, string][] = [
@@ -21,6 +22,7 @@ const ROWS: [string, string][] = [
 ];
 
 export default function ControlsHelp({ onClose }: { onClose: () => void }) {
+  useFreePointer();
   return (
     <div className="absolute inset-0 z-[58] flex items-center justify-center bg-slate-950/60 p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-700 p-5 text-slate-100 shadow-2xl" onClick={(e) => e.stopPropagation()}>

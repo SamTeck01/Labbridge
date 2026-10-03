@@ -3,6 +3,7 @@
 import React, { useRef, useState } from 'react';
 import { titration, useTitration, PIPETTE, SHEET_COLS } from '@/lib/titration/sim';
 import { titrationControls, type HandsUI } from '@/lib/titration/ui';
+import { useFreePointer } from '@/lib/useFreePointer';
 
 /**
  * Leaning in to read a scale. The 3D eye has moved to the meniscus; this lens magnifies what that
@@ -13,6 +14,7 @@ import { titrationControls, type HandsUI } from '@/lib/titration/ui';
 const PARALLAX = 4.8; // mL of apparent shift per metre of eye height (burette)
 
 export default function ReadLens({ reading, isTouch }: { reading: NonNullable<HandsUI['reading']>; isTouch: boolean }) {
+  useFreePointer();
   const level = useTitration((s) => s.reading);
   const pipetteML = useTitration((s) => s.pipetteML);
   const sheet = useTitration((s) => s.sheet);

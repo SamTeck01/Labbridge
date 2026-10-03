@@ -3,12 +3,14 @@
 import React from 'react';
 import { titration, useTitration, sheetTitres, sheetMean, SHEET_COLS } from '@/lib/titration/sim';
 import { soundFx } from '@/lib/soundEffects';
+import { useFreePointer } from '@/lib/useFreePointer';
 
 /**
  * The clipboard on the bench: a real titration results table. The student writes every burette
  * reading themselves; this sheet is what gets marked.
  */
 export default function LabSheet({ onClose }: { onClose: () => void }) {
+  useFreePointer();
   const sheet = useTitration((s) => s.sheet);
   const titres = sheetTitres(titration.get());
   const mean = sheetMean(titration.get());

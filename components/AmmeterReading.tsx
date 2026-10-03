@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useFreePointer } from '@/lib/useFreePointer';
 
 /**
  * Close-up of the moving-coil ammeter (0–1 A, 0.02 A divisions). The needle sits where the current
  * really is; the student reads it and types the value. Nothing shows the number.
  */
 export default function AmmeterReading({ actual, onSubmit, onCancel }: { actual: number; onSubmit: (v: number) => void; onCancel: () => void }) {
+  useFreePointer();
   const [text, setText] = useState('');
   const cx = 160;
   const cy = 170;
