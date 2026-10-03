@@ -137,6 +137,12 @@ function set(patch: Partial<TitrationState>) {
   notify();
 }
 
+/** For what the student types or ticks: React inputs must see the change at once. */
+function setNow(patch: Partial<TitrationState>) {
+  state = { ...state, ...patch };
+  listeners.forEach((l) => l());
+}
+
 const run = () => state.runs[state.runs.length - 1];
 function patchRun(p: Partial<Run>) {
   const runs = state.runs.slice();
@@ -481,15 +487,15 @@ export const titration = {
   writeCell(row: 'initial' | 'final', col: number, value: string) {
     const cells = state.sheet[row].slice();
     cells[col] = { value, truth: Math.round(state.reading * 1000) / 1000 };
-    set({ sheet: { ...state.sheet, [row]: cells } });
+    setNow({ sheet: { ...state.sheet, [row]: cells } });
   },
   tick(col: number, on: boolean) {
     const ticked = state.sheet.ticked.slice();
     ticked[col] = on;
-    set({ sheet: { ...state.sheet, ticked } });
+    setNow({ sheet: { ...state.sheet, ticked } });
   },
   handIn() {
-    set({ sheet: { ...state.sheet, handedIn: true } });
+    setNow({ sheet: { ...state.sheet, handedIn: true } });
   },
 };
 
