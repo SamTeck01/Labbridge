@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { titration } from '@/lib/titration/sim';
 import { labStore, describeLabState, titrationPH, type Station, type Objective } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
 import { experiments, getExperiment } from '@/lib/experiments';
@@ -96,11 +97,12 @@ function operate({ name, args }: Action) {
       }
       break;
     case 'set_burette':
-      labStore.update('chemistry', { buretteOpen: !!args.open });
+      // Same tap the student turns: open = a steady run, closed = shut
+      titration.setValve(args.open ? 0.45 : 0);
       soundFx.playClick();
       break;
     case 'add_indicator':
-      labStore.update('chemistry', { indicatorAdded: true });
+      for (let i = 0; i < 3; i++) titration.indicatorDrop('flask');
       soundFx.playDropLiquid();
       break;
     case 'set_stirrer':
@@ -298,13 +300,4 @@ export function startCurieWatch() {
     const reading = Math.round((r.massOnPan - r.tareOffset + drift) * 10000) / 10000;
     if (reading !== r.balanceWeight) labStore.update('research', { balanceWeight: reading });
   }, 400);
-
-  // Burette dispensing simulation runs here so it's independent of rendering.
-  setInterval(() => {
-    const c = labStore.get().chemistry;
-    if (!c.buretteOpen || c.buretteML <= 0) return;
-    const step = Math.min(0.1, c.buretteML);
-    const dispensedML = Math.round((c.dispensedML + step) * 100) / 100;
-    labStore.update('chemistry', { dispensedML, buretteML: c.buretteML - step, phValue: titrationPH(dispensedML, c.flaskAcidML) });
-  }, 200);
 }

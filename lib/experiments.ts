@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { labStore, microscopeSharpness, titrationPH, SALTS, type LabState, type Station } from '@/lib/labStore';
 import { stopwatches } from '@/lib/workbench/kit';
+import { titration, sheetTitres, parseReading, PIPETTE, type TitrationState } from '@/lib/titration/sim';
 
 /**
  * Practical experiments: objective, ordered procedure Dr. Curie tracks, readings the student
@@ -84,50 +85,89 @@ const band = (err: number, bands: [number, number][]) => {
   return 0;
 };
 
+/** Two ticked titres from real (non-rough) runs that agree within 0.10 cm³. */
+function concordant(t: TitrationState) {
+  const titres = sheetTitres(t);
+  const ticked = titres.map((v, i) => (t.sheet.ticked[i] && i > 0 ? v : null)).filter((v): v is number => v !== null);
+  for (let a = 0; a < ticked.length; a++) for (let b = a + 1; b < ticked.length; b++) if (Math.abs(ticked[a] - ticked[b]) <= 0.1001) return true;
+  return false;
+}
+
+/** Marked like a real practical: from the sheet the student wrote and how they handled the apparatus. */
+function titrationMarks(t: TitrationState): ScoreLine[] {
+  const titres = sheetTitres(t);
+  // Accuracy: mean of the ticked titres against the true titre of those runs (acid pipetted / 1, both 0.100 M)
+  const used = titres.map((v, i) => ({ v, i })).filter((x) => x.v !== null && t.sheet.ticked[x.i] && x.i > 0);
+  const mean = used.length ? used.reduce((a, x) => a + (x.v as number), 0) / used.length : null;
+  const truths = used.map((x) => t.runs[x.i]?.pipettedML ?? 25).filter((v) => v > 0);
+  const trueMean = truths.length ? truths.reduce((a, b) => a + b, 0) / truths.length : 25;
+  const err = mean === null ? Infinity : Math.abs(mean - trueMean);
+  const accuracy = band(err, [[0.1, 30], [0.2, 24], [0.4, 15], [0.8, 6]]);
+
+  // Readings: each written value against the meniscus at that moment, to 2 d.p. ending in 0 or 5
+  const cells = [...t.sheet.initial, ...t.sheet.final].filter((c) => c.value.trim() !== '');
+  const good = cells.filter((c) => {
+    const n = parseReading(c.value);
+    if (n === null || c.truth === null) return false;
+    const twoDp = /^\s*\d+\.\d[05]\s*$/.test(c.value);
+    return twoDp && Math.abs(n - c.truth) <= 0.05 + 1e-6;
+  }).length;
+  const readings = cells.length ? Math.round((20 * good) / cells.length) : 0;
+
+  const conc = concordant(t) ? 15 : used.length >= 2 ? 6 : 0;
+
+  // Technique
+  const runs = t.runs.filter((r) => r.pipettedML > 0);
+  const tech = [
+    !runs.some((r) => r.bubbleLeft),
+    !runs.some((r) => r.funnelLeft),
+    runs.length > 0 && runs.every((r) => Math.abs(r.pipettedML - PIPETTE.LINE) <= 0.06),
+    runs.length > 0 && runs.every((r) => r.indicatorDrops >= 2 && r.indicatorDrops <= 4),
+    runs.length > 0 && runs.filter((r) => r.baseML > 1).every((r) => r.swirlSeconds > 3),
+  ];
+  const technique = tech.filter(Boolean).length * 5;
+  const care = (t.spills < 1 ? 5 : t.spills < 3 ? 2 : 0) + (runs.some((r) => r.index > 0 && r.endpointAt !== null && r.baseML - r.endpointAt > 0.6) ? 0 : 5);
+
+  return [
+    { label: 'Accuracy', points: accuracy, max: 30, note: mean === null ? 'No ticked titres to average.' : `Mean titre ${mean.toFixed(2)} cm³; your runs needed ${trueMean.toFixed(2)} cm³.` },
+    { label: 'Burette readings', points: readings, max: 20, note: `${good} of ${cells.length} readings within 0.05 cm³ and written to 2 d.p. (ending in 0 or 5).` },
+    { label: 'Concordant results', points: conc, max: 15, note: conc === 15 ? 'Two ticked titres within 0.10 cm³.' : 'Ticked titres did not agree within 0.10 cm³.' },
+    { label: 'Technique', points: technique, max: 25, note: ['air bubble cleared', 'funnel removed', 'pipette to the line', '2-3 drops of indicator', 'swirled while titrating'].filter((_, i) => tech[i]).join(', ') || 'Review the method.' },
+    { label: 'Care & control', points: care, max: 10, note: `${t.spills < 1 ? 'No spills' : `${Math.ceil(t.spills)} spill(s)`}; ${care >= 5 && !runs.some((r) => r.index > 0 && r.endpointAt !== null && r.baseML - r.endpointAt > 0.6) ? 'no overshoots on accurate runs' : 'overshot an accurate run'}.` },
+  ];
+}
+
 export const EXPERIMENTS: ExperimentDef[] = [
   {
     id: 'titration',
     station: 'chemistry',
     title: 'Acid–Base Titration',
-    objective: 'Find the volume of 0.1 M NaOH that exactly neutralises 25.0 mL of 0.1 M HCl, using phenolphthalein.',
-    safety: ['Goggles on: NaOH is corrosive.', 'Close the burette before you walk away.'],
-    intro: "Today we're finding the endpoint of HCl with NaOH. Start by filling the burette: pick up the NaOH bottle and pour it through the funnel.",
+    objective: 'Find the volume of 0.100 M NaOH that neutralises 25.00 cm³ of 0.100 M HCl. Get two titres within 0.10 cm³ of each other.',
+    safety: ['Goggles on: NaOH is corrosive.', 'Pour slowly and below eye level. Wipe up spills.'],
+    intro: "Titration today, done properly. Fill the burette through the funnel, take the funnel out, clear the air from the jet, then pipette 25.00 cm³ of acid into the flask. You write every reading on the lab sheet yourself.",
     steps: [
-      { id: 'fill', text: 'Fill the burette with 0.1 M NaOH to 0.00 mL', coach: 'Pick up the NaOH bottle and pour it through the funnel into the burette until it reaches the zero mark.', done: (l) => l.chemistry.buretteML >= 49.5 },
-      { id: 'acid', text: 'Pour 25.0 mL of 0.1 M HCl into the flask', coach: 'Now the measuring cylinder of HCl. Pour all 25 mL into the conical flask.', done: (l) => l.chemistry.flaskAcidML >= 24.5 },
-      { id: 'indicator', text: 'Add 2–3 drops of phenolphthalein to the flask', coach: 'Take the dropper from the indicator bottle and squeeze a few drops into the flask.', done: (l) => l.chemistry.indicatorAdded },
-      { id: 'stir', text: 'Mix: switch on the stirrer, or swirl the flask', coach: 'Each addition has to mix in. Switch on the stirrer, or hold the flask and swirl it by hand (tap the flask).', done: (l, r) => l.chemistry.stirrerRPM > 0 || (r.events.swirled ?? 0) > 0 },
-      { id: 'titrate', text: 'Open the burette and titrate', coach: 'Open the stopcock. Run it steadily at first; the endpoint is near 25 mL.', done: (l) => l.chemistry.dispensedML > 0.5 },
-      { id: 'endpoint', text: 'Close the burette at the first permanent pink', coach: 'Near 24 mL, close it and add single drops. Stop at the first faint pink that stays.', done: (l) => l.chemistry.phValue >= 8.2 && !l.chemistry.buretteOpen },
-      { id: 'record', text: 'Record the titre', coach: 'Read the burette at eye level and record your titre.', done: (_l, r) => r.readings.length >= 1 },
+      { id: 'fill', text: 'Fill the burette with NaOH to just above 0', coach: 'Pick up the NaOH bottle, lift it to the funnel and tilt it gently. Stop when the level is just above the 0 mark.', done: () => { const t = titration.get(); return t.hasLiquid && t.reading <= 1; } },
+      { id: 'funnel', text: 'Take the funnel out of the burette', coach: 'Lift the funnel out and put it down on the bench. Left in, it drips and changes your readings.', done: () => !titration.get().funnelIn },
+      { id: 'jet', text: 'Clear the air bubble from the jet', coach: 'Stand the waste beaker under the burette, open the tap fully for a second, then close it. The bubble in the tip has to go.', done: () => !titration.get().bubble },
+      { id: 'pipette', text: 'Pipette 25.00 cm³ of HCl into the flask', coach: 'Put the flask back on the tile. Pick up the pipette, dip the tip in the HCl, draw up just past the line, let it down to the line at eye level, then let it all run into the flask.', done: () => titration.get().acidMmol >= 2.3 },
+      { id: 'indicator', text: 'Add 2 or 3 drops of phenolphthalein', coach: 'Take the dropper out of the indicator bottle, hold it over the flask and squeeze: one press, one drop.', done: () => titration.get().indicatorDrops > 0 },
+      { id: 'initial', text: 'Read the burette and write the initial reading', coach: 'Lean in to the burette (Space or tap the scale), get your eye level with the meniscus and write the reading on the lab sheet.', done: () => titration.get().sheet.initial.some((c) => c.value.trim() !== '') },
+      { id: 'titrate', text: 'Titrate to the first permanent pink', coach: 'Hand on the tap, swirl with the other hand. Run it steadily, then drop by drop when the pink flashes start to linger.', done: () => titration.get().runs.some((r) => r.endpointAt !== null) && titration.get().valve === 0 },
+      { id: 'final', text: 'Read the burette and write the final reading', coach: 'Tap closed. Lean in, read the bottom of the meniscus and write the final reading.', done: () => titration.get().sheet.final.some((c) => c.value.trim() !== '') },
+      { id: 'repeat', text: 'Repeat until two titres agree within 0.10 cm³ and tick them', coach: 'Rinse the flask in the basin, pipette fresh acid, refill the burette if it is low, and go again. Tick the titres that agree.', done: () => concordant(titration.get()) },
+      { id: 'handin', text: 'Hand your lab sheet to Dr. Curie', coach: 'Check your sheet, then hand it in.', done: () => titration.get().sheet.handedIn },
     ],
     mistakes: [
-      { id: 'noIndicator', message: "Stop. You're titrating without indicator, so you won't see the endpoint.", check: (l) => l.chemistry.dispensedML > 0 && !l.chemistry.indicatorAdded },
-      { id: 'noAcid', message: "There's no acid in the flask yet. Measure the 25 mL of HCl in first, or there's nothing to titrate.", check: (l) => l.chemistry.dispensedML > 0 && l.chemistry.flaskAcidML < 24.5 },
-      { id: 'overshoot', message: "That's well past the endpoint. Deep pink means excess base. Close the burette and note it.", check: (l) => l.chemistry.dispensedML > 26.5 },
+      { id: 'noIndicator', message: "Stop. You're titrating without indicator, so you won't see the endpoint.", check: () => titration.get().runs.some((r) => r.baseML > 0.2 && r.indicatorDrops === 0 && r.pipettedML > 0) },
+      { id: 'funnelLeft', message: 'You titrated with the funnel still in the burette. Drips from it change the reading.', check: () => titration.get().runs.some((r) => r.funnelLeft) },
+      { id: 'bubble', message: 'The air bubble came out of the jet during your titration, so that titre reads about 0.3 cm³ too high.', check: () => titration.get().runs.some((r) => r.bubbleLeft) },
+      { id: 'overshoot', message: "That's well past the endpoint. Deep pink means excess base. Rinse and do another run.", check: () => titration.get().runs.some((r) => r.endpointAt !== null && r.index > 0 && r.baseML - r.endpointAt > 0.6) },
+      { id: 'filler', message: 'Acid went up into the pipette filler. Draw up slowly and stop just past the line.', check: () => titration.get().pipetteFillerFlooded },
     ],
-    recordLabel: 'Read the burette',
-    readingsNeeded: 1,
-    record: (l) => {
-      if (l.chemistry.buretteOpen) return 'Close the burette before reading it.';
-      if (l.chemistry.dispensedML <= 0) return 'Nothing dispensed yet.';
-      return { label: 'Titre', value: Math.round(l.chemistry.dispensedML * 100) / 100, unit: 'mL' };
-    },
-    evaluate: (r) => {
-      const titre = r.readings[0]?.value ?? 0;
-      const err = Math.abs(titre - 25.0);
-      const indicatorFirst = !r.mistakes.includes('noIndicator');
-      return [
-        { label: 'Accuracy', points: band(err, [[0.1, 40], [0.3, 32], [0.6, 20], [1.5, 8]]), max: 40, note: `Titre ${titre.toFixed(2)} mL vs 25.00 mL expected (error ${err.toFixed(2)} mL).` },
-        (() => {
-          const actual = r.readings[0]?.extra?.actual ?? titre;
-          const readErr = Math.abs(titre - actual);
-          return { label: 'Burette reading', points: readErr <= 0.05 ? 10 : readErr <= 0.15 ? 5 : 0, max: 10, note: `You read ${titre.toFixed(2)} mL; the meniscus was at ${actual.toFixed(2)} mL.` };
-        })(),
-        { label: 'Technique', points: (indicatorFirst ? 15 : 0) + (r.completedSteps.includes('stir') ? 15 : 0), max: 30, note: indicatorFirst ? 'Indicator added before titrating.' : 'Titrated before adding indicator.' },
-        { label: 'Safety & control', points: r.mistakes.includes('overshoot') ? 5 : 20, max: 20, note: r.mistakes.includes('overshoot') ? 'Overshot the endpoint by more than 1.5 mL.' : 'Controlled approach to the endpoint.' },
-      ];
-    },
+    recordLabel: '',
+    readingsNeeded: 0,
+    record: () => 'Write your readings on the lab sheet.',
+    evaluate: () => titrationMarks(titration.get()),
   },
   {
     id: 'microscopy',
@@ -542,12 +582,16 @@ export const experiments = {
     state = load();
     listeners.forEach((l) => l());
     labStore.subscribe(evaluate);
+    titration.subscribe(evaluate); // lab sheet and apparatus changes move the practical on too
   },
   start(id: string) {
     const def = getExperiment(id);
     if (!def) return;
     // Fresh apparatus for the practical
-    if (def.id === 'titration') labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
+    if (def.id === 'titration') {
+      titration.reset();
+      labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
+    }
     if (def.id === 'weighing') labStore.update('research', { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0 });
     if (['pendulum', 'rates', 'osmosis', 'chroma'].includes(def.station)) labStore.resetKey(STATION_STATE[def.station]);
     if (def.id === 'ohms-law') labStore.update('physics', { wired: false, switchClosed: false, resistance: 25, voltage: 12 });

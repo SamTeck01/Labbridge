@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CheckCircle2, Circle, ClipboardList, FlaskConical, X, Trophy, Droplet } from 'lucide-react';
+import { CheckCircle2, Circle, ClipboardList, FlaskConical, X, Trophy } from 'lucide-react';
 import { experiments, experimentForStation, getExperiment, useExperiments } from '@/lib/experiments';
-import { labStore, titrationPH, useLab, type Station } from '@/lib/labStore';
+import { labStore, useLab, type Station } from '@/lib/labStore';
 import { curie } from '@/lib/curie';
-import BuretteReading from '@/components/BuretteReading';
 import PracticalExtras from '@/components/PracticalExtras';
 import { soundFx } from '@/lib/soundEffects';
 
@@ -37,7 +36,6 @@ export default function ExperimentPanel({
   const lastResult = useExperiments((s) => s.lastResult);
   const [error, setError] = useState<string | null>(null);
   const goggles = useLab((st) => st.player.goggles);
-  const [reading, setReading] = useState<number | null>(null);
 
   const active = getExperiment(run?.experimentId);
   const available = experimentForStation(station);
@@ -150,41 +148,13 @@ export default function ExperimentPanel({
 
   const run_ = run!;
   const record = () => {
-    // Titration: the student reads the burette scale themselves
-    if (active.id === 'titration') {
-      const c = labStore.get().chemistry;
-      if (c.buretteOpen) return setError('Close the burette before reading it.');
-      if (c.dispensedML <= 0) return setError('Nothing dispensed yet.');
-      setError(null);
-      setReading(c.dispensedML);
-      return;
-    }
     const err = experiments.record();
     setError(err);
     if (!err) soundFx.playSuccessChime();
   };
-  const addDrop = () => {
-    const c = labStore.get().chemistry;
-    if (c.buretteML < 0.05) return;
-    const dispensedML = Math.round((c.dispensedML + 0.05) * 100) / 100;
-    labStore.update('chemistry', { dispensedML, buretteML: c.buretteML - 0.05, phValue: titrationPH(dispensedML, c.flaskAcidML) });
-    window.dispatchEvent(new CustomEvent('labbridge:drop'));
-    soundFx.playDropLiquid();
-  };
 
   return (
     <>
-    {reading !== null && (
-      <BuretteReading
-        actual={reading}
-        onCancel={() => setReading(null)}
-        onSubmit={(v) => {
-          experiments.recordManual({ label: 'Titre', value: v, unit: 'mL', extra: { actual: reading } });
-          setReading(null);
-          soundFx.playSuccessChime();
-        }}
-      />
-    )}
     <div className={`absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 ${compact ? 'w-[min(80vw,280px)] p-3' : 'w-[min(92vw,340px)]'} [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl`}>
       <div className="flex items-center gap-2 mb-2">
         <FlaskConical className="w-4 h-4 text-teal-400" />
@@ -218,11 +188,6 @@ export default function ExperimentPanel({
       <PracticalExtras def={active} answered={run_.readings.some((x) => x.label === 'Answer')} />
       {active.readingsNeeded > 0 && (
         <div className="flex gap-2">
-          {active.id === 'titration' && (
-            <button onClick={addDrop} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm">
-              <Droplet className="w-4 h-4" /> 1 drop
-            </button>
-          )}
           <button onClick={record} className="flex-1 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-sm font-medium">
             {active.recordLabel}
           </button>

@@ -38,6 +38,8 @@ interface Hand {
   held: THREE.Object3D | null;
   /** Called every frame while moving; can nudge the wrist target (used to keep a pour lip on target). */
   steer: ((pose: HandPose) => void) | null;
+  /** Driven directly every frame by direct manipulation (overrides tweens and idling). */
+  driven: boolean;
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
@@ -113,6 +115,7 @@ export class FirstPersonHands {
         holdPivot,
         held: null,
         steer: null,
+        driven: false,
       };
     }
     this.ready = true;
@@ -121,7 +124,7 @@ export class FirstPersonHands {
 
   /** True while any hand is moving or steering (the frame scheduler keeps full rate). */
   get isAnimating() {
-    return Object.values(this.hands).some((h) => h && h.from !== null);
+    return Object.values(this.hands).some((h) => h && (h.from !== null || h.driven));
   }
 
   show(visible: boolean) {
@@ -149,12 +152,47 @@ export class FirstPersonHands {
     const h = this.hands[side];
     if (!h) return Promise.resolve();
     h.resolve?.();
+    h.driven = false;
     h.from = { ...h.pose, wrist: h.pose.wrist.clone() };
     h.to = { ...h.pose, ...target, wrist: (target.wrist ?? h.pose.wrist).clone() };
     h.t = 0;
     h.dur = Math.max(0.05, dur);
     h.steer = steer;
     return new Promise((res) => (h.resolve = res));
+  }
+
+  /**
+   * Direct manipulation: put the hand exactly here this frame (smoothed a little so it never jumps).
+   * Call every frame while the student is holding or turning something; call release() to let go.
+   */
+  drive(side: Side, target: Partial<HandPose>, smoothing = 22, delta = 1 / 60) {
+    const h = this.hands[side];
+    if (!h) return;
+    if (h.from) {
+      h.from = h.to = null;
+      const r = h.resolve;
+      h.resolve = null;
+      r?.();
+    }
+    h.driven = true;
+    h.steer = null;
+    const k = 1 - Math.exp(-smoothing * delta);
+    if (target.wrist) h.pose.wrist.lerp(target.wrist, k);
+    if (target.twist !== undefined) h.pose.twist += (target.twist - h.pose.twist) * k;
+    if (target.flex !== undefined) h.pose.flex += (target.flex - h.pose.flex) * k;
+    if (target.grip !== undefined) h.pose.grip += (target.grip - h.pose.grip) * k;
+  }
+
+  /** Stop driving a hand: it eases back to rest. */
+  undrive(side: Side) {
+    const h = this.hands[side];
+    if (!h || !h.driven) return;
+    h.driven = false;
+    this.rest(side, 0.45);
+  }
+
+  isDriven(side: Side) {
+    return !!this.hands[side]?.driven;
   }
 
   rest(side: Side, dur = 0.6) {
@@ -205,7 +243,7 @@ export class FirstPersonHands {
           h.resolve = null;
           r?.();
         }
-      } else if (h.held === null && !h.steer) {
+      } else if (h.held === null && !h.steer && !h.driven) {
         // Idle hands follow the camera gently
         h.pose.wrist.lerp(this.idleWrist(h.side), Math.min(1, delta * 6));
       }

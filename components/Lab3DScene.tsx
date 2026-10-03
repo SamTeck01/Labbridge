@@ -40,6 +40,10 @@ import {
 import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
 import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
 import ExperimentPanel from '@/components/ExperimentPanel';
+import TitrationHUD from '@/components/titration/TitrationHUD';
+import { titration } from '@/lib/titration/sim';
+import { titrationControls } from '@/lib/titration/ui';
+import LabSheet from '@/components/titration/LabSheet';
 import LabTutorial from '@/components/LabTutorial';
 import MiniMapRadar from '@/components/MiniMapRadar';
 import VirtualJoystick from '@/components/VirtualJoystick';
@@ -312,6 +316,8 @@ export default function Lab3DScene({
 
   // Phone State
   const [isPhoneOpen, setIsPhoneOpen] = useState<boolean>(false);
+  // The titration lab sheet (clipboard on the chemistry bench)
+  const [isSheetOpen, setIsSheetOpen] = useState<boolean>(false);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
   const [phoneAIPrompt, setPhoneAIPrompt] = useState<string | undefined>(undefined);
   const [phoneAIContext, setPhoneAIContext] = useState<string | undefined>(undefined);
@@ -643,6 +649,20 @@ export default function Lab3DScene({
   // Keyboard listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const typing = !!(e.target as HTMLElement | null)?.closest?.('input, textarea, select');
+      if (typing) return;
+      // At the titration bench the hands own most keys (tilt, lift, tap, swirl, read, let go)
+      const tb = titrationBenchRef.current;
+      if (isSeated && seatedStation === 'chemistry' && tb) {
+        if (e.code === 'KeyS') {
+          if (!e.repeat) setIsSheetOpen((o) => !o);
+          return;
+        }
+        if (tb.key(e.code, true)) {
+          e.preventDefault();
+          return;
+        }
+      }
       keysPressed.current[e.code] = true;
 
       // Escape closes the eyepiece view first; otherwise Space/Escape steps back from the bench
@@ -675,6 +695,7 @@ export default function Lab3DScene({
 
     const handleKeyUp = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = false;
+      titrationBenchRef.current?.key(e.code, false);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -694,6 +715,8 @@ export default function Lab3DScene({
   const benchesRef = useRef<Partial<Record<Station, Workbench | TitrationBench>>>({});
   // Where the view should turn while the hands work (e.g. up to the burette funnel)
   const focusRef = useRef<THREE.Vector3 | null>(null);
+  // Leaning in to read a scale at eye level: where the eye goes and what it looks at
+  const leanRef = useRef<{ eye: THREE.Vector3; look: THREE.Vector3 } | null>(null);
   const lastHitPointRef = useRef<THREE.Vector3 | null>(null);
   // True while a full-screen overlay hides the 3D view: the render loop does no work at all
   const pausedRef = useRef(false);
@@ -718,13 +741,10 @@ export default function Lab3DScene({
 
   useEffect(() => {
     startCurieWatch();
-    const onDrop = () => titrationBenchRef.current?.visualDrop();
-    window.addEventListener('labbridge:drop', onDrop);
     const off = experiments.onEvent((e) => {
       if (e.type === 'started' || e.type === 'reset') Object.values(benchesRef.current).forEach((b) => b?.reset());
     });
     return () => {
-      window.removeEventListener('labbridge:drop', onDrop);
       off();
     };
   }, []);
@@ -759,6 +779,9 @@ export default function Lab3DScene({
     handsRef.current = hands;
     const handsPromise = hands.load().catch(() => false);
     const setFocus = (p: THREE.Vector3 | null) => (focusRef.current = p ? p.clone() : null);
+    const setLean = (eye: THREE.Vector3 | null, look: THREE.Vector3 | null) => (leanRef.current = eye && look ? { eye: eye.clone(), look: look.clone() } : null);
+    /** The titration bench, when the student is standing at it. */
+    const chemBench = () => (isSeatedRef.current && seatedStationRef.current === 'chemistry' ? titrationBenchRef.current : null);
 
     // WebGL Renderer
     // Phones: lower pixel ratio and cheaper shadows keep the frame rate up (AO is also desktop-only)
@@ -1050,6 +1073,7 @@ export default function Lab3DScene({
       chemRig.position.set(4.5, 0.94, -2.98); // front edge of the bench, within reach
       scene.add(chemRig);
       chemEquipmentRef.current = chemRig;
+      TitrationBench.prepareRig(chemRig); // free the parts the hands move before static meshes merge
       chemRig.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
       });
@@ -1058,12 +1082,12 @@ export default function Lab3DScene({
       // Hands-on titration once the hands are ready
       handsPromise.then((ok) => {
         if (!ok || disposed) return;
-        TitrationBench.create(scene, chemRig, hands, setFocus)
+        TitrationBench.create(scene, chemRig, hands, camera, setFocus, setLean, () => setIsSheetOpen(true))
           .then((bench) => {
             if (disposed) return;
             titrationBenchRef.current = bench;
             benchesRef.current.chemistry = bench;
-            if (process.env.NODE_ENV !== 'production') Object.assign(window, { __titration: bench });
+            if (process.env.NODE_ENV !== 'production') Object.assign(window, { __titration: bench, __titrationSim: titration, __tc: titrationControls, __canvas: renderer.domElement });
             collectInteractives();
           })
           .catch((err) => console.error('Titration bench setup failed', err));
@@ -1181,10 +1205,15 @@ export default function Lab3DScene({
     };
 
     let suppressClickUntil = 0;
-    let mouseDown: { x: number; y: number; dragged: boolean } | null = null;
+    let mouseDown: { x: number; y: number; dragged: boolean; bench: boolean; heldAtPress: boolean } | null = null;
 
     const handleMouseMove = (e: MouseEvent) => {
       pointerRef.current.copy(toNdc(e.clientX, e.clientY));
+      const tb = chemBench();
+      if (tb && document.pointerLockElement !== renderer.domElement) {
+        const used = tb.pointerMove(toNdc(e.clientX, e.clientY), e.movementX, e.movementY);
+        if (used && !(e.buttons & 1)) return;
+      }
       if (document.pointerLockElement === renderer.domElement) {
         lookBy(e.movementX, e.movementY, 0.0022);
       } else if (mouseDown && e.buttons & 1) {
@@ -1194,11 +1223,25 @@ export default function Lab3DScene({
       }
     };
     const handleMouseDown = (e: MouseEvent) => {
-      mouseDown = { x: e.clientX, y: e.clientY, dragged: false };
+      const tb = chemBench();
+      const heldAtPress = !!tb?.isHolding;
+      const bench = !!tb && tb.pointerDown(toNdc(e.clientX, e.clientY), e.button);
+      mouseDown = { x: e.clientX, y: e.clientY, dragged: false, bench, heldAtPress };
     };
-    const handleMouseUp = () => {
-      if (mouseDown?.dragged) suppressClickUntil = performance.now() + 50;
+    const handleMouseUp = (e: MouseEvent) => {
+      const tb = chemBench();
+      tb?.pointerUp(e.button);
+      // Holding something: a click (not a drag to look around) puts it down there
+      if (tb && mouseDown?.bench && mouseDown.heldAtPress && !mouseDown.dragged && e.button === 0) tb.release();
+      if (mouseDown?.dragged || mouseDown?.bench) suppressClickUntil = performance.now() + 50;
       mouseDown = null;
+    };
+    const handleContextMenu = (e: MouseEvent) => {
+      if (chemBench()) e.preventDefault(); // right-drag tilts what you're holding
+    };
+    const handleWheel = (e: WheelEvent) => {
+      const tb = chemBench();
+      if (tb && tb.wheel(e.deltaY)) e.preventDefault();
     };
 
     const handleCanvasClick = (e: MouseEvent) => {
@@ -1213,12 +1256,16 @@ export default function Lab3DScene({
 
     // Touch: any drag on the 3D view looks around; a tap (no drag) acts on what was tapped.
     // (The walking joystick is its own element, so its touches never reach the canvas.)
-    const touches = new Map<number, { x: number; y: number; lastX: number; lastY: number; dragged: boolean }>();
+    const touches = new Map<number, { x: number; y: number; lastX: number; lastY: number; dragged: boolean; bench: boolean; heldAtPress: boolean }>();
     const handleTouchStart = (e: TouchEvent) => {
       if (e.target !== renderer.domElement) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
-        touches.set(t.identifier, { x: t.clientX, y: t.clientY, lastX: t.clientX, lastY: t.clientY, dragged: false });
+        // At the titration bench a finger on a piece of glassware picks it up; holding, a drag carries it
+        const tb = chemBench();
+        const heldAtPress = !!tb?.isHolding;
+        const bench = !!tb && touches.size === 0 && tb.pointerDown(toNdc(t.clientX, t.clientY), 0);
+        touches.set(t.identifier, { x: t.clientX, y: t.clientY, lastX: t.clientX, lastY: t.clientY, dragged: false, bench, heldAtPress });
       }
     };
     const handleTouchMove = (e: TouchEvent) => {
@@ -1227,7 +1274,9 @@ export default function Lab3DScene({
         const tr = touches.get(t.identifier);
         if (!tr) continue;
         if (!tr.dragged && Math.hypot(t.clientX - tr.x, t.clientY - tr.y) > 8) tr.dragged = true;
-        if (tr.dragged) lookBy(t.clientX - tr.lastX, t.clientY - tr.lastY, 0.005);
+        const tb = chemBench();
+        if (tr.bench && tb?.isHolding) tb.pointerMove(toNdc(t.clientX, t.clientY), t.clientX - tr.lastX, t.clientY - tr.lastY);
+        else if (tr.dragged) lookBy(t.clientX - tr.lastX, t.clientY - tr.lastY, 0.005);
         tr.lastX = t.clientX;
         tr.lastY = t.clientY;
       }
@@ -1239,6 +1288,11 @@ export default function Lab3DScene({
         if (!tr) continue;
         touches.delete(t.identifier);
         suppressClickUntil = performance.now() + 500; // the browser's synthetic click must not act twice
+        if (tr.bench) {
+          // A tap while holding something sets it down where you tapped
+          if (!tr.dragged && tr.heldAtPress) chemBench()?.release();
+          continue;
+        }
         if (!tr.dragged) {
           pointerRef.current.copy(toNdc(t.clientX, t.clientY));
           actAt(toNdc(t.clientX, t.clientY));
@@ -1250,6 +1304,8 @@ export default function Lab3DScene({
     renderer.domElement.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
     renderer.domElement.addEventListener('click', handleCanvasClick);
+    renderer.domElement.addEventListener('contextmenu', handleContextMenu);
+    renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('touchstart', handleTouchStart, { passive: true });
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
@@ -1291,6 +1347,7 @@ export default function Lab3DScene({
         touchMoveVector.current.x !== 0 ||
         touchMoveVector.current.z !== 0 ||
         !!focusRef.current ||
+        !!leanRef.current ||
         !!savedLookRef.current ||
         hands.isAnimating ||
         Object.values(benchesRef.current).some((bench) => bench?.isBusy) ||
@@ -1471,8 +1528,19 @@ export default function Lab3DScene({
         // Gentle seated breathing
         idleTimerRef.current += delta * 1.5;
         const breathY = Math.sin(idleTimerRef.current) * 0.0018;
-        const eye = seatedStationRef.current ? seatAnchors.current[seatedStationRef.current].pos.y : EYE_HEIGHT_SITTING;
-        cameraRef.current.position.y = eye + breathY;
+        const anchor = seatedStationRef.current ? seatAnchors.current[seatedStationRef.current].pos : null;
+        const eye = anchor ? anchor.y : EYE_HEIGHT_SITTING;
+        const lean = leanRef.current;
+        if (lean) {
+          // Leaning in to read a scale: the eye moves, the student sets its height (parallax is real)
+          cameraRef.current.position.lerp(lean.eye, Math.min(1, delta * 6));
+        } else if (anchor) {
+          const cp = cameraRef.current.position;
+          const kk = Math.min(1, delta * 6);
+          cp.x += (anchor.x - cp.x) * kk;
+          cp.z += (anchor.z - cp.z) * kk;
+          cp.y += (eye + breathY - cp.y) * Math.max(kk, 0.5);
+        } else cameraRef.current.position.y = eye + breathY;
         // The student controls the view. It only turns by itself to follow an action (e.g. up to the
         // burette funnel), then returns to wherever the student was looking.
         const k = Math.min(1, delta * 3);
@@ -1480,7 +1548,11 @@ export default function Lab3DScene({
           cameraEuler.current.y += Math.atan2(Math.sin(yaw - cameraEuler.current.y), Math.cos(yaw - cameraEuler.current.y)) * k;
           cameraEuler.current.x += (pitch - cameraEuler.current.x) * k;
         };
-        if (focusRef.current) {
+        if (lean) {
+          if (!savedLookRef.current) savedLookRef.current = { x: cameraEuler.current.x, y: cameraEuler.current.y };
+          const d = lean.look.clone().sub(cameraRef.current.position);
+          steerTo(Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z)));
+        } else if (focusRef.current) {
           if (!savedLookRef.current) savedLookRef.current = { x: cameraEuler.current.x, y: cameraEuler.current.y };
           const d = focusRef.current.clone().sub(cameraRef.current.position);
           steerTo(Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z)));
@@ -1588,6 +1660,8 @@ export default function Lab3DScene({
       renderer.domElement.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       renderer.domElement.removeEventListener('click', handleCanvasClick);
+      renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
+      renderer.domElement.removeEventListener('wheel', handleWheel);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
@@ -1791,7 +1865,11 @@ export default function Lab3DScene({
 
       {/* Seated Station Direct 3D Equipment Toolbar */}
       {/* At the workbench the hands do the work: just a way to step back */}
-      {atWorkbench && (
+      {atWorkbench && seatedStation === 'chemistry' && (
+        <TitrationHUD isTouch={isTouch} onOpenSheet={() => setIsSheetOpen(true)} />
+      )}
+      {isSheetOpen && seatedStation === 'chemistry' && <LabSheet onClose={() => setIsSheetOpen(false)} />}
+      {atWorkbench && seatedStation !== 'chemistry' && (
         <button
           onClick={standUp}
           className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-slate-900/85 border border-slate-600 text-sm text-white hover:bg-slate-800"
