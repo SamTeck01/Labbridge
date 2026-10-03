@@ -43,17 +43,17 @@ function flowWord(v: number) {
 }
 
 function hints(h: HandsUI): string[] {
-  if (h.reading) return ['Scroll / ↑ ↓ eye height', 'Esc done'];
-  if (h.onTap) return ['Scroll open / close', 'Shift fine', 'W swirl', 'Space read', 'Esc let go'];
+  if (h.reading) return ['Scroll / ↑ ↓ eye height', 'Q done'];
+  if (h.onTap) return ['Scroll open / close', 'Shift fine', 'W swirl', 'Space read', 'Q let go'];
   if (h.held) {
     const k = h.held.kind;
-    if (k === 'pipette') return ['Move to carry', 'Scroll lift / dip', '↑ draw up · ↓ let out', 'Space read the line', 'Click put down'];
-    if (k === 'dropper') return ['Move to carry', 'E squeeze one drop', 'Click put down'];
-    if (k === 'funnel') return ['Move to carry', 'Scroll lift', 'Click put down'];
+    if (k === 'pipette') return ['Move to carry', 'Scroll lift / dip', '↑ draw up · ↓ let out', 'Space read the line', 'Click or Q put down'];
+    if (k === 'dropper') return ['Move to carry', 'E squeeze one drop', 'Click or Q put down'];
+    if (k === 'funnel') return ['Move to carry', 'Scroll lift', 'Click or Q put down'];
     if (k === 'flask') return ['Move to carry', 'Circle the mouse to swirl', 'Click put it down (tile = under the burette)'];
-    return ['Move to carry', 'Scroll lift', 'Right-drag or R / F tilt to pour', 'Click put down'];
+    return ['Move to carry', 'Scroll lift', 'Right-drag or R / F tilt to pour', 'Click or Q put down'];
   }
-  return ['Click glassware to pick it up', 'Click the tap to hold it', 'W swirl', 'Space read', 'S lab sheet'];
+  return ['Click glassware to pick it up', 'Click the tap to hold it', 'W swirl', 'Space read', 'S lab sheet', 'X step back'];
 }
 
 /** Press-and-slide pad: the further you slide down, the further it tilts. Let go and it rights itself. */

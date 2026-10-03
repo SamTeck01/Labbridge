@@ -26,7 +26,7 @@ export default function LabTutorial({ isTouch }: { isTouch: boolean }) {
       title: 'Working at a bench',
       body: isTouch
         ? 'Tap any equipment to walk up to its bench. Then tap things to use them: your hands pick up, pour and turn knobs for you. Drag to look around.'
-        : 'Click any equipment to walk up to its bench. Then click things to use them: your hands pick up, pour and turn knobs. Drag to look around.',
+        : 'Click any equipment to walk up to its bench. Aim with the dot: the outlined thing is what a click uses. Click to pick up or put down, scroll to lift or turn a knob, Q to let go, X to step back. The amber marker shows your next step.',
     },
     {
       title: 'Dr. Curie, your lab manager',

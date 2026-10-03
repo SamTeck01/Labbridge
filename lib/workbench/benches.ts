@@ -202,7 +202,7 @@ export abstract class KnobBench extends BenchBase implements DirectInput {
       else this.keysDown.delete(code);
       return !!this.control;
     }
-    if (code === 'Escape' && down && this.control) {
+    if ((code === 'Escape' || code === 'KeyQ') && down && this.control) {
       this.release();
       return true;
     }
@@ -241,7 +241,7 @@ export abstract class KnobBench extends BenchBase implements DirectInput {
     benchUI.set({
       station: this.station,
       control: c && v ? { id: c.id, name: this.knobs[c.id].name, side: c.side, value: v.value, detail: v.detail } : null,
-      hints: c ? ['Scroll or drag up/down to turn', 'Shift fine', '↑ ↓ keep turning', 'Esc let go'] : this.idleHints,
+      hints: c ? ['Scroll or drag up/down to turn', 'Shift fine', '↑ ↓ keep turning', 'Q let go'] : this.idleHints,
     });
     benchControls.register({ setRate: (r) => (this.rate = r), letGo: () => this.release() });
   }

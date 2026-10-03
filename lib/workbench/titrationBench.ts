@@ -782,19 +782,20 @@ export class TitrationBench {
   }
 
   key(code: string, down: boolean): boolean {
-    const handled = ['KeyR', 'KeyF', 'KeyQ', 'KeyZ', 'ArrowUp', 'ArrowDown', 'KeyW', 'KeyE', 'Space', 'Escape', 'ShiftLeft', 'ShiftRight'];
+    const handled = ['KeyR', 'KeyF', 'KeyQ', 'ArrowUp', 'ArrowDown', 'KeyW', 'KeyE', 'Space', 'Escape', 'ShiftLeft', 'ShiftRight'];
     if (!handled.includes(code)) return false;
+    if (code === 'KeyE' && this.held?.kind !== 'dropper') return false; // E elsewhere = use what the crosshair is on
     if (down) this.keys.add(code);
     else this.keys.delete(code);
     if (!down) {
       if (code === 'KeyW') this.swirl(false);
-      return code !== 'Escape' && code !== 'Space';
+      return code !== 'Escape' && code !== 'Space' && code !== 'KeyQ';
     }
     if (code === 'Space') {
       this.readMode(!this.reading);
       return true;
     }
-    if (code === 'Escape') {
+    if (code === 'Escape' || code === 'KeyQ') {
       if (this.reading) this.readMode(false);
       else if (this.held) this.setDown();
       else if (this.onTap) this.toggleTap(false);
@@ -887,7 +888,7 @@ export class TitrationBench {
     // Keyboard / HUD continuous inputs
     const k = (a: string, b: string) => (this.keys.has(a) ? 1 : 0) - (this.keys.has(b) ? 1 : 0);
     const tiltIn = k('KeyR', 'KeyF') + this.input.tilt;
-    const liftIn = k('KeyQ', 'KeyZ') + this.input.lift;
+    const liftIn = this.input.lift;
     const arrow = k('ArrowUp', 'ArrowDown');
     const fine = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 0.2 : 1;
 

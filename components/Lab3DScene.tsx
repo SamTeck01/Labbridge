@@ -70,7 +70,9 @@ import { PendulumBench } from '@/lib/workbench/pendulumBench';
 import { RatesBench } from '@/lib/workbench/ratesBench';
 import { OsmosisBench } from '@/lib/workbench/osmosisBench';
 import { ChromaBench } from '@/lib/workbench/chromaBench';
-import { experiments } from '@/lib/experiments';
+import { experiments, currentStepOf } from '@/lib/experiments';
+import { Highlighter } from '@/lib/highlight';
+import { STEP_TARGET } from '@/lib/stepTargets';
 import { getGraphics, type GraphicsSetting } from '@/lib/graphicsSetting';
 
 export type StationType = Station | null;
@@ -91,6 +93,9 @@ const EYE_HEIGHT_SITTING = 1.28;
 
 // Furniture the student can't walk through: [centre x, centre z, half-width x, half-depth z]
 const PLAYER_RADIUS = 0.3;
+/** Which bench each practical happens at (for the next-step marker). */
+const EXPERIMENT_STATION: Record<string, Station> = { titration: 'chemistry', microscopy: 'biology', 'ohms-law': 'physics', weighing: 'research', flame: 'hood', pendulum: 'pendulum', rates: 'rates', osmosis: 'osmosis', chroma: 'chroma' };
+
 const OBSTACLES: [number, number, number, number][] = [
   [-4.5, -3.5, 1.8, 0.9], // biology bench
   [4.5, -3.5, 1.8, 0.9], // chemistry bench
@@ -319,6 +324,10 @@ export default function Lab3DScene({
   const [isPhoneOpen, setIsPhoneOpen] = useState<boolean>(false);
   // The titration lab sheet (clipboard on the chemistry bench)
   const [isSheetOpen, setIsSheetOpen] = useState<boolean>(false);
+  // Mouse captured for aiming (desktop): a crosshair is shown, also at the benches
+  const [isAiming, setIsAiming] = useState<boolean>(false);
+  // The next step's object: where it is on screen (for the marker / edge arrow)
+  const [goal, setGoal] = useState<null | { x: number; y: number; on: boolean; angle: number; label: string }>(null);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
   const [phoneAIPrompt, setPhoneAIPrompt] = useState<string | undefined>(undefined);
   const [phoneAIContext, setPhoneAIContext] = useState<string | undefined>(undefined);
@@ -671,7 +680,14 @@ export default function Lab3DScene({
         if (e.code === 'Escape') setIsViewingEyepieces(false);
         return;
       }
-      if ((e.code === 'Space' || e.code === 'Escape') && isSeated) {
+      // At a bench: X steps back (Escape too, when nothing is held); Space looks closer
+      if (isSeated && (e.code === 'KeyX' || (e.code === 'Escape' && document.pointerLockElement === null))) {
+        standUp();
+      }
+      if (isSeated && e.code === 'Space' && seatedStation === 'biology') {
+        setIsViewingEyepieces(true);
+      }
+      if (isSeated && e.code === 'Space' && seatedStation && seatedStation !== 'chemistry' && seatedStation !== 'biology') {
         standUp();
       }
 
@@ -686,7 +702,11 @@ export default function Lab3DScene({
         soundFx.playClick();
       }
 
-      // 'E' key interacts with hovered action
+      // 'E' does what a click would on whatever the crosshair is on
+      if (e.code === 'KeyE' && document.pointerLockElement) {
+        window.dispatchEvent(new Event('labbridge:act'));
+        return;
+      }
       if (e.code === 'KeyE' && hoveredAction) {
         if (hoveredAction.category === 'stool') {
           sitDownAt(hoveredAction.station);
@@ -737,7 +757,7 @@ export default function Lab3DScene({
   });
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __sitDownAt: sitDownAt });
+    if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __sitDownAt: sitDownAt });
   }, [sitDownAt]);
 
   useEffect(() => {
@@ -808,7 +828,7 @@ export default function Lab3DScene({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
-    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __renderer: renderer, __scene: scene, __camera: camera, __benches: benchesRef.current, __euler: cameraEuler.current });
+    if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __renderer: renderer, __scene: scene, __camera: camera, __benches: benchesRef.current, __euler: cameraEuler.current });
 
     // Ambient occlusion: soft contact shadows in corners, under benches and around equipment.
     // Desktop only; phones render directly to keep the frame rate up.
@@ -1097,7 +1117,7 @@ export default function Lab3DScene({
             if (disposed) return;
             titrationBenchRef.current = bench;
             benchesRef.current.chemistry = bench;
-            if (process.env.NODE_ENV !== 'production') Object.assign(window, { __titration: bench, __titrationSim: titration, __tc: titrationControls, __canvas: renderer.domElement });
+            if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __titration: bench, __titrationSim: titration, __tc: titrationControls, __canvas: renderer.domElement });
             collectInteractives();
           })
           .catch((err) => console.error('Titration bench setup failed', err));
@@ -1174,7 +1194,7 @@ export default function Lab3DScene({
     createCurieNPC().then((npc) => {
       if (disposed) return;
       curieNPC = npc;
-      if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curieNPC: npc });
+      if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __curieNPC: npc });
       scene.add(npc.root);
       interactiveList.push(npc.root);
       collectInteractives();
@@ -1183,6 +1203,10 @@ export default function Lab3DScene({
 
     // Raycaster for Center Reticle Hover & Click
     const raycaster = new THREE.Raycaster();
+    // What you're aiming at gets a teal outline; the next step's object a pulsing amber one
+    const hoverHL = new Highlighter(scene, '#5eead4', 0.0015);
+    const goalHL = new Highlighter(scene, '#fbbf24', 0.002);
+    let goalKey = '';
     const centerScreen = new THREE.Vector2(0, 0);
 
     // ---- Input: drag to look, tap/click to act (never both) ----
@@ -1215,12 +1239,29 @@ export default function Lab3DScene({
     };
 
     let suppressClickUntil = 0;
+    const actCenter = () => {
+      const tb = chemBench();
+      const held = !!tb?.isHolding;
+      if (tb && tb.pointerDown(new THREE.Vector2(0, 0), 0)) {
+        if (held) tb.release();
+        tb.pointerUp(0);
+        return;
+      }
+      actAt(centerScreen);
+    };
+    const locked = () => document.pointerLockElement === renderer.domElement;
+    /** Where the student is aiming: the crosshair when the mouse is captured, else the cursor. */
+    const aim = (e: { clientX: number; clientY: number }) => (locked() ? new THREE.Vector2(0, 0) : toNdc(e.clientX, e.clientY));
     let mouseDown: { x: number; y: number; dragged: boolean; bench: boolean; heldAtPress: boolean } | null = null;
 
     const handleMouseMove = (e: MouseEvent) => {
-      pointerRef.current.copy(toNdc(e.clientX, e.clientY));
+      pointerRef.current.copy(aim(e));
       const tb = chemBench();
-      if (tb && document.pointerLockElement !== renderer.domElement) {
+      if (tb && locked()) {
+        // Captured mouse: the view always follows, except while a button is held on a control (turning, tilting)
+        const used = tb.pointerMove(new THREE.Vector2(0, 0), e.movementX, e.movementY);
+        if (used && e.buttons) return;
+      } else if (tb) {
         const used = tb.pointerMove(toNdc(e.clientX, e.clientY), e.movementX, e.movementY);
         if (used && !(e.buttons & 1)) return;
       }
@@ -1235,7 +1276,9 @@ export default function Lab3DScene({
     const handleMouseDown = (e: MouseEvent) => {
       const tb = chemBench();
       const heldAtPress = !!tb?.isHolding;
-      const bench = !!tb && tb.pointerDown(toNdc(e.clientX, e.clientY), e.button);
+      // On a desktop the first click at a bench only captures the mouse for aiming
+      const capturing = !isTouch && !locked();
+      const bench = !!tb && !capturing && tb.pointerDown(aim(e), e.button);
       mouseDown = { x: e.clientX, y: e.clientY, dragged: false, bench, heldAtPress };
     };
     const handleMouseUp = (e: MouseEvent) => {
@@ -1257,8 +1300,10 @@ export default function Lab3DScene({
     const handleCanvasClick = (e: MouseEvent) => {
       if (performance.now() < suppressClickUntil) return; // end of a drag, or a touch already handled
       const atWorkbench = isSeatedRef.current && !!seatedStationRef.current;
-      if (!atWorkbench && !isTouch && document.pointerLockElement !== renderer.domElement) {
+      // Desktop: aim with the mouse everywhere, at the benches too (a crosshair, like any first-person sim)
+      if (!isTouch && document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock();
+        if (atWorkbench) return; // the click that takes the mouse doesn't also act
       }
       // Walking with a locked pointer: act on what the reticle is on. Otherwise: on what was clicked.
       actAt(document.pointerLockElement === renderer.domElement ? centerScreen : toNdc(e.clientX, e.clientY));
@@ -1315,6 +1360,13 @@ export default function Lab3DScene({
     window.addEventListener('mouseup', handleMouseUp);
     renderer.domElement.addEventListener('click', handleCanvasClick);
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('labbridge:act', actCenter);
+    const onLockChange = () => {
+      const on = document.pointerLockElement === renderer.domElement;
+      setIsAiming(on);
+      if (on) pointerRef.current.set(0, 0);
+    };
+    document.addEventListener('pointerlockchange', onLockChange);
     renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('touchstart', handleTouchStart, { passive: true });
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
@@ -1336,7 +1388,7 @@ export default function Lab3DScene({
         });
       }
     });
-    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __quality: quality });
+    if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __quality: quality });
     // Student's graphics setting (Auto / Low / High) from the pause menu
     const applyGraphics = (g: GraphicsSetting) => quality.force(g === 'auto' ? null : g);
     applyGraphics(getGraphics());
@@ -1346,7 +1398,7 @@ export default function Lab3DScene({
 
     // ---- Frame scheduling: what counts as "something is happening" ----
     const scheduler = new FrameScheduler();
-    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __scheduler: scheduler });
+    if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __scheduler: scheduler });
     let curieMoving = false;
     const isAnimating = () => {
       const lab = labStore.get();
@@ -1370,7 +1422,7 @@ export default function Lab3DScene({
         c.loading
       );
     };
-    if (process.env.NODE_ENV !== 'production') {
+    if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) {
       Object.assign(window, {
         __whyActive: () => ({
           transition: !!transitionRef.current?.active,
@@ -1588,6 +1640,7 @@ export default function Lab3DScene({
             const hit = hits[0].object;
             if (hit.userData && hit.userData.isInteractive && hoveredIdRef.current !== hit.userData.interactId) {
               hoveredIdRef.current = hit.userData.interactId;
+              hoverHL.set(atBench || document.pointerLockElement ? String(hit.userData.interactId) : null);
               setHoveredAction({
                 id: hit.userData.interactId,
                 label: hit.userData.label,
@@ -1598,12 +1651,45 @@ export default function Lab3DScene({
             }
           } else if (hoveredIdRef.current !== null) {
             hoveredIdRef.current = null;
+            hoverHL.set(null);
             setHoveredAction(null);
           }
         }
 
         // Update coordinates for Mini Map Radar throttled
         coordUpdateCounter++;
+        // Next-step marker: outline the object the current step needs, and say where it is on screen
+        if (coordUpdateCounter % 10 === 0) {
+          const run = experiments.get().run;
+          const step = currentStepOf(run);
+          const def = run ? EXPERIMENT_STATION[run.experimentId] : null;
+          const here = isSeatedRef.current && seatedStationRef.current === def;
+          const id = here && run && step ? STEP_TARGET[`${run.experimentId}:${step.id}`] ?? null : null;
+          goalHL.set(id);
+          let next: typeof goal = null;
+          if (id) {
+            let target: THREE.Object3D | null = null;
+            scene.traverse((o) => {
+              if (!target && o.userData?.interactId === id && (o as THREE.Mesh).isMesh) target = o;
+            });
+            const t = target as THREE.Object3D | null;
+            if (t) {
+              const wp = new THREE.Box3().setFromObject(t).getCenter(new THREE.Vector3());
+              const v = wp.clone().project(cameraRef.current);
+              const behind = v.z > 1;
+              const on = !behind && Math.abs(v.x) < 0.92 && Math.abs(v.y) < 0.9;
+              const ang = Math.atan2(behind ? -v.y : v.y, behind ? -v.x : v.x);
+              next = { x: (v.x + 1) / 2, y: (1 - v.y) / 2, on, angle: ang, label: String(t.userData.label ?? '') };
+            }
+          }
+          const key = next ? `${next.on}|${next.x.toFixed(2)}|${next.y.toFixed(2)}|${next.label}` : '';
+          if (key !== goalKey) {
+            goalKey = key;
+            setGoal(next);
+          }
+          if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __goal: next });
+        }
+        if (goalHL.active) goalHL.opacity = 0.6 + 0.6 * (0.5 + 0.5 * Math.sin(performance.now() / 260));
         if (coordUpdateCounter % 4 === 0) {
           poseRef.current = {
             x: cameraRef.current.position.x,
@@ -1671,6 +1757,8 @@ export default function Lab3DScene({
       window.removeEventListener('mouseup', handleMouseUp);
       renderer.domElement.removeEventListener('click', handleCanvasClick);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('labbridge:act', actCenter);
+      document.removeEventListener('pointerlockchange', onLockChange);
       renderer.domElement.removeEventListener('wheel', handleWheel);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
@@ -1744,14 +1832,38 @@ export default function Lab3DScene({
       )}
 
       {/* At a workbench: no reticle; what's under the pointer is named at the top */}
-      {atWorkbench && hoveredAction && (
+      {atWorkbench && hoveredAction && !isAiming && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-slate-900/90 px-3 py-1.5 rounded-full border border-emerald-500/50 text-xs text-white">
           {hoveredAction.label} <span className="text-emerald-300">· {hoveredAction.action}</span>
         </div>
       )}
 
+      {/* Next step: a tag on the object, or an arrow at the edge pointing to it */}
+      {goal && !isSheetOpen && !isViewingEyepieces && (
+        goal.on ? (
+          <div className="absolute z-30 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: `${goal.x * 100}%`, top: `calc(${goal.y * 100}% - 34px)` }}>
+            <div className="flex flex-col items-center animate-bounce">
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-bold shadow-lg whitespace-nowrap">NEXT · {goal.label}</span>
+              <span className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-amber-400" />
+            </div>
+          </div>
+        ) : (
+          <div
+            className="absolute z-30 pointer-events-none"
+            style={{ left: `${50 + Math.cos(goal.angle) * 44}%`, top: `${50 - Math.sin(goal.angle) * 40}%`, transform: `translate(-50%, -50%)` }}
+          >
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-10 h-10 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-xl" style={{ transform: `rotate(${-goal.angle}rad)` }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-slate-950/85 text-amber-300 text-[11px] font-semibold whitespace-nowrap">{goal.label}</span>
+            </div>
+          </div>
+        )
+      )}
+
       {/* Center Reticle Crosshair ("The Dot") */}
-      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-30 ${atWorkbench ? 'hidden' : ''}`}>
+      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-30 ${atWorkbench && !isAiming ? 'hidden' : ''}`}>
         <div
           className={`w-2.5 h-2.5 rounded-full border transition-all duration-150 ${
             hoveredAction
@@ -1768,7 +1880,8 @@ export default function Lab3DScene({
               <div className="text-left">
                 <span className="text-[11px] font-bold text-white block">{hoveredAction.label}</span>
                 <span className="text-[10px] text-emerald-300 block font-medium">
-                  [Click / E] {hoveredAction.action}
+                  {hoveredAction.category === 'knob' ? '[Hold click] grab · [Scroll] turn · ' : '[Click / E] '}
+                  {hoveredAction.action}
                 </span>
               </div>
             </div>

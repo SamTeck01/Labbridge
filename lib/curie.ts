@@ -238,7 +238,7 @@ export function startCurieWatch() {
     /* ignore unreadable chat history */
   }
   // Dev hook for driving Curie from the console / automated tests without an API key.
-  if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curie: { curie, applyAction, labStore, experiments } });
+  if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __curie: { curie, applyAction, labStore, experiments } });
   const fired = new Set<string>();
   let prev = labStore.get();
 

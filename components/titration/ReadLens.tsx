@@ -132,7 +132,7 @@ export default function ReadLens({ reading, isTouch }: { reading: NonNullable<Ha
         </div>
       )}
       <button onClick={() => titrationControls.get()?.read(false)} className="mt-2 w-full h-10 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">
-        Done reading {isTouch ? '' : '(Esc)'}
+        Done reading {isTouch ? '' : '(Q)'}
       </button>
     </div>
   );
