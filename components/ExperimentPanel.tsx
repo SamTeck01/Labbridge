@@ -6,6 +6,7 @@ import { experiments, experimentForStation, getExperiment, useExperiments } from
 import { labStore, useLab, type Station } from '@/lib/labStore';
 import { curie } from '@/lib/curie';
 import PracticalExtras from '@/components/PracticalExtras';
+import AmmeterReading from '@/components/AmmeterReading';
 import { soundFx } from '@/lib/soundEffects';
 
 /** Practical brief, live procedure checklist, readings and results for the bench the student is at. */
@@ -35,6 +36,7 @@ export default function ExperimentPanel({
   const run = useExperiments((s) => s.run);
   const lastResult = useExperiments((s) => s.lastResult);
   const [error, setError] = useState<string | null>(null);
+  const [meter, setMeter] = useState<{ actual: number; R: number; V: number } | null>(null);
   const goggles = useLab((st) => st.player.goggles);
 
   const active = getExperiment(run?.experimentId);
@@ -148,6 +150,15 @@ export default function ExperimentPanel({
 
   const run_ = run!;
   const record = () => {
+    // Ohm's law: the student reads the needle on the meter themselves
+    if (active.id === 'ohms-law') {
+      const ph = labStore.get().physics;
+      if (!ph.wired) return setError('The circuit is incomplete: plug in the return lead.');
+      if (!ph.switchClosed) return setError('Close the switch first: no current is flowing.');
+      setError(null);
+      setMeter({ actual: ph.voltage / ph.resistance, R: ph.resistance, V: ph.voltage });
+      return;
+    }
     const err = experiments.record();
     setError(err);
     if (!err) soundFx.playSuccessChime();
@@ -155,6 +166,17 @@ export default function ExperimentPanel({
 
   return (
     <>
+    {meter && (
+      <AmmeterReading
+        actual={meter.actual}
+        onCancel={() => setMeter(null)}
+        onSubmit={(v) => {
+          experiments.recordManual({ label: `I at R = ${meter.R} Ω`, value: v, unit: 'A', extra: { R: meter.R, V: meter.V, actual: Math.round(meter.actual * 1000) / 1000 } });
+          setMeter(null);
+          soundFx.playSuccessChime();
+        }}
+      />
+    )}
     <div className={`absolute top-20 [@media(max-height:500px)]:top-16 left-4 z-40 ${compact ? 'w-[min(80vw,280px)] p-3' : 'w-[min(92vw,340px)]'} [@media(max-height:500px)]:w-[260px] [@media(max-height:500px)]:p-3 max-h-[calc(100dvh-12rem)] [@media(max-height:500px)]:max-h-[calc(100dvh-9.5rem)] overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-2xl p-4 text-slate-100 shadow-2xl`}>
       <div className="flex items-center gap-2 mb-2">
         <FlaskConical className="w-4 h-4 text-teal-400" />

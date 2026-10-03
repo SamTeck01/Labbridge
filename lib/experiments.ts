@@ -217,7 +217,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     mistakes: [
       { id: 'overcurrent', message: "That's over 1 A. Turn the resistance up before you burn out the bulb.", check: (l) => l.physics.wired && l.physics.switchClosed && l.physics.voltage / l.physics.resistance > 1 },
     ],
-    recordLabel: 'Record ammeter reading',
+    recordLabel: 'Read the ammeter',
     readingsNeeded: 3,
     record: (l) => {
       if (!l.physics.wired) return 'The circuit is incomplete: plug in the return lead.';
@@ -227,9 +227,11 @@ export const EXPERIMENTS: ExperimentDef[] = [
     },
     evaluate: (r) => {
       const Rs = [...new Set(r.readings.map((x) => x.extra?.R ?? 0))];
+      const readErr = r.readings.length ? r.readings.reduce((m, x) => m + Math.abs(x.value - (x.extra?.actual ?? x.value)), 0) / r.readings.length : 1;
       const span = Rs.length ? Math.max(...Rs) - Math.min(...Rs) : 0;
       return [
-        { label: 'Data collected', points: Math.round((Math.min(3, Rs.length) / 3) * 50), max: 50, note: `${Rs.length} distinct resistance settings.` },
+        { label: 'Data collected', points: Math.round((Math.min(3, Rs.length) / 3) * 30), max: 30, note: `${Rs.length} distinct resistance settings.` },
+        { label: 'Meter readings', points: readErr <= 0.011 ? 20 : readErr <= 0.03 ? 12 : readErr <= 0.08 ? 5 : 0, max: 20, note: `Your ammeter readings were within ${readErr.toFixed(3)} A of the needle on average.` },
         { label: 'Range of data', points: span >= 40 ? 20 : span >= 20 ? 10 : 0, max: 20, note: `Resistances spanned ${span} Ω.` },
         { label: 'Safety', points: (r.mistakes.includes('overcurrent') ? 0 : 20) + (r.completedSteps.includes('open') ? 10 : 0), max: 30, note: r.mistakes.includes('overcurrent') ? 'Exceeded 1 A.' : 'Current kept in the safe range.' },
       ];

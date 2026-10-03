@@ -1879,8 +1879,8 @@ export default function Lab3DScene({
         <TitrationHUD isTouch={isTouch} onOpenSheet={() => setIsSheetOpen(true)} />
       )}
       {isSheetOpen && seatedStation === 'chemistry' && <LabSheet onClose={() => setIsSheetOpen(false)} />}
-      {atWorkbench && seatedStation === 'biology' && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} />}
-      {atWorkbench && seatedStation !== 'chemistry' && seatedStation !== 'biology' && (
+      {atWorkbench && (seatedStation === 'biology' || seatedStation === 'physics') && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} station={seatedStation} />}
+      {atWorkbench && seatedStation !== 'chemistry' && seatedStation !== 'biology' && seatedStation !== 'physics' && (
         <button
           onClick={standUp}
           className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-slate-900/85 border border-slate-600 text-sm text-white hover:bg-slate-800"

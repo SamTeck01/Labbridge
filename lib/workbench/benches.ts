@@ -45,7 +45,7 @@ export abstract class BenchBase implements Workbench {
   constructor(protected scene: THREE.Scene, protected rig: THREE.Object3D, protected hands: FirstPersonHands, protected focus: Focus) {}
 
   get isBusy() {
-    return this.busy || this.isAnimatingExtra() || ('isHolding' in this && !!(this as unknown as DirectInput).isHolding);
+    return this.busy || this.isAnimatingExtra();
   }
 
   /** Benches with their own short animations (e.g. a centrifuge wobble) override this. */
@@ -121,6 +121,137 @@ export abstract class BenchBase implements Workbench {
 
 const damp = (cur: number, target: number, rate: number, delta: number) => THREE.MathUtils.damp(cur, target, rate, delta);
 
+export interface KnobSpec {
+  name: string;
+  /** Which hand; default: the nearer one. */
+  side?: 'left' | 'right';
+}
+
+/**
+ * A bench whose controls the student holds and turns continuously (scroll, drag, arrow keys or a
+ * touch lever), with the hand staying on the control. Subclasses say which ids are knobs, what a
+ * turn does, and what the HUD should show.
+ */
+export abstract class KnobBench extends BenchBase implements DirectInput {
+  protected abstract knobs: Record<string, KnobSpec>;
+  protected abstract turnKnob(id: string, notches: number, fine: number): void;
+  protected abstract knobValue(id: string): { value: number; detail: string | null };
+  protected abstract station: string;
+  protected idleHints: string[] = ['Click a knob to hold it'];
+
+  protected control: null | { id: string; side: 'left' | 'right' } = null;
+  private dragging = false;
+  private keysDown = new Set<string>();
+  private rate = 0;
+  private raycaster = new THREE.Raycaster();
+
+  get isHolding() {
+    return !!this.control;
+  }
+
+  protected hitId(ndc: THREE.Vector2) {
+    if (!this.camera) return null;
+    const objs: THREE.Object3D[] = [];
+    this.rig.traverse((o) => o.userData?.isInteractive && (o as THREE.Mesh).isMesh && objs.push(o));
+    // Knobs are small and often half hidden: take a knob anywhere along the ray, or a few pixels off
+    const pick = (n: THREE.Vector2) => {
+      this.raycaster.setFromCamera(n, this.camera!);
+      return this.raycaster.intersectObjects(objs, false).map((h) => String(h.object.userData.interactId)).find((id) => this.knobs[id]) ?? null;
+    };
+    const d = 0.012;
+    for (const [ox, oy] of [[0, 0], [d, 0], [-d, 0], [0, d], [0, -d]]) {
+      const k = pick(new THREE.Vector2(ndc.x + ox, ndc.y + oy));
+      if (k) return k;
+    }
+    return null;
+  }
+
+  pointerDown(ndc: THREE.Vector2, button: number) {
+    if (button !== 0) return false;
+    const id = this.hitId(ndc);
+    if (!id) {
+      if (this.control) this.release();
+      return false;
+    }
+    const at = this.pos(id);
+    const side = this.knobs[id].side ?? (at ? this.hands.sideFor(at) : 'right');
+    if (this.control && this.control.side !== side) this.hands.undrive(this.control.side);
+    this.control = { id, side };
+    this.dragging = true;
+    this.publish();
+    return true;
+  }
+  pointerMove(_ndc: THREE.Vector2, _dx: number, dy: number) {
+    if (!this.control || !this.dragging) return false;
+    this.turn_(-dy / 40);
+    return true;
+  }
+  pointerUp() {
+    const was = this.dragging;
+    this.dragging = false;
+    return was;
+  }
+  wheel(dy: number) {
+    if (!this.control) return false;
+    this.turn_(-dy / 100);
+    return true;
+  }
+  key(code: string, down: boolean) {
+    if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'ShiftLeft' || code === 'ShiftRight') {
+      if (down) this.keysDown.add(code);
+      else this.keysDown.delete(code);
+      return !!this.control;
+    }
+    if (code === 'Escape' && down && this.control) {
+      this.release();
+      return true;
+    }
+    return false;
+  }
+  release() {
+    if (!this.control) return;
+    this.hands.undrive(this.control.side);
+    this.control = null;
+    this.dragging = false;
+    this.rate = 0;
+    this.publish();
+  }
+  private turn_(notches: number) {
+    if (!this.control || !notches) return;
+    const fine = this.keysDown.has('ShiftLeft') || this.keysDown.has('ShiftRight') ? 0.3 : 1;
+    this.turnKnob(this.control.id, notches, fine);
+    this.publish();
+  }
+
+  /** Call from update(): keeps turning while a key/lever is held and keeps the hand on the knob. */
+  protected updateKnobHand(delta: number, spin = 0) {
+    if (!this.control) return;
+    const k = (this.keysDown.has('ArrowUp') ? 1 : 0) - (this.keysDown.has('ArrowDown') ? 1 : 0) + this.rate;
+    if (k) this.turn_(k * delta * 6);
+    const at = this.pos(this.control.id);
+    if (at) {
+      const out = this.control.side === 'right' ? 0.035 : -0.035;
+      this.hands.drive(this.control.side, { wrist: at.clone().add(new THREE.Vector3(out, 0.004, 0.05)), grip: 0.55, twist: spin, flex: 0.1 }, 24, delta);
+    }
+  }
+
+  protected publish() {
+    const c = this.control;
+    const v = c ? this.knobValue(c.id) : null;
+    benchUI.set({
+      station: this.station,
+      control: c && v ? { id: c.id, name: this.knobs[c.id].name, side: c.side, value: v.value, detail: v.detail } : null,
+      hints: c ? ['Scroll or drag up/down to turn', 'Shift fine', '↑ ↓ keep turning', 'Esc let go'] : this.idleHints,
+    });
+    benchControls.register({ setRate: (r) => (this.rate = r), letGo: () => this.release() });
+  }
+
+  get isBusy() {
+    return super.isBusy || !!this.control;
+  }
+}
+
+
 // ---------------------------------------------------------------------------------------------
 // Microscope
 // ---------------------------------------------------------------------------------------------
@@ -128,7 +259,7 @@ const damp = (cur: number, target: number, rate: number, delta: number) => THREE
 const TURRET_ANGLE: Record<Objective, number> = { '4x': 0, '10x': Math.PI / 2, '40x': Math.PI, '100x': -Math.PI / 2 };
 const OBJECTIVES: Objective[] = ['4x', '10x', '40x', '100x'];
 
-export class MicroscopeBench extends BenchBase {
+export class MicroscopeBench extends KnobBench {
   protected ids = ['micro_slide', 'micro_turret', 'micro_coarse_focus', 'coarse_knob_r', 'micro_fine_focus', 'fine_knob_r', 'micro_light_switch', 'micro_eyepieces', 'micro_stage_knob', 'micro_oil'];
   private turretAngle = 0;
   private stageBaseY: number | null = null;
@@ -141,7 +272,7 @@ export class MicroscopeBench extends BenchBase {
 
   constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus, private openEyepieces: () => void) {
     super(scene, rig, hands, focus);
-    benchUI.set({ station: 'biology', control: null, hints: [] });
+    benchUI.set({ station: 'biology', control: null, hints: this.idleHints });
     // Right-hand knobs lower the stage (same controls, other side of the microscope)
     for (const [name, label] of [['coarse_knob_r', 'Coarse Focus Knob (right)'], ['fine_knob_r', 'Fine Focus Knob (right)']] as const) {
       this.node(name)?.traverse((o) => tagInteractive(o, name, label, 'Turn to lower the stage', 'biology', 'knob'));
@@ -179,107 +310,42 @@ export class MicroscopeBench extends BenchBase {
     this.node('micro_stage_knob');
   }
 
+
   // ---------------- Direct manipulation: a hand stays on a knob and turns it ----------------
-  private control: null | { id: string; kind: 'coarse' | 'fine' | 'stage' | 'turret'; dir: number; side: 'left' | 'right' } = null;
-  private dragging = false;
-  private keysDown = new Set<string>();
-  private rate = 0;
+  protected station = 'biology';
+  protected idleHints = ['Click a focus knob, the turret or the stage knob to hold it', 'F look through the eyepieces'];
   private turretAccum = 0;
-  private raycaster = new THREE.Raycaster();
-  private static KNOBS: Record<string, { kind: 'coarse' | 'fine' | 'stage' | 'turret'; dir: number; name: string }> = {
-    micro_coarse_focus: { kind: 'coarse', dir: 1, name: 'Coarse focus (left)' },
-    coarse_knob_r: { kind: 'coarse', dir: -1, name: 'Coarse focus (right)' },
-    micro_fine_focus: { kind: 'fine', dir: 1, name: 'Fine focus (left)' },
-    fine_knob_r: { kind: 'fine', dir: -1, name: 'Fine focus (right)' },
-    micro_stage_knob: { kind: 'stage', dir: 1, name: 'Stage knob' },
-    micro_turret: { kind: 'turret', dir: 1, name: 'Objective turret' },
+  private lastTick = 0;
+  private static KIND: Record<string, { kind: 'coarse' | 'fine' | 'stage' | 'turret'; dir: number }> = {
+    micro_coarse_focus: { kind: 'coarse', dir: 1 },
+    coarse_knob_r: { kind: 'coarse', dir: -1 },
+    micro_fine_focus: { kind: 'fine', dir: 1 },
+    fine_knob_r: { kind: 'fine', dir: -1 },
+    micro_stage_knob: { kind: 'stage', dir: 1 },
+    micro_turret: { kind: 'turret', dir: 1 },
+  };
+  protected knobs: Record<string, KnobSpec> = {
+    micro_coarse_focus: { name: 'Coarse focus (left)', side: 'left' },
+    coarse_knob_r: { name: 'Coarse focus (right)', side: 'right' },
+    micro_fine_focus: { name: 'Fine focus (left)', side: 'left' },
+    fine_knob_r: { name: 'Fine focus (right)', side: 'right' },
+    micro_stage_knob: { name: 'Stage knob' },
+    micro_turret: { name: 'Objective turret' },
   };
 
-  get isHolding() {
-    return !!this.control;
-  }
-
-  private hitId(ndc: THREE.Vector2) {
-    if (!this.camera) return null;
-    this.raycaster.setFromCamera(ndc, this.camera);
-    const objs: THREE.Object3D[] = [];
-    this.rig.traverse((o) => o.userData?.isInteractive && (o as THREE.Mesh).isMesh && objs.push(o));
-    // Knobs are small and half hidden behind the stage: take a knob anywhere along the ray, and
-    // also accept a press a few pixels off one
-    const pick = (n: THREE.Vector2) => {
-      this.raycaster.setFromCamera(n, this.camera!);
-      const hits = this.raycaster.intersectObjects(objs, false).map((h) => String(h.object.userData.interactId));
-      return hits.find((id) => MicroscopeBench.KNOBS[id]) ?? null;
-    };
-    const d = 0.012;
-    for (const [ox, oy] of [[0, 0], [d, 0], [-d, 0], [0, d], [0, -d]]) {
-      const k = pick(new THREE.Vector2(ndc.x + ox, ndc.y + oy));
-      if (k) return k;
-    }
-    this.raycaster.setFromCamera(ndc, this.camera);
-    const h = this.raycaster.intersectObjects(objs, false)[0];
-    return h ? String(h.object.userData.interactId) : null;
-  }
-
-  pointerDown(ndc: THREE.Vector2, button: number) {
-    if (button !== 0) return false;
-    const id = this.hitId(ndc);
-    const k = id ? MicroscopeBench.KNOBS[id] : null;
-    if (!k || !id) {
-      if (this.control) this.release();
-      return false;
-    }
-    const at = this.pos(id);
-    const side = k.kind === 'coarse' || k.kind === 'fine' ? (k.dir > 0 ? 'left' : 'right') : at ? this.hands.sideFor(at) : 'right';
-    if (this.control && this.control.side !== side) this.hands.undrive(this.control.side);
-    this.control = { id, kind: k.kind, dir: k.dir, side };
-    this.dragging = true;
-    this.publish();
-    return true;
-  }
-  pointerMove(_ndc: THREE.Vector2, _dx: number, dy: number) {
-    if (!this.control || !this.dragging) return false;
-    this.turnBy(-dy / 40);
-    return true;
-  }
-  pointerUp() {
-    const was = this.dragging;
-    this.dragging = false;
-    return was;
-  }
-  wheel(dy: number) {
-    if (!this.control) return false;
-    this.turnBy(-dy / 100);
-    return true;
-  }
-  key(code: string, down: boolean) {
-    if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'ShiftLeft' || code === 'ShiftRight') {
-      if (down) this.keysDown.add(code);
-      else this.keysDown.delete(code);
-      return !!this.control;
-    }
-    if (code === 'Escape' && down && this.control) {
-      this.release();
-      return true;
-    }
-    return false;
-  }
-  release() {
-    if (!this.control) return;
-    this.hands.undrive(this.control.side);
-    this.control = null;
-    this.dragging = false;
-    this.rate = 0;
-    this.publish();
-  }
-
-  /** Turn the control under the hand by `notches` (one wheel click = 1). */
-  private turnBy(notches: number) {
-    const c = this.control;
-    if (!c || !notches) return;
+  protected knobValue(id: string) {
     const b = labStore.get().biology;
-    const fine = this.keysDown.has('ShiftLeft') || this.keysDown.has('ShiftRight') ? 0.3 : 1;
-    if (c.kind === 'turret') {
+    const k = MicroscopeBench.KIND[id].kind;
+    return {
+      value: k === 'coarse' ? b.coarseFocus : k === 'fine' ? b.fineFocus : k === 'stage' ? (b.stageX + 1) / 2 : OBJECTIVES.indexOf(b.objective) / 3,
+      detail: k === 'turret' ? b.objective : k === 'stage' ? 'Moving the slide' : 'Turning',
+    };
+  }
+
+  protected turnKnob(id: string, notches: number, fine: number) {
+    const { kind, dir } = MicroscopeBench.KIND[id];
+    const b = labStore.get().biology;
+    if (kind === 'turret') {
       this.turretAccum += notches;
       if (Math.abs(this.turretAccum) >= 1) {
         const idx = OBJECTIVES.indexOf(b.objective);
@@ -291,51 +357,28 @@ export class MicroscopeBench extends BenchBase {
           navigator.vibrate?.(12);
         }
       }
-    } else if (c.kind === 'stage') {
+    } else if (kind === 'stage') {
       labStore.update('biology', { stageX: THREE.MathUtils.clamp(b.stageX + notches * 0.06 * fine, -1, 1) });
       this.stageKnobSpin += notches * 0.5;
     } else {
-      const key = c.kind === 'coarse' ? 'coarseFocus' : 'fineFocus';
-      const step = (c.kind === 'coarse' ? 0.02 : 0.004) * fine * notches * c.dir;
+      const key = kind === 'coarse' ? 'coarseFocus' : 'fineFocus';
+      const step = (kind === 'coarse' ? 0.02 : 0.004) * fine * notches * dir;
       const v = THREE.MathUtils.clamp(b[key] + step, 0, 1);
       labStore.update('biology', { [key]: v });
-      this.knobSpin[c.kind] += step * 20;
+      this.knobSpin[kind] += step * 20;
       if (Math.abs(this.lastTick - v) > 0.02) {
         this.lastTick = v;
         soundFx.playKnobTick();
       }
       // Raising the stage on high power drives the slide into the objective lens
       const limit = b.objective === '100x' ? 0.86 : b.objective === '40x' ? 0.92 : 2;
-      if (c.kind === 'coarse' && step > 0 && v > limit) {
+      if (kind === 'coarse' && step > 0 && v > limit) {
         labStore.update('biology', { coarseFocus: limit - 0.08 });
         soundFx.playGlassSlide();
         experiments.count('slideCrack');
         curie.say(`Crack! On ${b.objective} the lens is millimetres from the slide: never raise the stage with the coarse knob on high power. Focus on 4× first, then use the fine knob.`);
       }
     }
-    this.publish();
-  }
-  private lastTick = 0;
-
-  private publish() {
-    const c = this.control;
-    const b = labStore.get().biology;
-    benchUI.set({
-      station: 'biology',
-      control: c
-        ? {
-            id: c.id,
-            name: MicroscopeBench.KNOBS[c.id].name,
-            side: c.side,
-            value: c.kind === 'coarse' ? b.coarseFocus : c.kind === 'fine' ? b.fineFocus : c.kind === 'stage' ? (b.stageX + 1) / 2 : OBJECTIVES.indexOf(b.objective) / 3,
-            detail: c.kind === 'turret' ? b.objective : c.kind === 'stage' ? 'Moving the slide' : 'Turning',
-          }
-        : null,
-      hints: c
-        ? ['Scroll or drag up/down to turn', 'Shift fine', '↑ ↓ keep turning', 'Esc let go']
-        : ['Click a focus knob, the turret or the stage knob to hold it', 'F look through the eyepieces'],
-    });
-    benchControls.register({ setRate: (v) => (this.rate = v), letGo: () => this.release() });
   }
 
   protected async perform(id: string) {
@@ -447,16 +490,7 @@ export class MicroscopeBench extends BenchBase {
   update(delta: number) {
     const b = labStore.get().biology;
     this.oilDrops.update(delta);
-    if (this.control) {
-      const k = (this.keysDown.has('ArrowUp') ? 1 : 0) - (this.keysDown.has('ArrowDown') ? 1 : 0) + this.rate;
-      if (k) this.turnBy(k * delta * 6);
-      const at = this.pos(this.control.id);
-      if (at) {
-        const out = this.control.side === 'right' ? 0.035 : -0.035;
-        const spin = this.control.kind === 'turret' ? 0 : Math.sin(this.knobSpin.coarse * 3 + this.knobSpin.fine * 8 + this.stageKnobSpin) * 0.35;
-        this.hands.drive(this.control.side, { wrist: at.clone().add(new THREE.Vector3(out, 0.004, 0.05)), grip: 0.55, twist: spin, flex: 0.1 }, 24, delta);
-      }
-    }
+    this.updateKnobHand(delta, Math.sin(this.knobSpin.coarse * 3 + this.knobSpin.fine * 8 + this.stageKnobSpin) * 0.35);
     // The stage knob moves the slide on the stage
     const slide = this.node('glass_slide');
     if (slide) {
@@ -489,8 +523,37 @@ export class MicroscopeBench extends BenchBase {
 // DC circuit
 // ---------------------------------------------------------------------------------------------
 
-export class CircuitBench extends BenchBase {
+export class CircuitBench extends KnobBench {
   protected ids = ['phys_knife_switch', 'phys_potentiometer', 'phys_voltage_knob', 'phys_return_lead'];
+  protected station = 'physics';
+  protected idleHints = ['Click the rheostat or the voltage knob to hold it', 'Click the switch or the red lead to use them'];
+  protected knobs: Record<string, KnobSpec> = {
+    phys_potentiometer: { name: 'Rheostat' },
+    phys_voltage_knob: { name: 'Supply voltage' },
+  };
+  private lastTick = 0;
+  protected knobValue(id: string) {
+    const p = labStore.get().physics;
+    return id === 'phys_voltage_knob'
+      ? { value: p.voltage / 12, detail: 'Turning' }
+      : { value: (p.resistance - 5) / 95, detail: 'Sliding' };
+  }
+  protected turnKnob(id: string, notches: number, fine: number) {
+    const p = labStore.get().physics;
+    if (id === 'phys_voltage_knob') {
+      const v = Math.round(THREE.MathUtils.clamp(p.voltage + notches * 0.5 * fine, 0, 12) * 10) / 10;
+      labStore.update('physics', { voltage: v });
+      this.voltSpin = (v / 12) * Math.PI * 1.5;
+    } else {
+      const r = Math.round(THREE.MathUtils.clamp(p.resistance + notches * 3 * fine, 5, 100));
+      labStore.update('physics', { resistance: r });
+    }
+    const t = id === 'phys_voltage_knob' ? labStore.get().physics.voltage : labStore.get().physics.resistance / 5;
+    if (Math.abs(t - this.lastTick) >= 1) {
+      this.lastTick = t;
+      soundFx.playKnobTick();
+    }
+  }
   private voltSpin = 0;
   private needle = 0.87;
   private needleVel = 0;
@@ -554,6 +617,7 @@ export class CircuitBench extends BenchBase {
   }
 
   update(delta: number) {
+    this.updateKnobHand(delta, this.voltSpin * 0.2);
     const s = labStore.get().physics;
     const u = this.rig.userData;
     // Return lead: plugged-in or loose on the bench

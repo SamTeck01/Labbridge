@@ -68,8 +68,9 @@ function RateLever() {
   );
 }
 
-export default function BenchHandHUD({ isTouch }: { isTouch: boolean }) {
-  const ui = useBenchUI((s) => s);
+export default function BenchHandHUD({ isTouch, station }: { isTouch: boolean; station: string }) {
+  const raw = useBenchUI((s) => s);
+  const ui = raw.station === station ? raw : { station, control: null, hints: station === 'physics' ? ['Click the rheostat or the voltage knob to hold it', 'Click the switch or the red lead to use them'] : ['Click a focus knob, the turret or the stage knob to hold it', 'F look through the eyepieces'] };
   const c = ui.control;
   return (
     <>
@@ -88,7 +89,7 @@ export default function BenchHandHUD({ isTouch }: { isTouch: boolean }) {
           </div>
         </div>
       </div>
-      {c && <EyepiecePiP />}
+      {c && ui.station === 'biology' && <EyepiecePiP />}
       {!isTouch && ui.hints.length > 0 && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-wrap justify-center gap-x-2 max-w-[min(56vw,720px)] px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-300">
           {ui.hints.map((t, i) => (
