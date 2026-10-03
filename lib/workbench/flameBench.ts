@@ -6,7 +6,7 @@ import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
 import { isMobileOrTouchDevice } from '@/lib/orientation';
 import { FirstPersonHands } from '@/lib/workbench/hands';
-import { BenchBase, type Focus } from '@/lib/workbench/benches';
+import { KnobBench, type Focus, type KnobSpec } from '@/lib/workbench/benches';
 
 /**
  * Flame tests in the fume hood. The left hand works the gas tap, air collar and lighter; the right
@@ -32,7 +32,7 @@ function flameMaterial(color: THREE.ColorRepresentation, opacity: number) {
   });
 }
 
-export class FlameBench extends BenchBase {
+export class FlameBench extends KnobBench {
   protected ids = ['hood_sash', 'flame_gas_tap', 'flame_air_collar', 'flame_lighter', 'flame_loop', 'flame_acid', 'flame_zone', ...Object.keys(SALT_IDS)];
   private holding = false;
   private loopHome = new THREE.Matrix4();
@@ -50,6 +50,42 @@ export class FlameBench extends BenchBase {
   private tapAngle = 0;
   private sash: THREE.Object3D | null = null;
   private sashBaseY: number | null = null;
+  private gas = 0;
+  private air = 0;
+  protected station = 'hood';
+  protected idleHints = ['Hold the gas tap or the air collar and turn it', 'Click the lighter, the loop, the acid or a salt to use them'];
+  protected knobs: Record<string, KnobSpec> = {
+    flame_gas_tap: { name: 'Gas tap', side: 'left' },
+    flame_air_collar: { name: 'Air collar', side: 'left' },
+  };
+  protected knobValue(id: string) {
+    return id === 'flame_gas_tap'
+      ? { value: this.gas, detail: this.gas <= 0.02 ? 'Off' : this.f().lit ? 'Flame height' : 'Gas on, not lit' }
+      : { value: this.air, detail: this.air > 0.5 ? 'Air hole open: blue flame' : 'Air hole closed: yellow flame' };
+  }
+  protected turnKnob(id: string, notches: number, fine: number) {
+    if (id === 'flame_gas_tap') {
+      const before = this.gas;
+      this.gas = THREE.MathUtils.clamp(this.gas + notches * 0.08 * fine, 0, 1);
+      this.tapAngle = this.gas * (Math.PI / 2);
+      if (before <= 0.02 && this.gas > 0.02) {
+        labStore.update('flame', { gasOn: true });
+        soundFx.playClick();
+      } else if (before > 0.02 && this.gas <= 0.02) {
+        labStore.update('flame', { gasOn: false, lit: false });
+        this.warnedGas = false;
+        soundFx.playClick();
+      }
+    } else {
+      const was = this.air > 0.5;
+      this.air = THREE.MathUtils.clamp(this.air + notches * 0.1 * fine, 0, 1);
+      this.collarAngle = this.air * 1.2;
+      if (was !== this.air > 0.5) {
+        labStore.update('flame', { airOpen: this.air > 0.5 });
+        soundFx.playKnobTick();
+      }
+    }
+  }
 
   constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus) {
     super(scene, rig, hands, focus);
@@ -289,7 +325,15 @@ export class FlameBench extends BenchBase {
 
   update(delta: number) {
     this.t += delta;
+    this.updateKnobHand(delta, this.tapAngle * 0.3);
     const s = this.f();
+    // Keep the knobs in step with changes made elsewhere (Dr. Curie, a reset)
+    if (!s.gasOn && this.gas > 0.02 && this.control?.id !== 'flame_gas_tap') this.gas = 0;
+    if (s.gasOn && this.gas <= 0.02) this.gas = 0.6;
+    if (s.airOpen !== this.air > 0.5 && this.control?.id !== 'flame_air_collar') this.air = s.airOpen ? 1 : 0;
+    this.tapAngle = this.gas * (Math.PI / 2);
+    this.collarAngle = this.air * 1.2;
+    const size = 0.55 + this.gas * 0.6;
     // Sash slides between raised (open, +0.5 m) and lowered to the working height
     const sash = this.findSash();
     if (sash) {
@@ -327,8 +371,8 @@ export class FlameBench extends BenchBase {
     const innerMat = this.inner.material as THREE.MeshBasicMaterial;
     if (s.airOpen) {
       // Hot, roaring, non-luminous flame: pale blue outer cone and a bright inner cone
-      this.outer.scale.set(0.014, 0.085 * flick * (1 + this.saltStrength * 0.25), 0.014);
-      this.inner.scale.set(0.0085, 0.032 * (1 + (flick - 1) * 0.5), 0.0085);
+      this.outer.scale.set(0.014, 0.085 * size * flick * (1 + this.saltStrength * 0.25), 0.014);
+      this.inner.scale.set(0.0085, 0.032 * size * (1 + (flick - 1) * 0.5), 0.0085);
       outerMat.color.set('#4a6cff').lerp(this.saltColour, this.saltStrength);
       outerMat.opacity = 0.32 + this.saltStrength * 0.5;
       innerMat.color.set('#8fd3ff');
@@ -336,7 +380,7 @@ export class FlameBench extends BenchBase {
       this.flame.rotation.z = 0;
     } else {
       // Luminous yellow flame: taller, lazier, swaying
-      this.outer.scale.set(0.02, 0.13 * flick, 0.02);
+      this.outer.scale.set(0.02, 0.13 * size * flick, 0.02);
       this.inner.scale.set(0.009, 0.04, 0.009);
       outerMat.color.set('#ff9d2e').lerp(this.saltColour, this.saltStrength * 0.5);
       outerMat.opacity = 0.8;

@@ -70,7 +70,7 @@ function RateLever() {
 
 export default function BenchHandHUD({ isTouch, station }: { isTouch: boolean; station: string }) {
   const raw = useBenchUI((s) => s);
-  const ui = raw.station === station ? raw : { station, control: null, hints: station === 'physics' ? ['Click the rheostat or the voltage knob to hold it', 'Click the switch or the red lead to use them'] : ['Click a focus knob, the turret or the stage knob to hold it', 'F look through the eyepieces'] };
+  const ui = raw.station === station ? raw : { station, control: null, hints: station === 'hood' ? ['Hold the gas tap or the air collar and turn it', 'Click the lighter, the loop, the acid or a salt to use them'] : station === 'physics' ? ['Click the rheostat or the voltage knob to hold it', 'Click the switch or the red lead to use them'] : ['Click a focus knob, the turret or the stage knob to hold it', 'F look through the eyepieces'] };
   const c = ui.control;
   return (
     <>
