@@ -238,3 +238,14 @@ Benches become thin: they create kit, declare classes/sockets and score from con
 4. Hands: grips + IK on top of the kernel; Curie `Puppet`.
 5. Port flame tests, microscope, Ohm's law, then the four newer practicals.
 6. Breakage, spills, assist mode polish, haptics.
+
+## 12. Laptop controls (shipped) and how to test them
+
+Desktop is the priority. The scheme, modelled on first-person sims (GTA, House Flipper, Cooking Simulator):
+
+- **Aim with a crosshair everywhere.** Clicking the 3D view captures the mouse (pointer lock), at the benches too. The dot is what you use; no click-drag looking (painful on trackpads). Esc frees the mouse; any panel that needs typing or buttons (reading lens, lab sheet, ammeter, controls card, phone, results) frees it by itself (`useFreePointer`).
+- **What you aim at glows** (teal rim, `lib/highlight.ts`), with a prompt under the dot. **The next step's object glows amber** with a `NEXT` tag, or an edge arrow when off screen (`lib/stepTargets.ts`; once you hold the step's object the marker moves to where it must go).
+- **Keys:** click pick up / use / put down where aimed · hold click + move or scroll turns a held knob · scroll lifts what you hold · hold R pours steadily (scroll while holding = faster/slower, release = it rights itself; right-drag tilts by hand) · E use · Q let go · W swirl · Space look closer · S lab sheet · X step back · H controls card.
+- **Carrying:** the held item hangs to the side; what matters (a pouring lip) sits on the crosshair and snaps over the opening you aim at; put-down goes where the crosshair meets the bench. The camera never auto-turns while you aim. Elbows stay low so a raised arm comes from the bottom corner.
+
+**Testing at real speed:** headless Chromium throttles frames to ~1 fps unless launched with `--disable-gpu-vsync --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows` (not `--disable-frame-rate-limit`: screenshots then time out). Pointer lock works headless after a click; turn the view by dispatching `new MouseEvent('mousemove', { movementX, movementY })` on `window` and wait until `__camera.quaternion` changes (never move the real mouse outside the viewport under pointer lock: the browser closes). Use `WheelEvent`s on `__canvas` for scrolling; `page.mouse.wheel` can take seconds per notch.
