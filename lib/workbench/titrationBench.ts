@@ -248,6 +248,7 @@ export class TitrationBench {
     if (funnel) {
       const fq = funnel.getWorldQuaternion(new THREE.Quaternion());
       this.scene.attach(funnel);
+      TitrationBench.recenter(funnel);
       const seat = funnel.position.clone();
       this.sockets.push({ id: 'buretteTop', pos: seat, accepts: ['chem_funnel'], quat: fq });
       this.tag(funnel, 'chem_funnel', 'Filter funnel', 'Pick up (take it out before titrating)');
@@ -261,6 +262,7 @@ export class TitrationBench {
     const dropper = rig.getObjectByName('chem_dropper');
     if (dropper && this.indicatorBottle) {
       this.scene.attach(dropper);
+      TitrationBench.recenter(dropper);
       const seat = dropper.position.clone();
       this.sockets.push({ id: 'indicatorBottle', pos: seat, accepts: ['chem_dropper'] });
       this.tag(this.indicatorBottle, 'chem_indicator', 'Phenolphthalein indicator', 'Take the dropper out');
@@ -357,6 +359,20 @@ export class TitrationBench {
 
     this.unsub.push(titration.onEvent((e) => this.onSim(e)));
     this.syncVisuals(0);
+  }
+
+  /**
+   * Some exported parts have their origin off to one side of the glass. Move the origin to the
+   * middle of what you see (keeping it where it is), so aiming, sockets and pouring line up.
+   */
+  private static recenter(o: THREE.Object3D) {
+    o.updateMatrixWorld(true);
+    const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+    const local = o.worldToLocal(c.clone());
+    local.y = 0;
+    o.children.forEach((ch) => ch.position.sub(local));
+    o.position.add(local.clone().multiply(o.scale).applyQuaternion(o.quaternion));
+    o.updateMatrixWorld(true);
   }
 
   private addMovable(m: Omit<Movable, 'homePos' | 'homeQuat' | 'homeSocket'>) {

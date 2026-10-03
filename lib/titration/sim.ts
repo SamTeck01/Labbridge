@@ -310,9 +310,13 @@ function deliverDrop() {
   } else if (under === 'waste') {
     state = { ...state, wasteML: state.wasteML + DROP_ML };
   } else {
-    // Nothing under the tip: straight onto the bench
-    state = { ...state, spills: state.spills + 1 };
-    emit({ type: 'spill', what: 'NaOH from the burette' });
+    // Nothing under the tip: straight onto the bench (spill size in the same units as pouring: ~1 per 5 mL)
+    state = { ...state, spills: state.spills + DROP_ML * 0.2 };
+    const now = Date.now();
+    if (now - lastSpillSaid > 4000) {
+      lastSpillSaid = now;
+      emit({ type: 'spill', what: 'NaOH from the burette' });
+    }
   }
   emit({ type: 'drop', into: under });
 }

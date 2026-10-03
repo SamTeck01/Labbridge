@@ -42,6 +42,7 @@ import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneMod
 import ExperimentPanel from '@/components/ExperimentPanel';
 import TitrationHUD from '@/components/titration/TitrationHUD';
 import BenchHandHUD from '@/components/BenchHandHUD';
+import ControlsHelp from '@/components/ControlsHelp';
 import { titration } from '@/lib/titration/sim';
 import { titrationControls } from '@/lib/titration/ui';
 import LabSheet from '@/components/titration/LabSheet';
@@ -326,6 +327,7 @@ export default function Lab3DScene({
   const [isSheetOpen, setIsSheetOpen] = useState<boolean>(false);
   // Mouse captured for aiming (desktop): a crosshair is shown, also at the benches
   const [isAiming, setIsAiming] = useState<boolean>(false);
+  const [showHelp, setShowHelp] = useState<boolean>(false);
   // The next step's object: where it is on screen (for the marker / edge arrow)
   const [goal, setGoal] = useState<null | { x: number; y: number; on: boolean; angle: number; label: string }>(null);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
@@ -661,6 +663,10 @@ export default function Lab3DScene({
     const handleKeyDown = (e: KeyboardEvent) => {
       const typing = !!(e.target as HTMLElement | null)?.closest?.('input, textarea, select');
       if (typing) return;
+      if (e.code === 'KeyH' && !e.repeat) {
+        setShowHelp((v) => !v);
+        return;
+      }
       // At the titration bench the hands own most keys (tilt, lift, tap, swirl, read, let go)
       const tb = isSeated && seatedStation ? ((seatedStation === 'chemistry' ? titrationBenchRef.current : benchesRef.current[seatedStation]) as Partial<DirectInput> | null | undefined) : null;
       if (tb && typeof tb.key === 'function') {
@@ -1846,6 +1852,13 @@ export default function Lab3DScene({
         </div>
       )}
 
+      {showHelp && <ControlsHelp onClose={() => setShowHelp(false)} />}
+      {/* At a bench on a laptop, before the mouse is captured: how to start aiming */}
+      {atWorkbench && !isAiming && !isTouch && !isSheetOpen && !isViewingEyepieces && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-10 z-30 pointer-events-none px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-200">
+          Click to aim with the mouse · <b>H</b> controls
+        </div>
+      )}
       {/* Next step: a tag on the object, or an arrow at the edge pointing to it */}
       {goal && !isSheetOpen && !isViewingEyepieces && (
         goal.on ? (
