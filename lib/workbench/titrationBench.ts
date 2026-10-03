@@ -437,6 +437,7 @@ export class TitrationBench {
     this.tilt = 0;
     this.input.tilt = 0;
     this.hudTilt = false;
+    this.pourBias = 0;
     // Pick it straight up a little, keeping where it is
     const bottomY = m.obj.position.y - m.bottom;
     const floor = this.floorAt(m.obj.position.x, m.obj.position.z);
@@ -822,7 +823,8 @@ export class TitrationBench {
       return true;
     }
     if (this.held) {
-      this.lift = THREE.MathUtils.clamp(this.lift - dy * 0.0004, 0, 0.62);
+      if (this.keys.has('KeyR')) this.pourBias = THREE.MathUtils.clamp(this.pourBias - dy * 0.0006, -0.25, 0.6);
+      else this.lift = THREE.MathUtils.clamp(this.lift - dy * 0.0004, 0, 0.62);
       return true;
     }
     if (this.onTap) {
@@ -924,6 +926,7 @@ export class TitrationBench {
   };
   private carryOverride: THREE.Vector3 | null = null;
   private hudTilt = false;
+  private pourBias = 0;
 
   /** Compatibility with the bench interface: clicks are handled by pointerDown. */
   tap(id: string): boolean {
@@ -948,7 +951,13 @@ export class TitrationBench {
 
     const m = this.held;
     if (m) {
-      if (m.canTilt && tiltIn > 0) this.tilt = THREE.MathUtils.clamp(this.tilt + tiltIn * 1.0 * dt, 0, this.maxTilt(m));
+      if (m.canTilt && this.keys.has('KeyR')) {
+        // Hold R: ease to a steady pour for how full it is; scroll while holding pours more or less
+        const fill = m.id === 'chem_naoh_bottle' ? this.bottleML / BOTTLE_ML : m.id === 'chem_waste' ? Math.min(1, titration.get().wasteML / 200) : 0;
+        const start = ((78 - fill * 66) * Math.PI) / 180;
+        const goal = THREE.MathUtils.clamp(start + 0.28 + this.pourBias, 0, this.maxTilt(m));
+        this.tilt += (goal - this.tilt) * Math.min(1, dt * 5);
+      } else if (m.canTilt && tiltIn > 0) this.tilt = THREE.MathUtils.clamp(this.tilt + tiltIn * 1.0 * dt, 0, this.maxTilt(m));
       // Hold to pour: let go (no key, no drag, no pour button) and it rights itself, F faster
       else if (!this.tiltDrag && !this.hudTilt && this.tilt > 0) this.tilt = Math.max(0, this.tilt - (tiltIn < 0 ? 4 : 2.2) * dt);
       if (liftIn !== 0) this.lift = THREE.MathUtils.clamp(this.lift + liftIn * 0.25 * dt, 0, 0.62);

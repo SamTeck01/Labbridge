@@ -8,7 +8,7 @@ const ROWS: [string, string][] = [
   ['Click', 'Pick up · use · put down where you aim'],
   ['Hold click + move', 'Turn a knob or tap you are holding'],
   ['Scroll', 'Lift / lower what you hold · turn a knob · eye height when reading'],
-  ['R (hold)', 'Pour: the longer you hold, the more it tilts. Let go and it rights itself. Right-drag works too'],
+  ['R (hold)', 'Pour steadily; scroll while holding to pour faster or slower; let go and it stops. Right-drag tilts by hand'],
   ['E', 'Use (squeeze the dropper, or what a click would do)'],
   ['Q', 'Put down / let go'],
   ['W', 'Swirl the flask (left hand)'],
