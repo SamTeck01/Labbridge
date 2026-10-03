@@ -45,3 +45,12 @@ export const STEP_TARGET: Record<string, string> = {
   'chroma:run': 'chroma_paper',
   'chroma:remove': 'chroma_paper',
 };
+
+/** Once the student is holding the step's object, point at where it has to go instead. */
+export const STEP_TARGET_HELD: Record<string, Record<string, string>> = {
+  'titration:fill': { chem_naoh_bottle: 'chem_funnel' },
+  'titration:jet': { chem_waste: 'chem_stopcock', chem_flask: 'chem_waste' },
+  'titration:pipette': { chem_pipette: 'chem_stock', chem_flask: 'chem_pipette' },
+  'titration:indicator': { chem_dropper: 'chem_flask' },
+  'titration:repeat': { chem_flask: 'chem_basin' },
+};

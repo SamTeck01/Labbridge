@@ -483,9 +483,9 @@ export class TitrationBench {
   }
 
   /** Where the pointer ray meets the carrying height. */
-  private pointerTarget(m: Movable) {
+  private pointerTarget(m: Movable, extraY = 0) {
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const y = this.benchY + this.lift + m.bottom;
+    const y = this.benchY + this.lift + m.bottom + extraY;
     const plane = new THREE.Plane(UP.clone(), -y);
     const hit = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
@@ -493,6 +493,33 @@ export class TitrationBench {
     hit.x = THREE.MathUtils.clamp(hit.x, this.tip.x - 0.55, this.tip.x + 0.55);
     hit.z = THREE.MathUtils.clamp(hit.z, this.tip.z - 0.32, this.tip.z + 0.36);
     return hit;
+  }
+
+  /**
+   * Aiming at an opening (funnel, flask mouth, beaker) with something that pours or drips: snap so
+   * the lip / tip goes right over it, like placement snapping in any sim.
+   */
+  private snapToOpening(m: Movable) {
+    if (!m.lip && m.kind !== 'dropper' && m.kind !== 'pipette') return null;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const ray = this.raycaster.ray;
+    let best: THREE.Vector3 | null = null;
+    let bestD = Infinity;
+    for (const o of this.openings) {
+      if (o.id === 'flask' && m.id === 'chem_flask') continue;
+      if (o.id === 'waste' && m.id === 'chem_waste') continue;
+      const at = o.pos();
+      if (at.y < -50) continue;
+      const hit = new THREE.Vector3();
+      if (!ray.intersectPlane(new THREE.Plane(UP.clone(), -at.y), hit)) continue;
+      const d = Math.hypot(hit.x - at.x, hit.z - at.z);
+      if (d < o.r + 0.03 && d < bestD) {
+        bestD = d;
+        best = new THREE.Vector3(at.x, this.benchY + this.lift + m.bottom + (m.lip ? m.lip.y * m.obj.scale.y : 0), at.z);
+      }
+    }
+    if (best && m.kind === 'dropper') best.x += 0; // the dropper's tip is under its bulb
+    return best;
   }
 
   /** Push the held thing out of whatever it would pass through. */
@@ -680,6 +707,10 @@ export class TitrationBench {
 
   get isHolding() {
     return !!this.held;
+  }
+
+  get heldId() {
+    return this.held?.id ?? null;
   }
 
   /** Returns true if the bench used the press (the scene must not look/act with it). */
@@ -962,6 +993,7 @@ export class TitrationBench {
   }
 
   private gripPos = new THREE.Vector3();
+  private aimPoint: THREE.Vector3 | null = null;
   private steer = new THREE.Vector3();
 
   private updateHeld(m: Movable, dt: number) {
@@ -972,7 +1004,11 @@ export class TitrationBench {
     } else if (this.pointerPlaneFromObj) {
       target = this.carryTarget.clone().setY(this.benchY + this.lift + m.bottom);
     } else {
-      target = this.pointerTarget(m);
+      // Aiming: what matters sits on the crosshair (a pouring lip), the rest hangs below and to the side
+      // (aim at the lip's height, so the lip is exactly under the crosshair)
+      const aimAt = this.snapToOpening(m) ?? this.pointerTarget(m, m.lip ? m.lip.y * m.obj.scale.y : 0);
+      this.aimPoint = aimAt ? aimAt.clone() : null;
+      target = aimAt ? aimAt.add(this.steer).setY(this.benchY + this.lift + m.bottom) : null;
     }
     if (!target) return;
     this.resolveCollisions(m, target);
@@ -997,11 +1033,13 @@ export class TitrationBench {
     m.obj.position.copy(this.gripPos).sub(gripOffset.applyQuaternion(m.obj.quaternion));
     const p = m.obj.position;
 
-    // Carried to a place by name (Dr. Curie, tests): keep the pouring lip over it as it tilts
-    if (this.carryOverride && m.lip) {
+    // Keep the pouring lip on the place it's carried to, or on the crosshair, as it tilts
+    const lipGoal = this.carryOverride ?? (this.pointerPlaneFromObj ? null : this.aimPoint);
+    if (lipGoal && m.lip) {
       const lip = m.obj.localToWorld(m.lip.clone());
-      this.steer.x += (this.carryOverride.x - lip.x) * Math.min(1, dt * 6);
-      this.steer.z += (this.carryOverride.z - lip.z) * Math.min(1, dt * 6);
+      this.steer.x += (lipGoal.x - lip.x) * Math.min(1, dt * 6);
+      this.steer.z += (lipGoal.z - lip.z) * Math.min(1, dt * 6);
+      this.steer.clampLength(0, 0.2);
     }
 
     // The hand that holds it
@@ -1011,7 +1049,8 @@ export class TitrationBench {
     this.hands.drive('right', { wrist: this.gripPos.clone().add(side), twist: tilt * 0.9, grip, flex: 0 }, 28, dt);
 
     // Keep it in view when lifted high (up to the funnel)
-    if (this.lift > 0.2) this.focus(p.clone());
+    // (only when carried for you; when you aim yourself the view is yours)
+    if (this.lift > 0.2 && this.carryOverride) this.focus(p.clone());
     else this.focus(null);
 
     // Pouring

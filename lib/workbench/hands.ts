@@ -266,9 +266,11 @@ export class FirstPersonHands {
     // Elbow sits back, down and out from the wrist (in camera terms), like a person leaning on a bench
     const out = h.side === 'right' ? 1 : -1;
     const elbowCam = this.camera.worldToLocal(this.v2.copy(h.pose.wrist));
-    elbowCam.x += 0.09 * out;
-    elbowCam.y -= 0.13;
-    elbowCam.z += 0.2;
+    // The elbow stays low and out to the side (like any first-person game), so a raised hand's
+    // forearm rises from the bottom corner instead of crossing the view
+    elbowCam.x += 0.12 * out;
+    elbowCam.y = Math.min(elbowCam.y - 0.13, -0.24);
+    elbowCam.z += 0.16;
     const elbowLocal = parent.worldToLocal(this.camera.localToWorld(elbowCam));
     const dir = this.v3.copy(wristLocal).sub(elbowLocal).normalize();
     const q = this.q1.setFromUnitVectors(h.restDir, dir).multiply(h.restQuat);

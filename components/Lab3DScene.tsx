@@ -72,7 +72,7 @@ import { OsmosisBench } from '@/lib/workbench/osmosisBench';
 import { ChromaBench } from '@/lib/workbench/chromaBench';
 import { experiments, currentStepOf } from '@/lib/experiments';
 import { Highlighter } from '@/lib/highlight';
-import { STEP_TARGET } from '@/lib/stepTargets';
+import { STEP_TARGET, STEP_TARGET_HELD } from '@/lib/stepTargets';
 import { getGraphics, type GraphicsSetting } from '@/lib/graphicsSetting';
 
 export type StationType = Station | null;
@@ -1212,7 +1212,7 @@ export default function Lab3DScene({
     // ---- Input: drag to look, tap/click to act (never both) ----
     const clampLook = () => {
       if (isSeatedRef.current) {
-        cameraEuler.current.x = Math.max(-1.25, Math.min(0.6, cameraEuler.current.x));
+        cameraEuler.current.x = Math.max(-1.25, Math.min(0.95, cameraEuler.current.x)); // up to a burette top
       } else {
         cameraEuler.current.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraEuler.current.x));
       }
@@ -1635,7 +1635,9 @@ export default function Lab3DScene({
         if (coordUpdateCounter % 3 === 0) {
           const atBench = isSeatedRef.current && !!seatedStationRef.current;
           raycaster.setFromCamera(atBench ? pointerRef.current : centerScreen, cameraRef.current);
-          const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true).filter((h) => h.object.userData?.isInteractive);
+          // Holding something at a bench: the hand strip says what a click does; no "pick up" prompts
+          const holding = atBench && !!chemBench()?.isHolding;
+          const hits = holding ? [] : raycaster.intersectObjects(interactiveObjectsRef.current, true).filter((h) => h.object.userData?.isInteractive);
           if (hits.length > 0) {
             const hit = hits[0].object;
             if (hit.userData && hit.userData.isInteractive && hoveredIdRef.current !== hit.userData.interactId) {
@@ -1664,13 +1666,19 @@ export default function Lab3DScene({
           const step = currentStepOf(run);
           const def = run ? EXPERIMENT_STATION[run.experimentId] : null;
           const here = isSeatedRef.current && seatedStationRef.current === def;
-          const id = here && run && step ? STEP_TARGET[`${run.experimentId}:${step.id}`] ?? null : null;
+          const stepKey = run && step ? `${run.experimentId}:${step.id}` : '';
+          const heldId = (chemBench() as { heldId?: string | null } | null)?.heldId ?? null;
+          let id = here && run && step ? STEP_TARGET[stepKey] ?? null : null;
+          if (id && heldId) id = STEP_TARGET_HELD[stepKey]?.[heldId] ?? (heldId === id ? null : id);
           goalHL.set(id);
           let next: typeof goal = null;
           if (id) {
             let target: THREE.Object3D | null = null;
             scene.traverse((o) => {
-              if (!target && o.userData?.interactId === id && (o as THREE.Mesh).isMesh) target = o;
+              if (target || o.userData?.interactId !== id || !(o as THREE.Mesh).isMesh) return;
+              let vis = true;
+              for (let q: THREE.Object3D | null = o; q; q = q.parent) if (!q.visible) vis = false;
+              if (vis) target = o;
             });
             const t = target as THREE.Object3D | null;
             if (t) {

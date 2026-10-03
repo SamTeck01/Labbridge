@@ -418,7 +418,7 @@ export const titration = {
       const now = Date.now();
       if (now - lastSpillSaid > 4000) {
         lastSpillSaid = now;
-        emit({ type: 'spill', what: 'NaOH on the bench' });
+        emit({ type: 'spill', what: 'NaOH' });
       }
     }
     if (miss > 0.3) emit({ type: 'spill', what: 'a splash of NaOH' });
