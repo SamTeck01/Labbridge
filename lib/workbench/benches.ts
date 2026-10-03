@@ -6,6 +6,8 @@ import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { Drops } from '@/lib/workbench/liquids';
+import { experiments } from '@/lib/experiments';
+import { benchUI, benchControls } from '@/lib/benchUI';
 
 /**
  * Hands-on benches beyond titration. Each bench turns taps into hand actions on its apparatus and
@@ -24,13 +26,26 @@ export interface Workbench {
 export type Focus = (p: THREE.Vector3 | null) => void;
 const TOWARD_STUDENT = new THREE.Vector3(0, 0, 1);
 
+/** Benches the student operates directly (turning knobs continuously) instead of tap-to-animate. */
+export interface DirectInput {
+  pointerDown(ndc: THREE.Vector2, button: number): boolean;
+  pointerMove(ndc: THREE.Vector2, dx: number, dy: number): boolean;
+  pointerUp(button: number): boolean;
+  wheel(dy: number): boolean;
+  key(code: string, down: boolean): boolean;
+  release(): void;
+  readonly isHolding: boolean;
+}
+
 export abstract class BenchBase implements Workbench {
   protected busy = false;
+  /** Set by the scene: lets direct-input benches raycast what the student pressed. */
+  camera: THREE.Camera | null = null;
   protected abstract ids: string[];
   constructor(protected scene: THREE.Scene, protected rig: THREE.Object3D, protected hands: FirstPersonHands, protected focus: Focus) {}
 
   get isBusy() {
-    return this.busy || this.isAnimatingExtra();
+    return this.busy || this.isAnimatingExtra() || ('isHolding' in this && !!(this as unknown as DirectInput).isHolding);
   }
 
   /** Benches with their own short animations (e.g. a centrifuge wobble) override this. */
@@ -126,6 +141,7 @@ export class MicroscopeBench extends BenchBase {
 
   constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus, private openEyepieces: () => void) {
     super(scene, rig, hands, focus);
+    benchUI.set({ station: 'biology', control: null, hints: [] });
     // Right-hand knobs lower the stage (same controls, other side of the microscope)
     for (const [name, label] of [['coarse_knob_r', 'Coarse Focus Knob (right)'], ['fine_knob_r', 'Fine Focus Knob (right)']] as const) {
       this.node(name)?.traverse((o) => tagInteractive(o, name, label, 'Turn to lower the stage', 'biology', 'knob'));
@@ -161,6 +177,165 @@ export class MicroscopeBench extends BenchBase {
     scene.add(this.oilBottle);
     this.oilDrops = new Drops(scene, '#f2c46a', 0.0018, 4);
     this.node('micro_stage_knob');
+  }
+
+  // ---------------- Direct manipulation: a hand stays on a knob and turns it ----------------
+  private control: null | { id: string; kind: 'coarse' | 'fine' | 'stage' | 'turret'; dir: number; side: 'left' | 'right' } = null;
+  private dragging = false;
+  private keysDown = new Set<string>();
+  private rate = 0;
+  private turretAccum = 0;
+  private raycaster = new THREE.Raycaster();
+  private static KNOBS: Record<string, { kind: 'coarse' | 'fine' | 'stage' | 'turret'; dir: number; name: string }> = {
+    micro_coarse_focus: { kind: 'coarse', dir: 1, name: 'Coarse focus (left)' },
+    coarse_knob_r: { kind: 'coarse', dir: -1, name: 'Coarse focus (right)' },
+    micro_fine_focus: { kind: 'fine', dir: 1, name: 'Fine focus (left)' },
+    fine_knob_r: { kind: 'fine', dir: -1, name: 'Fine focus (right)' },
+    micro_stage_knob: { kind: 'stage', dir: 1, name: 'Stage knob' },
+    micro_turret: { kind: 'turret', dir: 1, name: 'Objective turret' },
+  };
+
+  get isHolding() {
+    return !!this.control;
+  }
+
+  private hitId(ndc: THREE.Vector2) {
+    if (!this.camera) return null;
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const objs: THREE.Object3D[] = [];
+    this.rig.traverse((o) => o.userData?.isInteractive && (o as THREE.Mesh).isMesh && objs.push(o));
+    // Knobs are small and half hidden behind the stage: take a knob anywhere along the ray, and
+    // also accept a press a few pixels off one
+    const pick = (n: THREE.Vector2) => {
+      this.raycaster.setFromCamera(n, this.camera!);
+      const hits = this.raycaster.intersectObjects(objs, false).map((h) => String(h.object.userData.interactId));
+      return hits.find((id) => MicroscopeBench.KNOBS[id]) ?? null;
+    };
+    const d = 0.012;
+    for (const [ox, oy] of [[0, 0], [d, 0], [-d, 0], [0, d], [0, -d]]) {
+      const k = pick(new THREE.Vector2(ndc.x + ox, ndc.y + oy));
+      if (k) return k;
+    }
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const h = this.raycaster.intersectObjects(objs, false)[0];
+    return h ? String(h.object.userData.interactId) : null;
+  }
+
+  pointerDown(ndc: THREE.Vector2, button: number) {
+    if (button !== 0) return false;
+    const id = this.hitId(ndc);
+    const k = id ? MicroscopeBench.KNOBS[id] : null;
+    if (!k || !id) {
+      if (this.control) this.release();
+      return false;
+    }
+    const at = this.pos(id);
+    const side = k.kind === 'coarse' || k.kind === 'fine' ? (k.dir > 0 ? 'left' : 'right') : at ? this.hands.sideFor(at) : 'right';
+    if (this.control && this.control.side !== side) this.hands.undrive(this.control.side);
+    this.control = { id, kind: k.kind, dir: k.dir, side };
+    this.dragging = true;
+    this.publish();
+    return true;
+  }
+  pointerMove(_ndc: THREE.Vector2, _dx: number, dy: number) {
+    if (!this.control || !this.dragging) return false;
+    this.turnBy(-dy / 40);
+    return true;
+  }
+  pointerUp() {
+    const was = this.dragging;
+    this.dragging = false;
+    return was;
+  }
+  wheel(dy: number) {
+    if (!this.control) return false;
+    this.turnBy(-dy / 100);
+    return true;
+  }
+  key(code: string, down: boolean) {
+    if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'ShiftLeft' || code === 'ShiftRight') {
+      if (down) this.keysDown.add(code);
+      else this.keysDown.delete(code);
+      return !!this.control;
+    }
+    if (code === 'Escape' && down && this.control) {
+      this.release();
+      return true;
+    }
+    return false;
+  }
+  release() {
+    if (!this.control) return;
+    this.hands.undrive(this.control.side);
+    this.control = null;
+    this.dragging = false;
+    this.rate = 0;
+    this.publish();
+  }
+
+  /** Turn the control under the hand by `notches` (one wheel click = 1). */
+  private turnBy(notches: number) {
+    const c = this.control;
+    if (!c || !notches) return;
+    const b = labStore.get().biology;
+    const fine = this.keysDown.has('ShiftLeft') || this.keysDown.has('ShiftRight') ? 0.3 : 1;
+    if (c.kind === 'turret') {
+      this.turretAccum += notches;
+      if (Math.abs(this.turretAccum) >= 1) {
+        const idx = OBJECTIVES.indexOf(b.objective);
+        const next = OBJECTIVES[THREE.MathUtils.clamp(idx + Math.sign(this.turretAccum), 0, OBJECTIVES.length - 1)];
+        this.turretAccum = 0;
+        if (next !== b.objective) {
+          labStore.update('biology', { objective: next });
+          soundFx.playLensTurretClick();
+          navigator.vibrate?.(12);
+        }
+      }
+    } else if (c.kind === 'stage') {
+      labStore.update('biology', { stageX: THREE.MathUtils.clamp(b.stageX + notches * 0.06 * fine, -1, 1) });
+      this.stageKnobSpin += notches * 0.5;
+    } else {
+      const key = c.kind === 'coarse' ? 'coarseFocus' : 'fineFocus';
+      const step = (c.kind === 'coarse' ? 0.02 : 0.004) * fine * notches * c.dir;
+      const v = THREE.MathUtils.clamp(b[key] + step, 0, 1);
+      labStore.update('biology', { [key]: v });
+      this.knobSpin[c.kind] += step * 20;
+      if (Math.abs(this.lastTick - v) > 0.02) {
+        this.lastTick = v;
+        soundFx.playKnobTick();
+      }
+      // Raising the stage on high power drives the slide into the objective lens
+      const limit = b.objective === '100x' ? 0.86 : b.objective === '40x' ? 0.92 : 2;
+      if (c.kind === 'coarse' && step > 0 && v > limit) {
+        labStore.update('biology', { coarseFocus: limit - 0.08 });
+        soundFx.playGlassSlide();
+        experiments.count('slideCrack');
+        curie.say(`Crack! On ${b.objective} the lens is millimetres from the slide: never raise the stage with the coarse knob on high power. Focus on 4× first, then use the fine knob.`);
+      }
+    }
+    this.publish();
+  }
+  private lastTick = 0;
+
+  private publish() {
+    const c = this.control;
+    const b = labStore.get().biology;
+    benchUI.set({
+      station: 'biology',
+      control: c
+        ? {
+            id: c.id,
+            name: MicroscopeBench.KNOBS[c.id].name,
+            side: c.side,
+            value: c.kind === 'coarse' ? b.coarseFocus : c.kind === 'fine' ? b.fineFocus : c.kind === 'stage' ? (b.stageX + 1) / 2 : OBJECTIVES.indexOf(b.objective) / 3,
+            detail: c.kind === 'turret' ? b.objective : c.kind === 'stage' ? 'Moving the slide' : 'Turning',
+          }
+        : null,
+      hints: c
+        ? ['Scroll or drag up/down to turn', 'Shift fine', '↑ ↓ keep turning', 'Esc let go']
+        : ['Click a focus knob, the turret or the stage knob to hold it', 'F look through the eyepieces'],
+    });
+    benchControls.register({ setRate: (v) => (this.rate = v), letGo: () => this.release() });
   }
 
   protected async perform(id: string) {
@@ -272,6 +447,16 @@ export class MicroscopeBench extends BenchBase {
   update(delta: number) {
     const b = labStore.get().biology;
     this.oilDrops.update(delta);
+    if (this.control) {
+      const k = (this.keysDown.has('ArrowUp') ? 1 : 0) - (this.keysDown.has('ArrowDown') ? 1 : 0) + this.rate;
+      if (k) this.turnBy(k * delta * 6);
+      const at = this.pos(this.control.id);
+      if (at) {
+        const out = this.control.side === 'right' ? 0.035 : -0.035;
+        const spin = this.control.kind === 'turret' ? 0 : Math.sin(this.knobSpin.coarse * 3 + this.knobSpin.fine * 8 + this.stageKnobSpin) * 0.35;
+        this.hands.drive(this.control.side, { wrist: at.clone().add(new THREE.Vector3(out, 0.004, 0.05)), grip: 0.55, twist: spin, flex: 0.1 }, 24, delta);
+      }
+    }
     // The stage knob moves the slide on the stage
     const slide = this.node('glass_slide');
     if (slide) {

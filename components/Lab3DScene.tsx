@@ -41,6 +41,7 @@ import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
 import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
 import ExperimentPanel from '@/components/ExperimentPanel';
 import TitrationHUD from '@/components/titration/TitrationHUD';
+import BenchHandHUD from '@/components/BenchHandHUD';
 import { titration } from '@/lib/titration/sim';
 import { titrationControls } from '@/lib/titration/ui';
 import LabSheet from '@/components/titration/LabSheet';
@@ -63,7 +64,7 @@ import { disposeObject, loadLabModel, swapInModel, clearModelCache, wireInteract
 import { mergeStaticMeshes, QualityManager, FrameScheduler, releaseCanvasAfterUpload } from '@/lib/scenePerf';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { TitrationBench } from '@/lib/workbench/titrationBench';
-import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench } from '@/lib/workbench/benches';
+import { MicroscopeBench, CircuitBench, BalanceBench, type Workbench, type DirectInput } from '@/lib/workbench/benches';
 import { FlameBench } from '@/lib/workbench/flameBench';
 import { PendulumBench } from '@/lib/workbench/pendulumBench';
 import { RatesBench } from '@/lib/workbench/ratesBench';
@@ -652,13 +653,13 @@ export default function Lab3DScene({
       const typing = !!(e.target as HTMLElement | null)?.closest?.('input, textarea, select');
       if (typing) return;
       // At the titration bench the hands own most keys (tilt, lift, tap, swirl, read, let go)
-      const tb = titrationBenchRef.current;
-      if (isSeated && seatedStation === 'chemistry' && tb) {
-        if (e.code === 'KeyS') {
+      const tb = isSeated && seatedStation ? ((seatedStation === 'chemistry' ? titrationBenchRef.current : benchesRef.current[seatedStation]) as Partial<DirectInput> | null | undefined) : null;
+      if (tb && typeof tb.key === 'function') {
+        if (e.code === 'KeyS' && seatedStation === 'chemistry') {
           if (!e.repeat) setIsSheetOpen((o) => !o);
           return;
         }
-        if (tb.key(e.code, true)) {
+        if (tb.key!(e.code, true)) {
           e.preventDefault();
           return;
         }
@@ -695,7 +696,7 @@ export default function Lab3DScene({
 
     const handleKeyUp = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = false;
-      titrationBenchRef.current?.key(e.code, false);
+      Object.values(benchesRef.current).forEach((b) => (b as Partial<DirectInput> | undefined)?.key?.(e.code, false));
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -781,7 +782,16 @@ export default function Lab3DScene({
     const setFocus = (p: THREE.Vector3 | null) => (focusRef.current = p ? p.clone() : null);
     const setLean = (eye: THREE.Vector3 | null, look: THREE.Vector3 | null) => (leanRef.current = eye && look ? { eye: eye.clone(), look: look.clone() } : null);
     /** The titration bench, when the student is standing at it. */
-    const chemBench = () => (isSeatedRef.current && seatedStationRef.current === 'chemistry' ? titrationBenchRef.current : null);
+    /** The bench the student is standing at, when it takes direct input (titration, microscope, …). */
+    const directBench = (): DirectInput | null => {
+      const st = isSeatedRef.current ? seatedStationRef.current : null;
+      if (!st) return null;
+      const b = (st === 'chemistry' ? titrationBenchRef.current : benchesRef.current[st]) as (Partial<DirectInput> & { camera?: THREE.Camera | null }) | null | undefined;
+      if (!b || typeof b.pointerDown !== 'function') return null;
+      if ('camera' in b && !b.camera) b.camera = camera;
+      return b as DirectInput;
+    };
+    const chemBench = directBench;
 
     // WebGL Renderer
     // Phones: lower pixel ratio and cheaper shadows keep the frame rate up (AO is also desktop-only)
@@ -1869,7 +1879,8 @@ export default function Lab3DScene({
         <TitrationHUD isTouch={isTouch} onOpenSheet={() => setIsSheetOpen(true)} />
       )}
       {isSheetOpen && seatedStation === 'chemistry' && <LabSheet onClose={() => setIsSheetOpen(false)} />}
-      {atWorkbench && seatedStation !== 'chemistry' && (
+      {atWorkbench && seatedStation === 'biology' && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} />}
+      {atWorkbench && seatedStation !== 'chemistry' && seatedStation !== 'biology' && (
         <button
           onClick={standUp}
           className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-slate-900/85 border border-slate-600 text-sm text-white hover:bg-slate-800"

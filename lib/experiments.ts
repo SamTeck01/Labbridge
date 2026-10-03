@@ -186,6 +186,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     mistakes: [
       { id: 'highFirst', message: "Don't start on high power. Go back to 4× and focus there first; it protects the slide and the lens.", check: (l, r) => (l.biology.objective === '40x' || l.biology.objective === '100x') && !r.completedSteps.includes('focus4') },
       { id: 'noOil', message: '100× is an oil-immersion lens. Without oil the image will be blurry.', check: (l) => l.biology.objective === '100x' && !l.biology.immersionOil },
+      { id: 'crash', message: 'You drove the objective into the slide. On high power, only ever use the fine focus.', check: (_l, r) => (r.events.slideCrack ?? 0) > 0 },
     ],
     recordLabel: 'Capture image (use the eyepiece view)',
     readingsNeeded: 0,
