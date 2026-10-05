@@ -305,7 +305,7 @@ export abstract class KnobBench extends BenchBase implements DirectInput {
     benchUI.set({
       station: this.station,
       control: held
-        ? { id: held.id, name: held.name, side: 'right', value: 0, detail: this.holder!.over ? `Over the ${this.holder!.over.name}` : null }
+        ? { id: held.id, name: held.name, side: 'right', value: -1, detail: this.holder!.over ? `Over the ${this.holder!.over.name}` : null }
         : c && v
           ? { id: c.id, name: this.knobs[c.id].name, side: c.side, value: v.value, detail: v.detail }
           : null,

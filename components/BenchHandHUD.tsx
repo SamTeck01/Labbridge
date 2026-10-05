@@ -80,7 +80,7 @@ export default function BenchHandHUD({ isTouch, station }: { isTouch: boolean; s
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-400">{c ? (c.side === 'left' ? 'Left hand' : 'Right hand') : 'Hands'}</p>
             <p className="text-sm font-semibold text-slate-100">{c ? c.name : 'Free'}</p>
-            {c && (
+            {c && c.value >= 0 && (
               <div className="mt-1 h-1.5 w-32 rounded-full bg-slate-700 overflow-hidden">
                 <div className="h-full bg-amber-400" style={{ width: `${Math.round(c.value * 100)}%` }} />
               </div>
