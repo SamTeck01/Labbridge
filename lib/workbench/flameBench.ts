@@ -7,6 +7,7 @@ import { curie } from '@/lib/curie';
 import { isMobileOrTouchDevice } from '@/lib/orientation';
 import { FirstPersonHands } from '@/lib/workbench/hands';
 import { KnobBench, type Focus, type KnobSpec } from '@/lib/workbench/benches';
+import { Holder, type HoldItem } from '@/lib/workbench/holder';
 
 /**
  * Flame tests in the fume hood. The left hand works the gas tap, air collar and lighter; the right
@@ -53,7 +54,7 @@ export class FlameBench extends KnobBench {
   private gas = 0;
   private air = 0;
   protected station = 'hood';
-  protected idleHints = ['Hold the gas tap or the air collar and turn it', 'Click the lighter, the loop, the acid or a salt to use them'];
+  protected idleHints = ['Pick up the wire loop: dip it in acid, a salt, then hold it in the flame', 'Hold the gas tap or air collar and turn', 'Click the lighter to light'];
   protected knobs: Record<string, KnobSpec> = {
     flame_gas_tap: { name: 'Gas tap', side: 'left' },
     flame_air_collar: { name: 'Air collar', side: 'left' },
@@ -120,6 +121,95 @@ export class FlameBench extends KnobBench {
       loop.updateMatrixWorld(true);
       this.loopHome.copy(loop.matrixWorld);
       this.loopParent = loop.parent;
+    }
+    this.setupHands(base);
+  }
+
+  // ---------------- Hands-on: carry the loop and dip it yourself ----------------
+  private loopItem: HoldItem | null = null;
+  private dwell = { zone: '', t: 0, done: false };
+
+  private setupHands(flameAt: THREE.Vector3) {
+    const loop = this.node('flame_loop');
+    const tipNode = this.node('anchor_loop_tip');
+    if (!loop || !tipNode) return;
+    const benchY = new THREE.Box3().setFromObject(this.rig).min.y;
+    this.holder = new Holder(this.scene, () => this.camera, this.hands, benchY, flameAt.clone(), {
+      onHeld: (_it, over, dt) => this.dip(over?.id ?? '', dt),
+      onPick: () => (this.holding = true),
+      onPutDown: () => {
+        this.holding = false;
+        this.dwell = { zone: '', t: 0, done: false };
+      },
+    });
+    const tipLocal = loop.worldToLocal(tipNode.getWorldPosition(new THREE.Vector3()));
+    this.loopItem = this.holder.add({
+      id: 'loop',
+      name: 'Wire loop',
+      obj: loop,
+      grip: 0.01,
+      bottom: 0.004,
+      radius: 0.01,
+      tip: tipLocal,
+      carryQuat: loop.getWorldQuaternion(new THREE.Quaternion()),
+    });
+    const at = (n: string) => () => (this.pos(n) ?? flameAt).clone();
+    this.holder.zone({ id: 'acid', name: 'acid', pos: at('anchor_acid'), r: 0.02, accepts: () => false });
+    for (const [id, key] of Object.entries(SALT_IDS)) {
+      this.holder.zone({ id: `salt_${key}`, name: `${SALTS[key].name} sample`, pos: at(`anchor_salt_${key}`), r: 0.012, accepts: () => false });
+      void id;
+    }
+    this.holder.zone({ id: 'flame', name: 'flame', pos: () => flameAt.clone().add(new THREE.Vector3(0.011, 0.045, 0)), r: 0.025, accepts: () => false });
+  }
+
+  /** Clicking the acid, a salt or the flame with nothing in hand picks up the loop to take there. */
+  protected spawnPick(id: string) {
+    if (!this.holder || !this.loopItem) return false;
+    if (id === 'flame_acid' || id === 'flame_zone' || id in SALT_IDS) {
+      if (id === 'flame_zone' && !this.f().lit) return false;
+      curie.say('Take the loop there yourself: carry it over and lower it in.');
+      return this.holder.pick(this.loopItem);
+    }
+    return false;
+  }
+
+  /** What happens while the loop's tip stays in something. */
+  private dip(zone: string, dt: number) {
+    if (zone !== this.dwell.zone) this.dwell = { zone, t: 0, done: false };
+    else this.dwell.t += dt;
+    const d = this.dwell;
+    if (!zone || d.done) return;
+    const f = this.f();
+    if (zone === 'acid' && d.t > 0.4) {
+      d.done = true;
+      labStore.update('flame', { loop: 'acid' });
+      soundFx.playDropLiquid();
+    } else if (zone.startsWith('salt_') && d.t > 0.4) {
+      d.done = true;
+      const key = zone.slice(5) as SaltKey;
+      if (f.loop !== 'clean') experiments.count('contaminated');
+      labStore.update('flame', { loop: f.loop === 'clean' ? key : 'dirty' });
+      soundFx.playGlassSlide();
+    } else if (zone === 'flame' && f.lit && d.t > 0.6) {
+      d.done = true;
+      const loopState = f.loop;
+      if (loopState in SALTS) {
+        const salt = SALTS[loopState as SaltKey];
+        this.saltColour.set(salt.hex);
+        this.saltStrength = 1;
+        soundFx.playSuccessChime();
+        if (!f.airOpen) experiments.count('luminousTest');
+        experiments.addReading({ label: `${salt.name} flame`, value: salt.nm, unit: `nm · ${salt.colour}` });
+        curie.say(`${salt.name}: a ${salt.colour} flame (${salt.nm} nm).`);
+        setTimeout(() => labStore.update('flame', { loop: 'dirty' }), 2200);
+      } else if (loopState === 'acid') {
+        this.saltColour.set('#ffb070');
+        this.saltStrength = 0.35;
+        setTimeout(() => labStore.update('flame', { loop: 'clean' }), 1600);
+      } else if (loopState === 'dirty') {
+        this.saltColour.set('#ff9a50');
+        this.saltStrength = 0.5;
+      }
     }
   }
 

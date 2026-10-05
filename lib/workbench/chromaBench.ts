@@ -3,7 +3,8 @@ import { labStore, INKS } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
 import { FirstPersonHands } from '@/lib/workbench/hands';
-import { BenchBase, type Focus } from '@/lib/workbench/benches';
+import { KnobBench, type Focus } from '@/lib/workbench/benches';
+import { Holder } from '@/lib/workbench/holder';
 import { MAT, glassVessel, label, tagAll } from '@/lib/workbench/kit';
 
 /**
@@ -18,7 +19,7 @@ const BASELINE = 0.15; // fraction of the paper height
 const FRONT_MAX = 0.85; // where the solvent front stops rising
 const SPOT_X = [0.25, 0.5, 0.75];
 
-export class ChromaBench extends BenchBase {
+export class ChromaBench extends KnobBench {
   protected ids = ['chroma_pencil', 'chroma_inks', 'chroma_paper', 'chroma_beaker'];
   private kit = new THREE.Group();
   private paper: THREE.Mesh;
@@ -82,6 +83,60 @@ export class ChromaBench extends BenchBase {
     this.placePaper(false);
     scene.add(this.kit);
     this.redraw();
+    this.setupHands(scene, hands, origin, pencil, inks, beaker);
+  }
+
+  // ---------------- Hands-on: pencil, ink pens and the paper are all held and used ----------------
+  protected station = 'chroma';
+  protected idleHints = ['Pick up the pencil: E on the paper draws the baseline', 'Pick up the inks: E on the baseline spots one', 'Carry the paper into the beaker; take it out before the front reaches the top'];
+
+  private setupHands(scene: THREE.Scene, hands: FirstPersonHands, origin: THREE.Vector3, pencil: THREE.Object3D, inks: THREE.Object3D, beaker: THREE.Object3D) {
+    this.holder = new Holder(scene, () => this.camera, hands, origin.y, origin.clone(), {
+      onUse: (it, over) => this.write(it.id, over?.id === 'paper'),
+      onPick: (it) => {
+        if (it.id === 'paper' && this.st().inSolvent) {
+          labStore.update('chroma', { inSolvent: false, removed: true });
+          soundFx.playGlassSlide();
+        }
+      },
+    });
+    const flat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    this.holder.add({ id: 'pencil', name: 'Pencil', obj: pencil, grip: 0.006, bottom: 0.004, radius: 0.006, tip: new THREE.Vector3(0, 0.07, 0), carryQuat: pencil.quaternion.clone(), useLabel: 'draw the baseline' });
+    this.holder.add({ id: 'inks', name: 'Ink pens (A, B, unknown)', obj: inks, grip: 0.008, bottom: 0.005, radius: 0.03, tip: new THREE.Vector3(0.0, 0.0, 0.0), carryQuat: inks.quaternion.clone(), useLabel: 'spot the next ink' });
+    this.holder.add({ id: 'paper', name: 'Chromatography paper', obj: this.paper, grip: PAPER_H, bottom: 0, radius: 0.03, tip: new THREE.Vector3(0, 0, 0), freePlace: true, carryQuat: new THREE.Quaternion(), restQuat: flat });
+    this.holder.zone({ id: 'paper', name: 'paper', pos: () => this.paper.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.002, -PAPER_H / 2)), r: 0.06, accepts: () => false });
+    this.holder.zone({
+      id: 'beaker',
+      name: 'solvent beaker',
+      pos: () => beaker.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.012, 0)),
+      r: 0.04,
+      accepts: (it) => it.id === 'paper' && !this.st().removed,
+      rest: () => {
+        this.placePaper(true);
+        return { pos: this.paper.position.clone(), quat: this.paper.quaternion.clone() };
+      },
+      onDrop: () => {
+        if (this.st().spots < INKS.length) curie.say('Spot all three inks on the baseline before it goes in.');
+        labStore.update('chroma', { inSolvent: true });
+        curie.say('Watch the solvent creep up. Take it out before the front reaches the top.');
+      },
+    });
+  }
+
+  /** E with the pencil or the inks over the paper lying on the bench. */
+  private write(id: string, onPaper: boolean) {
+    const s = this.st();
+    if (!onPaper) return curie.say('Hold it over the paper lying on the bench.');
+    if (s.inSolvent || s.removed) return;
+    if (id === 'pencil') {
+      labStore.update('chroma', { baseline: true });
+      soundFx.playGlassSlide();
+    } else if (id === 'inks') {
+      if (s.spots >= INKS.length) return;
+      if (!s.baseline) curie.say('Draw a pencil baseline first, so you can measure from it.');
+      labStore.update('chroma', { spots: s.spots + 1 });
+      soundFx.playDropLiquid();
+    }
   }
 
   private st() {
@@ -195,6 +250,7 @@ export class ChromaBench extends BenchBase {
   }
 
   update(delta: number) {
+    this.updateKnobHand(delta);
     const s = this.st();
     if (s.inSolvent && s.front < FRONT_MAX) {
       // Capillary rise slows as the front climbs (~25 s for the full run)

@@ -767,7 +767,7 @@ export default function Lab3DScene({
   });
 
   useEffect(() => {
-    if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __sitDownAt: sitDownAt });
+    if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __sitDownAt: sitDownAt, __transitionRef: transitionRef });
   }, [sitDownAt]);
 
   useEffect(() => {
@@ -2017,15 +2017,8 @@ export default function Lab3DScene({
         <TitrationHUD isTouch={isTouch} onOpenSheet={() => setIsSheetOpen(true)} />
       )}
       {isSheetOpen && seatedStation === 'chemistry' && <LabSheet onClose={() => setIsSheetOpen(false)} />}
-      {atWorkbench && (seatedStation === 'biology' || seatedStation === 'physics' || seatedStation === 'hood') && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} station={seatedStation} />}
-      {atWorkbench && seatedStation !== 'chemistry' && seatedStation !== 'biology' && seatedStation !== 'physics' && seatedStation !== 'hood' && (
-        <button
-          onClick={standUp}
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-slate-900/85 border border-slate-600 text-sm text-white hover:bg-slate-800"
-        >
-          Step back from the bench
-        </button>
-      )}
+      {atWorkbench && seatedStation !== 'chemistry' && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} station={seatedStation} />}
+      
 
 
       {/* In-World 3D Microscope Eyepiece Ocular Mode */}
