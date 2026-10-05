@@ -14,8 +14,9 @@ def put(buf,x,at,g=1.):
 bpm=100; beat=60/bpm; mus=np.zeros(N)
 f=lambda m: 440*2**((m-69)/12)
 prog=[[50,57,62,65],[46,53,58,62],[53,60,65,69],[48,55,60,64]]
-for bar in range(8):
-  ch=prog[bar%4] if bar<6 else prog[2]
+BARS=int(T['scenes'][-1]/(4*beat))+1
+for bar in range(BARS):
+  ch=prog[bar%4] if bar<BARS-1 else prog[2]
   st=bar*4*beat
   # pad
   n=int(4*beat*SR)+SR; x=np.arange(n)/SR; e=np.minimum(1,x/0.6)*np.exp(-x/3.5)
@@ -36,10 +37,10 @@ put(mus,sum(np.sin(2*np.pi*f(m)*x)*0.06 for m in [53,60,65,69,72])*np.minimum(1,
 mus[:int(0.6*SR)]*=np.linspace(0,1,int(0.6*SR))
 # --- VO
 vo=np.zeros(N)
-for i,l in enumerate(T['vo']):
-  a,sr=sf.read(f'tools/vo/{voice}/{voice}_{i}.wav'); assert sr==24000
+for i,at in enumerate(T['vo']):
+  a,sr=sf.read(f"tools/{T['voDir']}/{voice}/{i}.wav"); assert sr==24000
   a=np.interp(np.arange(int(len(a)*2))/2,np.arange(len(a)),a)  # 24k -> 48k
-  put(vo,a,l['t'])
+  put(vo,a,at)
 # duck music >=15 dB under VO
 act=lp((np.abs(vo)>0.01).astype(float),0.0015); act=np.clip(act*4,0,1)
 mus*=10**(-17*act/20)
@@ -53,15 +54,16 @@ def hit():
   return (np.sin(2*np.pi*(48+80*np.exp(-x*30))*x)*env(n,0.002,0.18)+lp(rng.standard_normal(n),0.3)*env(n,0.001,0.02)*0.5)
 def tick():
   n=int(0.05*SR); x=np.arange(n)/SR; return np.sin(2*np.pi*2400*x)*env(n,0.0005,0.008)
-for h in T['hits']:
+HITS=sorted(set([x for sc in T['scenes'][1:] for x in (sc, sc+0.25)]+[0.55]))
+for h in HITS:
   put(sfx,whoosh(),h-0.42,0.22); put(sfx,hit(),h,0.35)
 for k in T['ticks']: put(sfx,tick(),k,0.12)
 # drips + riser into pink
-for d in [5.6,5.9,6.15]:
+for d in [19.4,19.8,20.1]:
   n=int(0.12*SR); x=np.arange(n)/SR; put(sfx,np.sin(2*np.pi*(900+1400*x/0.12)*x)*env(n,0.001,0.03),d,0.18)
-n=int(1.1*SR); x=np.linspace(0,1,n); put(sfx,lp(rng.standard_normal(n),0.05+0.3*x)*x**2,6.25-1.1,0.12)
+n=int(1.1*SR); x=np.linspace(0,1,n); put(sfx,lp(rng.standard_normal(n),0.05+0.3*x)*x**2,20.6-1.1,0.12)
 # logo shimmer
-n=int(2*SR); x=np.arange(n)/SR; put(sfx,sum(np.sin(2*np.pi*fr*x) for fr in (2093,2637,3136))*env(n,0.02,0.6)*0.04,15.0)
+n=int(2*SR); x=np.arange(n)/SR; put(sfx,sum(np.sin(2*np.pi*fr*x) for fr in (2093,2637,3136))*env(n,0.02,0.6)*0.04,T['scenes'][-2])
 sfx*=10**(-6*act/20)  # keep SFX out of the words' way
 mix=mus+sfx+vo*1.0
 sf.write('/tmp/premix.wav',np.stack([mix,mix],1)/np.abs(mix).max()*0.7,SR,subtype='FLOAT')

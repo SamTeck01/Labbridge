@@ -25,8 +25,8 @@ const out = (t: number, end: number, d = 0.28) => interpolate(t, [end - d, end],
 
 const Glow: React.FC<{ vertical: boolean }> = ({ vertical }) => {
   const t = useT();
-  const pink = interpolate(t, [6.1, 6.5, 7.4, 7.8], [0, 1, 1, 0], clamp);
-  const amber = interpolate(t, [9.4, 9.9, 11.9, 12.4], [0, 1, 1, 0], clamp);
+  const pink = interpolate(t, [20.0, 20.4, 22.0, 22.4], [0, 1, 1, 0], clamp);
+  const amber = interpolate(t, [26.8, 27.3, 30.9, 31.4], [0, 1, 1, 0], clamp);
   const on = interpolate(t, [0, 1.2], [0, 1], clamp);
   const a = { x: 50 + Math.sin(t * 0.55) * 14, y: 46 + Math.cos(t * 0.4) * 10 };
   const b = { x: 50 + Math.cos(t * 0.35 + 1) * 22, y: 58 + Math.sin(t * 0.5) * 12 };
@@ -109,6 +109,7 @@ const Mark: React.FC<{ size: number }> = ({ size }) => (
   </div>
 );
 
+
 const PRACTICALS = [
   ['Biology', 'Cells under the microscope', '#22c55e'],
   ['Chemistry', 'Acid–base titration', TEAL],
@@ -120,6 +121,94 @@ const PRACTICALS = [
   ['Biology', 'Osmosis in potato', '#22c55e'],
   ['Chemistry', 'Paper chromatography', PINK],
 ];
+const GREEN = '#22c55e';
+const BLUE = '#3b82f6';
+
+type WinSpec = { src: string; title: string; x: number; y: number; w: number; vx?: number; vy?: number; vw?: number; ry?: number; rx?: number; from: 'left' | 'right' | 'bottom' | 'depth'; delay?: number; crop?: { x: number; y: number; zoom: number }; aspect?: number; glow?: string; z?: number };
+type Scene = { chip?: [string, string]; lines: { text: string; at?: number; accent?: string[] }[]; wins: WinSpec[] };
+
+// x, y, w are fractions of the frame (16:9); vx, vy, vw override them for 9:16
+const SCENES: Scene[] = [
+  { lines: [{ text: 'Science is meant to be done.', accent: ['done.'] }, { text: 'Not just read about.', at: 2.0 }], wins: [] },
+  { lines: [{ text: 'A real lab. In your browser.', accent: ['lab.', 'browser.'] }], wins: [
+    { src: 'landing.png', title: 'labbridge', x: 0.32, y: 0.58, w: 0.42, vx: 0.5, vy: 0.4, vw: 0.88, ry: 14, from: 'depth' },
+    { src: 'lab.png', title: 'LabBridge · Main lab', x: 0.66, y: 0.6, w: 0.46, vx: 0.5, vy: 0.66, vw: 0.92, ry: -12, from: 'right', delay: 0.9, z: 80 },
+  ] },
+  { chip: ['BIOLOGY', GREEN], lines: [{ text: 'Focus on living cells.', accent: ['cells.'] }], wins: [
+    { src: 'biology.png', title: 'Microscope', x: 0.42, y: 0.6, w: 0.6, vx: 0.5, vy: 0.45, vw: 0.94, ry: 10, from: 'left', glow: GREEN },
+    { src: 'biology.png', title: 'Eyepiece', x: 0.78, y: 0.56, w: 0.24, vx: 0.5, vy: 0.72, vw: 0.6, aspect: 1, crop: { x: 0.57, y: 0.55, zoom: 2.4 }, ry: -16, from: 'depth', delay: 1.0, glow: GREEN, z: 120 },
+  ] },
+  { chip: ['PHYSICS', BLUE], lines: [{ text: "Build it. Test Ohm's law.", accent: ['law.'] }], wins: [
+    { src: 'physics.png', title: "Ohm's law", x: 0.5, y: 0.6, w: 0.64, vx: 0.5, vy: 0.55, vw: 0.96, rx: 8, from: 'bottom', glow: BLUE },
+  ] },
+  { chip: ['PHYSICS', '#8b5cf6'], lines: [{ text: 'Measure g yourself.', accent: ['g'] }], wins: [
+    { src: 'pendulum.png', title: 'Simple pendulum', x: 0.5, y: 0.6, w: 0.6, vx: 0.5, vy: 0.55, vw: 0.94, ry: -10, from: 'right', glow: '#8b5cf6' },
+  ] },
+  { chip: ['CHEMISTRY', TEAL], lines: [{ text: 'Titrate to the first pink.', accent: ['pink.'] }], wins: [
+    { src: 'tap.png', title: 'Burette tap', x: 0.29, y: 0.6, w: 0.4, vx: 0.5, vy: 0.4, vw: 0.88, crop: { x: 0.45, y: 0.55, zoom: 1.5 }, ry: 16, from: 'left' },
+    { src: 'pink.png', title: 'Conical flask', x: 0.71, y: 0.6, w: 0.4, vx: 0.5, vy: 0.7, vw: 0.88, crop: { x: 0.5, y: 0.62, zoom: 1.6 }, ry: -16, from: 'right', delay: 1.2, glow: PINK },
+  ] },
+  { lines: [{ text: 'Flame tests. Rates. Chromatography.', accent: ['Chromatography.'] }], wins: [
+    { src: 'hood.png', title: 'Flame tests', x: 0.2, y: 0.6, w: 0.3, vx: 0.5, vy: 0.33, vw: 0.86, ry: 22, from: 'left', glow: '#f97316' },
+    { src: 'rates.png', title: 'Rates of reaction', x: 0.5, y: 0.62, w: 0.3, vx: 0.5, vy: 0.56, vw: 0.86, from: 'bottom', delay: 0.6, glow: AMBER, z: 60 },
+    { src: 'chroma.png', title: 'Chromatography', x: 0.8, y: 0.6, w: 0.3, vx: 0.5, vy: 0.79, vw: 0.86, ry: -22, from: 'right', delay: 1.2, glow: PINK },
+  ] },
+];
+
+const SceneWins: React.FC<{ i: number; vertical: boolean }> = ({ i, vertical }) => {
+  const t = useT();
+  const sp = useSp();
+  const { width: W, height: H } = useVideoConfig();
+  if (!inScene(t, i)) return null;
+  const whip = out(t, S[i + 1], 0.3);
+  return (
+    <>
+      {SCENES[i].wins.map((w, k) => {
+        const p = sp(S[i] + 0.1 + (w.delay ?? 0), 16, 0.65);
+        const x = (vertical ? w.vx ?? w.x : w.x) * W;
+        const y = (vertical ? w.vy ?? w.y : w.y) * H;
+        const ww = (vertical ? w.vw ?? w.w : w.w) * W;
+        const q = 1 - p;
+        const dx = w.from === 'left' ? -W * 0.7 : w.from === 'right' ? W * 0.7 : 0;
+        const dy = w.from === 'bottom' ? H * 0.6 : 0;
+        const dz = w.from === 'depth' ? -1400 : -200;
+        const ry = (vertical ? 0 : w.ry ?? 0) + q * (w.from === 'left' ? 40 : w.from === 'right' ? -40 : 0);
+        const rx = (vertical ? 0 : w.rx ?? 0) + q * (w.from === 'bottom' ? 30 : 0) + (vertical ? 4 : 0);
+        const drift = Math.sin((t - S[i]) * 0.9 + k) * 8;
+        return (
+          <Win key={k} src={w.src} title={w.title} w={ww} crop={w.crop} aspect={w.aspect} glow={w.glow}
+            x={x + dx * q - (k % 2 ? -1 : 1) * whip * W * 0.5} y={y + dy * q + drift} z={(w.z ?? 0) + dz * q - whip * 1500}
+            ry={ry + whip * (k % 2 ? -25 : 25)} rx={rx} o={Math.min(1, p * 1.3) * (1 - whip)} />
+        );
+      })}
+    </>
+  );
+};
+
+const SceneType: React.FC<{ i: number; vertical: boolean }> = ({ i, vertical }) => {
+  const t = useT();
+  const sp = useSp();
+  const { width: W, height: H } = useVideoConfig();
+  if (!inScene(t, i, 0.1)) return null;
+  const sc = SCENES[i];
+  const solo = sc.wins.length === 0;
+  const big = (vertical ? 92 : 112) * (solo ? 1.25 : 1);
+  const y0 = solo ? H * 0.45 : vertical ? H * 0.1 : H * 0.15;
+  const chipP = sp(S[i] + 0.05, 14);
+  const gone = out(t, S[i + 1], 0.3);
+  return (
+    <>
+      {sc.chip && (
+        <div style={{ position: 'absolute', left: W / 2, top: y0 - big * 0.95, transform: `translate(-50%,-50%) scale(${chipP})`, opacity: 1 - gone, padding: '8px 20px', borderRadius: 999, border: `1px solid ${sc.chip[1]}88`, background: `${sc.chip[1]}22`, color: sc.chip[1], fontFamily, fontWeight: 700, fontSize: vertical ? 30 : 26, letterSpacing: 5, boxShadow: `0 0 30px ${sc.chip[1]}44` }}>
+          {sc.chip[0]}
+        </div>
+      )}
+      {sc.lines.map((l, k) => (
+        <Kinetic key={k} text={l.text} at={S[i] + 0.25 + (l.at ?? 0)} end={S[i + 1]} size={big * (k ? 0.62 : 1)} x={W / 2} y={y0 + k * big * 1.1} accent={l.accent?.map((a) => a.replace(/[.,]/g, ''))} color={k ? 'rgba(245,247,250,0.7)' : undefined} />
+      ))}
+    </>
+  );
+};
 
 export const Ad: React.FC<{ vertical: boolean }> = ({ vertical }) => {
   const t = useT();
@@ -127,14 +216,12 @@ export const Ad: React.FC<{ vertical: boolean }> = ({ vertical }) => {
   const { width: W, height: H } = useVideoConfig();
   const cx = W / 2;
   const cy = H / 2;
-  const big = vertical ? 96 : 118;
-  const head = vertical ? H * 0.2 : H * 0.17;
-  const ww = vertical ? W * 0.9 : W * 0.62; // main window width
-
-  // camera drift for the whole stage
+  const big = vertical ? 92 : 112;
+  const head = vertical ? H * 0.1 : H * 0.15;
+  const ww = vertical ? W * 0.92 : W * 0.6;
   const camRY = Math.sin(t * 0.5) * 2.5;
   const camRX = Math.cos(t * 0.4) * 1.5;
-
+  const C = 7; // Curie scene index
   return (
     <AbsoluteFill style={{ background: '#05070a', fontFamily }}>
       <Audio src={staticFile('mix.wav')} />
@@ -142,102 +229,49 @@ export const Ad: React.FC<{ vertical: boolean }> = ({ vertical }) => {
       <CameraMotionBlur shutterAngle={200} samples={5}>
         <AbsoluteFill style={{ perspective: vertical ? 1600 : 1900, perspectiveOrigin: '50% 45%' }}>
           <AbsoluteFill style={{ transformStyle: 'preserve-3d', transform: `rotateX(${camRX}deg) rotateY(${camRY}deg)` }}>
-            {/* 1 — a window rises out of the dark */}
-            {inScene(t, 0) && (() => {
-              const p = sp(0.35, 20, 0.9);
-              const whip = out(t, S[1], 0.32);
-              return (
-                <Win src="landing.png" title="labbridge — Experience practical science" w={ww} x={cx} y={cy + H * 0.08 + (1 - p) * H * 0.5}
-                  z={-600 * (1 - p) + whip * 1600} rx={22 * (1 - p) + 6} o={Math.min(1, p * 1.4)} />
-              );
-            })()}
-            {/* 2 — whip into the lab */}
-            {inScene(t, 1) && (() => {
-              const p = sp(S[1], 15, 0.6);
-              const whip = out(t, S[2], 0.3);
-              return (
-                <Win src="lab.png" title="LabBridge · Main lab" w={ww * 1.05} x={cx + (1 - p) * W * 0.8 - whip * W * 0.9} y={cy + H * 0.08}
-                  ry={-34 * (1 - p) - 6 + whip * 30} z={-200 * (1 - p)} o={p} />
-              );
-            })()}
-            {/* 3 — turn the tap, watch for the pink */}
-            {inScene(t, 2) && (() => {
-              const a = sp(S[2], 16);
-              const b = sp(6.2, 16);
-              const whip = out(t, S[3], 0.3);
-              const half = vertical ? W * 0.86 : W * 0.4;
-              return (
-                <>
-                  <Win src="tap.png" title="Burette tap" w={half} crop={{ x: 0.45, y: 0.55, zoom: 1.5 }}
-                    x={vertical ? cx : cx - W * 0.21 - (1 - a) * W * 0.6} y={vertical ? cy - H * 0.04 - (1 - a) * H * 0.4 : cy + H * 0.1}
-                    ry={vertical ? 0 : 16} rx={vertical ? 10 : 0} z={-whip * 900} o={a * (1 - whip)} />
-                  <Win src="pink.png" title="Conical flask" w={half} crop={{ x: 0.5, y: 0.62, zoom: 1.6 }} glow={PINK}
-                    x={vertical ? cx : cx + W * 0.21 + (1 - b) * W * 0.6} y={vertical ? cy + H * 0.27 + (1 - b) * H * 0.4 : cy + H * 0.1}
-                    ry={vertical ? 0 : -16} rx={vertical ? -10 : 0} z={-whip * 900 + (1 - b) * 200} o={b * (1 - whip)} />
-                </>
-              );
-            })()}
-            {/* 4 — read the scale: the lens is pulled out of the screen */}
-            {inScene(t, 3) && (() => {
-              const a = sp(S[3], 18);
-              const l = sp(8.05, 13, 0.6);
-              const whip = out(t, S[4], 0.3);
-              const lw = vertical ? W * 0.62 : W * 0.24;
-              return (
-                <>
-                  <Win src="read.png" title="Reading the burette" w={ww * 0.95} x={cx - (vertical ? 0 : W * 0.08)} y={cy + H * (vertical ? -0.02 : 0.09)}
-                    rx={8} ry={vertical ? 0 : 10} z={-300 + a * 200 - whip * 800} o={a * (1 - whip) * (1 - 0.45 * l)} />
-                  <Win src="read.png" title="Lens · eye level" w={lw} aspect={0.62} crop={{ x: 0.917, y: 0.6, zoom: 4.4 }} glow={AMBER}
-                    x={vertical ? cx : cx + W * 0.19} y={cy + H * (vertical ? 0.18 : 0.08) + (1 - l) * H * 0.3} z={(1 - l) * -500 + 120 - whip * 600}
-                    ry={vertical ? 0 : -14 * (1 - l) - 6} o={l * (1 - whip)} />
-                </>
-              );
-            })()}
-            {/* 5 — Dr. Curie guides */}
-            {inScene(t, 4) && (() => {
-              const a = sp(S[4], 18);
-              const c = sp(10.05, 15);
-              const whip = out(t, S[5], 0.3);
+            {SCENES.map((_, i) => <SceneWins key={i} i={i} vertical={vertical} />)}
+            {/* Dr. Curie guides */}
+            {inScene(t, C) && (() => {
+              const a = sp(S[C], 18);
+              const c = sp(S[C] + 0.5, 15);
+              const whip = out(t, S[C + 1], 0.3);
               const line = 'Titration today. Fill the burette through the funnel, then take the funnel out.';
-              const shown = line.slice(0, Math.max(0, Math.floor((t - 10.35) * 34)));
-              const cw = vertical ? W * 0.82 : W * 0.3;
+              const shown = line.slice(0, Math.max(0, Math.floor((t - S[C] - 0.8) * 30)));
+              const cw = vertical ? W * 0.84 : W * 0.3;
               return (
                 <>
-                  <Win src="bench.png" title="Chemistry bench" w={ww} x={cx - (vertical ? 0 : W * 0.1)} y={cy + H * (vertical ? -0.03 : 0.1)}
+                  <Win src="bench.png" title="Chemistry bench" w={ww} x={cx - (vertical ? 0 : W * 0.12)} y={cy + H * (vertical ? -0.06 : 0.1)}
                     rx={6} ry={vertical ? 0 : 12} z={-260 + a * 160 - whip * 900} o={a * (1 - whip)} glow={AMBER} />
-                  <div style={{ position: 'absolute', left: vertical ? cx - cw / 2 : cx + W * 0.08, top: cy + H * (vertical ? 0.17 : 0.02), width: cw, transform: `translateZ(${140 - (1 - c) * 400 - whip * 600}px) rotateY(${vertical ? 0 : -10}deg) translateY(${(1 - c) * 120}px)`, opacity: c * (1 - whip), padding: cw * 0.06, borderRadius: 22, background: 'rgba(14,18,24,0.62)', border: '1px solid rgba(255,255,255,0.16)', boxShadow: `0 30px 80px rgba(0,0,0,0.6), 0 0 60px ${AMBER}33, inset 0 1px 0 rgba(255,255,255,0.2)`, backdropFilter: 'blur(20px)' }}>
+                  <div style={{ position: 'absolute', left: vertical ? cx - cw / 2 : cx + W * 0.1, top: cy + H * (vertical ? 0.14 : 0.0), width: cw, transform: `translateZ(${140 - (1 - c) * 400 - whip * 600}px) rotateY(${vertical ? 0 : -10}deg) translateY(${(1 - c) * 120}px)`, opacity: c * (1 - whip), padding: cw * 0.06, borderRadius: 22, background: 'rgba(14,18,24,0.66)', border: '1px solid rgba(255,255,255,0.16)', boxShadow: `0 30px 80px rgba(0,0,0,0.6), 0 0 60px ${AMBER}33, inset 0 1px 0 rgba(255,255,255,0.2)`, backdropFilter: 'blur(20px)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-                      <div style={{ width: cw * 0.11, height: cw * 0.11, borderRadius: '50%', overflow: 'hidden', border: `2px solid ${TEAL}` }}>
-                        <Img src={staticFile('read.png')} style={{ width: cw * 0.11 * 7, marginLeft: -cw * 0.11 * 3.95, marginTop: -cw * 0.11 * 1.55 }} />
-                      </div>
+                      <div style={{ width: cw * 0.12, height: cw * 0.12, borderRadius: '50%', background: `linear-gradient(145deg, #2dd4bf, ${TEAL})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: cw * 0.05, color: '#04201d' }}>DC</div>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: cw * 0.052, color: '#fff' }}>Dr. Curie</div>
                         <div style={{ fontWeight: 600, fontSize: cw * 0.036, color: TEAL, letterSpacing: 1.2 }}>LAB MANAGER</div>
                       </div>
                     </div>
-                    <div style={{ fontWeight: 500, fontSize: cw * 0.054, lineHeight: 1.35, color: 'rgba(255,255,255,0.92)', minHeight: cw * 0.22 }}>
+                    <div style={{ fontWeight: 500, fontSize: cw * 0.054, lineHeight: 1.35, color: 'rgba(255,255,255,0.92)', minHeight: cw * 0.3 }}>
                       {shown}<span style={{ opacity: Math.sin(t * 12) > 0 ? 1 : 0, color: TEAL }}>▍</span>
                     </div>
                   </div>
-                  <Pill text="NEXT · FUNNEL" at={11.0} x={vertical ? cx : cx - W * 0.12} y={cy + H * (vertical ? -0.06 : 0.0)} size={vertical ? 30 : 26} />
+                  <Pill text="NEXT · FUNNEL" at={S[C] + 1.6} x={vertical ? cx : cx - W * 0.14} y={cy + H * (vertical ? -0.1 : 0.0)} size={vertical ? 30 : 26} />
                 </>
               );
             })()}
-            {/* 6 — nine practicals, real marks: a curved wall of cards */}
-            {inScene(t, 5) && (() => {
-              const whip = out(t, S[6], 0.32);
-              const cols = vertical ? 3 : 3;
+            {/* nine practicals, real marks */}
+            {inScene(t, 8) && (() => {
+              const whip = out(t, S[9], 0.32);
               const cw = vertical ? W * 0.29 : W * 0.17;
               const chH = cw * 0.62;
-              const lock = sp(13.3, 12);
+              const lock = sp(S[8] + 1.2, 12);
               return (
                 <>
                   {PRACTICALS.map(([sub, name, col], i) => {
-                    const p = sp(12.4 + i * 0.1, 15, 0.6);
-                    const r = Math.floor(i / cols);
-                    const k = (i % cols) - 1;
+                    const p = sp(S[8] + 0.25 + i * 0.1, 15, 0.6);
+                    const r = Math.floor(i / 3);
+                    const k = (i % 3) - 1;
                     const x = vertical ? cx + k * (cw + 16) : cx - W * 0.17 + k * (cw + 22);
-                    const y = (vertical ? cy - H * 0.1 : cy + H * 0.07) + (r - 1) * (chH + 18);
+                    const y = (vertical ? cy - H * 0.12 : cy + H * 0.07) + (r - 1) * (chH + 18);
                     return (
                       <div key={i} style={{ position: 'absolute', left: x - cw / 2, top: y - chH / 2, width: cw, height: chH, transform: `translateZ(${-Math.abs(k) * 90 + (1 - p) * -900 - whip * 1200}px) rotateY(${-k * 14 + (1 - p) * 60}deg)`, opacity: p * (1 - whip), borderRadius: 18, padding: cw * 0.08, background: 'rgba(16,20,26,0.6)', border: `1px solid ${col}55`, boxShadow: `0 20px 50px rgba(0,0,0,0.55), 0 0 ${30 + lock * 20}px ${col}${lock > 0.5 ? '44' : '22'}, inset 0 1px 0 rgba(255,255,255,0.16)`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                         <div style={{ fontSize: cw * 0.07, fontWeight: 700, letterSpacing: 1.6, color: col }}>{sub.toUpperCase()}</div>
@@ -246,10 +280,10 @@ export const Ad: React.FC<{ vertical: boolean }> = ({ vertical }) => {
                     );
                   })}
                   {(() => {
-                    const p = sp(13.3, 15);
+                    const p = sp(S[8] + 1.2, 15);
                     return (
                       <Win src="sheet.png" title="Lab sheet · marked" w={vertical ? W * 0.84 : W * 0.3} aspect={1.25} crop={{ x: 0.375, y: 0.6, zoom: 2.4 }} glow={AMBER}
-                        x={vertical ? cx : cx + W * 0.3} y={vertical ? cy + H * 0.3 + (1 - p) * H * 0.3 : cy + H * 0.08} z={(1 - p) * -700 + 60 - whip * 900}
+                        x={vertical ? cx : cx + W * 0.3} y={vertical ? cy + H * 0.27 + (1 - p) * H * 0.3 : cy + H * 0.08} z={(1 - p) * -700 + 60 - whip * 900}
                         ry={vertical ? 0 : -12} o={p * (1 - whip)} />
                     );
                   })()}
@@ -260,20 +294,15 @@ export const Ad: React.FC<{ vertical: boolean }> = ({ vertical }) => {
         </AbsoluteFill>
       </CameraMotionBlur>
 
-      {/* kinetic type layer */}
-      <Kinetic text="A real science lab." at={0.95} end={S[1]} size={big} x={cx} y={head} accent={['lab']} />
-      <Kinetic text="In your browser." at={S[1] + 0.2} end={S[2]} size={big} x={cx} y={head} accent={['browser']} />
-      <Kinetic text="Turn the tap." at={S[2] + 0.2} end={S[3]} size={big * 0.86} x={cx} y={head - big * 0.5} />
-      <Kinetic text="Watch for the pink." at={6.25} end={S[3]} size={big * 0.86} x={cx} y={head + big * 0.5} accent={['pink']} />
-      <Kinetic text="Read the scale yourself." at={S[3] + 0.2} end={S[4]} size={big * 0.86} x={cx} y={head} accent={['yourself']} />
-      <Kinetic text="Dr. Curie guides every step." at={S[4] + 0.2} end={S[5]} size={big * 0.8} x={cx} y={head} accent={['Curie']} />
-      <Kinetic text="Nine practicals. Real marks." at={S[5] + 0.2} end={S[6]} size={big * 0.8} x={cx} y={vertical ? H * 0.13 : head} accent={['marks']} />
+      {SCENES.map((_, i) => <SceneType key={i} i={i} vertical={vertical} />)}
+      <Kinetic text="Dr. Curie guides every step." at={S[C] + 0.25} end={S[C + 1]} size={big * 0.85} x={cx} y={head} accent={['Curie']} />
+      <Kinetic text="Nine practicals. Real marks." at={S[8] + 0.25} end={S[9]} size={big * 0.85} x={cx} y={vertical ? H * 0.1 : head} accent={['marks']} />
 
-      {/* 7 — logo */}
-      {t >= S[6] - 0.05 && t < S[7] + 0.4 && (() => {
-        const p = sp(S[6] + 0.05, 13, 0.7);
-        const w = sp(S[6] + 0.25, 16);
-        const g = out(t, S[7], 0.3);
+      {/* logo */}
+      {t >= S[9] - 0.05 && t < S[10] + 0.4 && (() => {
+        const p = sp(S[9] + 0.05, 13, 0.7);
+        const w = sp(S[9] + 0.25, 16);
+        const g = out(t, S[10], 0.3);
         const ms = vertical ? 150 : 132;
         return (
           <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', opacity: 1 - g, filter: `blur(${g * 16}px)` }}>
@@ -283,17 +312,17 @@ export const Ad: React.FC<{ vertical: boolean }> = ({ vertical }) => {
                 Lab<span style={{ color: TEAL }}>Bridge</span>
               </div>
             </div>
-            <div style={{ marginTop: ms * 0.4, fontSize: ms * 0.24, fontWeight: 500, color: 'rgba(255,255,255,0.7)', opacity: sp(S[6] + 0.7), letterSpacing: 0.3, textAlign: 'center' }}>
-              Experience practical science. Anywhere.
+            <div style={{ marginTop: ms * 0.4, fontSize: ms * 0.24, fontWeight: 500, color: 'rgba(255,255,255,0.7)', opacity: sp(S[9] + 0.9), letterSpacing: 0.3, textAlign: 'center' }}>
+              Practical science. Anywhere.
             </div>
           </AbsoluteFill>
         );
       })()}
 
-      {/* 8 — end card */}
-      {t >= S[7] - 0.05 && (() => {
-        const a = sp(S[7] + 0.05, 16);
-        const b = sp(S[7] + 0.3, 16);
+      {/* end card */}
+      {t >= S[10] - 0.05 && (() => {
+        const a = sp(S[10] + 0.05, 16);
+        const b = sp(S[10] + 0.3, 16);
         return (
           <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', gap: 18 }}>
             <div style={{ fontSize: vertical ? 34 : 30, fontWeight: 500, letterSpacing: 6, color: 'rgba(255,255,255,0.55)', opacity: a, transform: `translateY(${(1 - a) * 20}px)` }}>MADE WITH</div>
@@ -301,7 +330,7 @@ export const Ad: React.FC<{ vertical: boolean }> = ({ vertical }) => {
               <Mark size={vertical ? 84 : 72} />
               <div style={{ fontSize: vertical ? 78 : 68, fontWeight: 800, color: '#fff', letterSpacing: -2 }}>LabBridge</div>
             </div>
-            <div style={{ marginTop: 10, fontSize: vertical ? 30 : 26, color: TEAL, fontWeight: 600, opacity: sp(S[7] + 0.6) }}>Free in your browser. No lab needed.</div>
+            <div style={{ marginTop: 10, fontSize: vertical ? 30 : 26, color: TEAL, fontWeight: 600, opacity: sp(S[10] + 0.6) }}>Free in your browser. No lab needed.</div>
           </AbsoluteFill>
         );
       })()}
