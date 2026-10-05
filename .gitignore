@@ -7,3 +7,5 @@ coverage/
 !.env.example
 tsconfig.tsbuildinfo
 brag-output/work/
+ad/node_modules/
+ad/out/
