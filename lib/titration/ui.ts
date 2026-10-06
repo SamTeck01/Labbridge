@@ -88,6 +88,8 @@ export interface TitrationControls {
   eyeBy(m: number): void;
   /** Move what is held to a named place (used by Dr. Curie and tests). */
   carryTo(place: string): void;
+  /** True once what's held has reached where it was sent (or nothing is held). */
+  settled(): boolean;
 }
 
 let controls: TitrationControls | null = null;

@@ -45,6 +45,7 @@ import BenchHandHUD from '@/components/BenchHandHUD';
 import ControlsHelp from '@/components/ControlsHelp';
 import ActionPrompts from '@/components/ActionPrompts';
 import { titrationPrompts } from '@/components/titration/TitrationHUD';
+import TitrationActions from '@/components/titration/TitrationActions';
 import { useBenchUI } from '@/lib/benchUI';
 import { useFreePointer } from '@/lib/useFreePointer';
 import { titration } from '@/lib/titration/sim';
@@ -1316,7 +1317,9 @@ export default function Lab3DScene({
       if (performance.now() < suppressClickUntil) return; // end of a drag, or a touch already handled
       const atWorkbench = isSeatedRef.current && !!seatedStationRef.current;
       // Desktop: aim with the mouse everywhere, at the benches too (a crosshair, like any first-person sim)
-      if (!isTouch && document.pointerLockElement !== renderer.domElement) {
+      // At the chemistry bench the steps are buttons: keep the mouse free to press them
+      const buttonBench = atWorkbench && seatedStationRef.current === 'chemistry';
+      if (!isTouch && !buttonBench && document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock();
         if (atWorkbench) return; // the click that takes the mouse doesn't also act
       }
@@ -1868,7 +1871,7 @@ export default function Lab3DScene({
 
       {showHelp && <ControlsHelp onClose={() => setShowHelp(false)} />}
       {/* At a bench on a laptop, before the mouse is captured: how to start aiming */}
-      {atWorkbench && !isAiming && !isTouch && !isSheetOpen && !isViewingEyepieces && !isReading && (
+      {atWorkbench && seatedStation !== 'chemistry' && !isAiming && !isTouch && !isSheetOpen && !isViewingEyepieces && !isReading && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-10 z-30 pointer-events-none px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-200">
           Click to aim with the mouse · <b>H</b> controls
         </div>
@@ -2022,7 +2025,10 @@ export default function Lab3DScene({
       {/* Seated Station Direct 3D Equipment Toolbar */}
       {/* At the workbench the hands do the work: just a way to step back */}
       {atWorkbench && seatedStation === 'chemistry' && (
-        <TitrationHUD isTouch={isTouch} aiming={isAiming} onOpenSheet={() => setIsSheetOpen(true)} />
+        <>
+          <TitrationHUD isTouch={isTouch} aiming onOpenSheet={() => setIsSheetOpen(true)} />
+          {!isSheetOpen && !isReading && <TitrationActions onOpenSheet={() => setIsSheetOpen(true)} />}
+        </>
       )}
       {isSheetOpen && seatedStation === 'chemistry' && <LabSheet onClose={() => setIsSheetOpen(false)} />}
       {atWorkbench && seatedStation !== 'chemistry' && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} aiming={isAiming} station={seatedStation} />}

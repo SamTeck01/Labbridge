@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+/* Glass action arc: buttons glide in from the right edge one after another; the next step breathes */
+@keyframes arc-in {
+  from { opacity: 0; transform: translate(40px, -50%) scale(0.8); filter: blur(6px); }
+  to { opacity: 1; transform: translate(0, -50%) scale(1); filter: blur(0); }
+}
+.arc-in { animation: arc-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes arc-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.22); opacity: 0; }
+}
+.arc-breathe { animation: arc-breathe 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .arc-in, .arc-breathe { animation: none; }
+}
