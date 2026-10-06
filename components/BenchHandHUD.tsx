@@ -68,7 +68,7 @@ function RateLever() {
   );
 }
 
-export default function BenchHandHUD({ isTouch, station }: { isTouch: boolean; station: string }) {
+export default function BenchHandHUD({ isTouch, station, aiming = false }: { isTouch: boolean; station: string; aiming?: boolean }) {
   const raw = useBenchUI((s) => s);
   const ui = raw.station === station ? raw : { station, control: null, hints: ['Aim and click to pick up or use things', 'Hold a knob and scroll to turn it', 'X step back', 'H controls'] };
   const c = ui.control;
@@ -90,7 +90,7 @@ export default function BenchHandHUD({ isTouch, station }: { isTouch: boolean; s
         </div>
       </div>
       {c && ui.station === 'biology' && <EyepiecePiP />}
-      {!isTouch && ui.hints.length > 0 && (
+      {!isTouch && !aiming && ui.hints.length > 0 && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-wrap justify-center gap-x-2 max-w-[min(56vw,720px)] px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-300">
           {ui.hints.map((t, i) => (
             <span key={t}>

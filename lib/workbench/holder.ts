@@ -345,6 +345,21 @@ export class Holder {
     this.hooks.onHeld?.(it, this.over, dt);
   }
 
+  /** The actions that apply right now, for the crosshair prompt (at most four, most useful first). */
+  prompts(): { k: string; v: string }[] {
+    const it = this.held;
+    if (!it) return [];
+    const z = this.over;
+    const out: { k: string; v: string }[] = [];
+    if (it.lip) out.push({ k: 'Hold R', v: z ? `Pour into the ${z.name}` : 'Pour' });
+    if (it.useLabel) out.push({ k: 'E', v: z ? `${it.useLabel} · ${z.name}` : it.useLabel });
+    if (z && z.accepts(it)) out.push({ k: 'Click', v: `Put in the ${z.name}` });
+    else if (it.freePlace) out.push({ k: 'Click', v: 'Put it down here' });
+    out.push({ k: 'Q', v: 'Put it back' });
+    if (out.length < 4) out.push({ k: 'Scroll', v: 'Lift / lower' });
+    return out;
+  }
+
   hints(): string[] {
     const it = this.held;
     if (!it) return [];

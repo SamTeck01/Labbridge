@@ -42,6 +42,21 @@ function flowWord(v: number) {
   return 'Running';
 }
 
+/** What you can do right now, for the crosshair prompt. */
+export function titrationPrompts(h: HandsUI): { k: string; v: string }[] {
+  if (h.reading) return [{ k: 'Scroll', v: 'Raise / lower your eye' }, { k: 'Q', v: 'Done reading' }];
+  if (h.onTap) return [{ k: 'Scroll', v: 'Open / close the tap' }, { k: 'W', v: 'Swirl the flask' }, { k: 'Space', v: 'Read the burette' }, { k: 'Q', v: 'Let go' }];
+  if (h.held) {
+    const k = h.held.kind;
+    if (k === 'pipette') return [{ k: '↑ ↓', v: 'Draw up / let out' }, { k: 'Scroll', v: 'Lift / dip' }, { k: 'Space', v: 'Read the line' }, { k: 'Q', v: 'Put it down' }];
+    if (k === 'dropper') return [{ k: 'E', v: 'Squeeze one drop' }, { k: 'Click', v: 'Put it down' }];
+    if (k === 'funnel') return [{ k: 'Scroll', v: 'Lift / lower' }, { k: 'Click', v: 'Put it down' }];
+    if (k === 'flask') return [{ k: 'Circle mouse', v: 'Swirl' }, { k: 'Click', v: 'Put down (tile = under the burette)' }];
+    return [{ k: 'Hold R', v: 'Pour' }, { k: 'Scroll', v: 'Lift / lower' }, { k: 'Click', v: 'Put it down' }];
+  }
+  return [];
+}
+
 function hints(h: HandsUI): string[] {
   if (h.reading) return ['Scroll / ↑ ↓ eye height', 'Q done'];
   if (h.onTap) return ['Scroll open / close', 'Shift fine', 'W swirl', 'Space read', 'Q let go'];
@@ -150,7 +165,7 @@ function HoldBtn({ children, input, value }: { children: React.ReactNode; input:
   );
 }
 
-export default function TitrationHUD({ isTouch, onOpenSheet }: { isTouch: boolean; onOpenSheet: () => void }) {
+export default function TitrationHUD({ isTouch, onOpenSheet, aiming = false }: { isTouch: boolean; onOpenSheet: () => void; aiming?: boolean }) {
   const h = useHandsUI((s) => s);
   const valve = useTitration((s) => s.valve);
   const swirl = useTitration((s) => s.swirl);
@@ -182,7 +197,7 @@ export default function TitrationHUD({ isTouch, onOpenSheet }: { isTouch: boolea
       </button>
 
       {/* Desktop: the keys for right now */}
-      {!isTouch && (
+      {!isTouch && !aiming && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-wrap justify-center gap-x-2 gap-y-1 max-w-[min(56vw,720px)] px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-300">
           {hints(h).map((t, i) => (
             <span key={t}>

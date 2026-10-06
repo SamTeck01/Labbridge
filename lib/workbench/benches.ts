@@ -310,6 +310,11 @@ export abstract class KnobBench extends BenchBase implements DirectInput {
           ? { id: c.id, name: this.knobs[c.id].name, side: c.side, value: v.value, detail: v.detail }
           : null,
       hints: held ? this.holder!.hints() : c ? ['Scroll or drag up/down to turn', 'Shift fine', '↑ ↓ keep turning', 'Q let go'] : this.idleHints,
+      prompts: held
+        ? this.holder!.prompts()
+        : c
+          ? [{ k: 'Scroll', v: `Turn the ${this.knobs[c.id].name.toLowerCase()}` }, { k: 'Shift', v: 'Fine turning' }, { k: 'Q', v: 'Let go' }]
+          : [],
     });
     benchControls.register({ setRate: (r) => (this.rate = r), letGo: () => this.release() });
   }

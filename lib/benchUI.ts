@@ -11,9 +11,11 @@ export interface BenchHandUI {
   /** The control a hand is on (a knob, a turret, a slider). */
   control: null | { id: string; name: string; side: 'left' | 'right'; value: number; detail: string | null };
   hints: string[];
+  /** What you can do right now, shown at the crosshair: a key and a verb ("Hold R" · "Pour into the flask"). */
+  prompts?: { k: string; v: string }[];
 }
 
-let state: BenchHandUI = { station: null, control: null, hints: [] };
+let state: BenchHandUI = { station: null, control: null, hints: [], prompts: [] };
 const listeners = new Set<() => void>();
 
 export const benchUI = {
