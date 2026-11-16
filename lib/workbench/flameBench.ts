@@ -6,8 +6,7 @@ import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
 import { isMobileOrTouchDevice } from '@/lib/orientation';
 import { FirstPersonHands } from '@/lib/workbench/hands';
-import { KnobBench, type Focus, type KnobSpec } from '@/lib/workbench/benches';
-import { Holder, type HoldItem } from '@/lib/workbench/holder';
+import { BenchBase, type Focus } from '@/lib/workbench/benches';
 
 /**
  * Flame tests in the fume hood. The left hand works the gas tap, air collar and lighter; the right
@@ -33,7 +32,7 @@ function flameMaterial(color: THREE.ColorRepresentation, opacity: number) {
   });
 }
 
-export class FlameBench extends KnobBench {
+export class FlameBench extends BenchBase {
   protected ids = ['hood_sash', 'flame_gas_tap', 'flame_air_collar', 'flame_lighter', 'flame_loop', 'flame_acid', 'flame_zone', ...Object.keys(SALT_IDS)];
   private holding = false;
   private loopHome = new THREE.Matrix4();
@@ -51,42 +50,6 @@ export class FlameBench extends KnobBench {
   private tapAngle = 0;
   private sash: THREE.Object3D | null = null;
   private sashBaseY: number | null = null;
-  private gas = 0;
-  private air = 0;
-  protected station = 'hood';
-  protected idleHints = ['Pick up the wire loop: dip it in acid, a salt, then hold it in the flame', 'Hold the gas tap or air collar and turn', 'Click the lighter to light'];
-  protected knobs: Record<string, KnobSpec> = {
-    flame_gas_tap: { name: 'Gas tap', side: 'left' },
-    flame_air_collar: { name: 'Air collar', side: 'left' },
-  };
-  protected knobValue(id: string) {
-    return id === 'flame_gas_tap'
-      ? { value: this.gas, detail: this.gas <= 0.02 ? 'Off' : this.f().lit ? 'Flame height' : 'Gas on, not lit' }
-      : { value: this.air, detail: this.air > 0.5 ? 'Air hole open: blue flame' : 'Air hole closed: yellow flame' };
-  }
-  protected turnKnob(id: string, notches: number, fine: number) {
-    if (id === 'flame_gas_tap') {
-      const before = this.gas;
-      this.gas = THREE.MathUtils.clamp(this.gas + notches * 0.08 * fine, 0, 1);
-      this.tapAngle = this.gas * (Math.PI / 2);
-      if (before <= 0.02 && this.gas > 0.02) {
-        labStore.update('flame', { gasOn: true });
-        soundFx.playClick();
-      } else if (before > 0.02 && this.gas <= 0.02) {
-        labStore.update('flame', { gasOn: false, lit: false });
-        this.warnedGas = false;
-        soundFx.playClick();
-      }
-    } else {
-      const was = this.air > 0.5;
-      this.air = THREE.MathUtils.clamp(this.air + notches * 0.1 * fine, 0, 1);
-      this.collarAngle = this.air * 1.2;
-      if (was !== this.air > 0.5) {
-        labStore.update('flame', { airOpen: this.air > 0.5 });
-        soundFx.playKnobTick();
-      }
-    }
-  }
 
   constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus) {
     super(scene, rig, hands, focus);
@@ -121,95 +84,6 @@ export class FlameBench extends KnobBench {
       loop.updateMatrixWorld(true);
       this.loopHome.copy(loop.matrixWorld);
       this.loopParent = loop.parent;
-    }
-    this.setupHands(base);
-  }
-
-  // ---------------- Hands-on: carry the loop and dip it yourself ----------------
-  private loopItem: HoldItem | null = null;
-  private dwell = { zone: '', t: 0, done: false };
-
-  private setupHands(flameAt: THREE.Vector3) {
-    const loop = this.node('flame_loop');
-    const tipNode = this.node('anchor_loop_tip');
-    if (!loop || !tipNode) return;
-    const benchY = new THREE.Box3().setFromObject(this.rig).min.y;
-    this.holder = new Holder(this.scene, () => this.camera, this.hands, benchY, flameAt.clone(), {
-      onHeld: (_it, over, dt) => this.dip(over?.id ?? '', dt),
-      onPick: () => (this.holding = true),
-      onPutDown: () => {
-        this.holding = false;
-        this.dwell = { zone: '', t: 0, done: false };
-      },
-    });
-    const tipLocal = loop.worldToLocal(tipNode.getWorldPosition(new THREE.Vector3()));
-    this.loopItem = this.holder.add({
-      id: 'loop',
-      name: 'Wire loop',
-      obj: loop,
-      grip: 0.01,
-      bottom: 0.004,
-      radius: 0.01,
-      tip: tipLocal,
-      carryQuat: loop.getWorldQuaternion(new THREE.Quaternion()),
-    });
-    const at = (n: string) => () => (this.pos(n) ?? flameAt).clone();
-    this.holder.zone({ id: 'acid', name: 'acid', pos: at('anchor_acid'), r: 0.02, accepts: () => false });
-    for (const [id, key] of Object.entries(SALT_IDS)) {
-      this.holder.zone({ id: `salt_${key}`, name: `${SALTS[key].name} sample`, pos: at(`anchor_salt_${key}`), r: 0.012, accepts: () => false });
-      void id;
-    }
-    this.holder.zone({ id: 'flame', name: 'flame', pos: () => flameAt.clone().add(new THREE.Vector3(0.011, 0.045, 0)), r: 0.025, accepts: () => false });
-  }
-
-  /** Clicking the acid, a salt or the flame with nothing in hand picks up the loop to take there. */
-  protected spawnPick(id: string) {
-    if (!this.holder || !this.loopItem) return false;
-    if (id === 'flame_acid' || id === 'flame_zone' || id in SALT_IDS) {
-      if (id === 'flame_zone' && !this.f().lit) return false;
-      curie.say('Take the loop there yourself: carry it over and lower it in.');
-      return this.holder.pick(this.loopItem);
-    }
-    return false;
-  }
-
-  /** What happens while the loop's tip stays in something. */
-  private dip(zone: string, dt: number) {
-    if (zone !== this.dwell.zone) this.dwell = { zone, t: 0, done: false };
-    else this.dwell.t += dt;
-    const d = this.dwell;
-    if (!zone || d.done) return;
-    const f = this.f();
-    if (zone === 'acid' && d.t > 0.4) {
-      d.done = true;
-      labStore.update('flame', { loop: 'acid' });
-      soundFx.playDropLiquid();
-    } else if (zone.startsWith('salt_') && d.t > 0.4) {
-      d.done = true;
-      const key = zone.slice(5) as SaltKey;
-      if (f.loop !== 'clean') experiments.count('contaminated');
-      labStore.update('flame', { loop: f.loop === 'clean' ? key : 'dirty' });
-      soundFx.playGlassSlide();
-    } else if (zone === 'flame' && f.lit && d.t > 0.6) {
-      d.done = true;
-      const loopState = f.loop;
-      if (loopState in SALTS) {
-        const salt = SALTS[loopState as SaltKey];
-        this.saltColour.set(salt.hex);
-        this.saltStrength = 1;
-        soundFx.playSuccessChime();
-        if (!f.airOpen) experiments.count('luminousTest');
-        experiments.addReading({ label: `${salt.name} flame`, value: salt.nm, unit: `nm · ${salt.colour}` });
-        curie.say(`${salt.name}: a ${salt.colour} flame (${salt.nm} nm).`);
-        setTimeout(() => labStore.update('flame', { loop: 'dirty' }), 2200);
-      } else if (loopState === 'acid') {
-        this.saltColour.set('#ffb070');
-        this.saltStrength = 0.35;
-        setTimeout(() => labStore.update('flame', { loop: 'clean' }), 1600);
-      } else if (loopState === 'dirty') {
-        this.saltColour.set('#ff9a50');
-        this.saltStrength = 0.5;
-      }
     }
   }
 
@@ -415,15 +289,7 @@ export class FlameBench extends KnobBench {
 
   update(delta: number) {
     this.t += delta;
-    this.updateKnobHand(delta, this.tapAngle * 0.3);
     const s = this.f();
-    // Keep the knobs in step with changes made elsewhere (Dr. Curie, a reset)
-    if (!s.gasOn && this.gas > 0.02 && this.control?.id !== 'flame_gas_tap') this.gas = 0;
-    if (s.gasOn && this.gas <= 0.02) this.gas = 0.6;
-    if (s.airOpen !== this.air > 0.5 && this.control?.id !== 'flame_air_collar') this.air = s.airOpen ? 1 : 0;
-    this.tapAngle = this.gas * (Math.PI / 2);
-    this.collarAngle = this.air * 1.2;
-    const size = 0.55 + this.gas * 0.6;
     // Sash slides between raised (open, +0.5 m) and lowered to the working height
     const sash = this.findSash();
     if (sash) {
@@ -461,8 +327,8 @@ export class FlameBench extends KnobBench {
     const innerMat = this.inner.material as THREE.MeshBasicMaterial;
     if (s.airOpen) {
       // Hot, roaring, non-luminous flame: pale blue outer cone and a bright inner cone
-      this.outer.scale.set(0.014, 0.085 * size * flick * (1 + this.saltStrength * 0.25), 0.014);
-      this.inner.scale.set(0.0085, 0.032 * size * (1 + (flick - 1) * 0.5), 0.0085);
+      this.outer.scale.set(0.014, 0.085 * flick * (1 + this.saltStrength * 0.25), 0.014);
+      this.inner.scale.set(0.0085, 0.032 * (1 + (flick - 1) * 0.5), 0.0085);
       outerMat.color.set('#4a6cff').lerp(this.saltColour, this.saltStrength);
       outerMat.opacity = 0.32 + this.saltStrength * 0.5;
       innerMat.color.set('#8fd3ff');
@@ -470,7 +336,7 @@ export class FlameBench extends KnobBench {
       this.flame.rotation.z = 0;
     } else {
       // Luminous yellow flame: taller, lazier, swaying
-      this.outer.scale.set(0.02, 0.13 * size * flick, 0.02);
+      this.outer.scale.set(0.02, 0.13 * flick, 0.02);
       this.inner.scale.set(0.009, 0.04, 0.009);
       outerMat.color.set('#ff9d2e').lerp(this.saltColour, this.saltStrength * 0.5);
       outerMat.opacity = 0.8;

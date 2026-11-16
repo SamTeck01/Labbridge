@@ -1,7 +1,6 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { titration } from '@/lib/titration/sim';
 import { labStore, describeLabState, titrationPH, type Station, type Objective } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
 import { experiments, getExperiment } from '@/lib/experiments';
@@ -97,12 +96,11 @@ function operate({ name, args }: Action) {
       }
       break;
     case 'set_burette':
-      // Same tap the student turns: open = a steady run, closed = shut
-      titration.setValve(args.open ? 0.45 : 0);
+      labStore.update('chemistry', { buretteOpen: !!args.open });
       soundFx.playClick();
       break;
     case 'add_indicator':
-      for (let i = 0; i < 3; i++) titration.indicatorDrop('flask');
+      labStore.update('chemistry', { indicatorAdded: true });
       soundFx.playDropLiquid();
       break;
     case 'set_stirrer':
@@ -238,7 +236,7 @@ export function startCurieWatch() {
     /* ignore unreadable chat history */
   }
   // Dev hook for driving Curie from the console / automated tests without an API key.
-  if ((process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_TEST_HOOKS === '1')) Object.assign(window, { __curie: { curie, applyAction, labStore, experiments } });
+  if (process.env.NODE_ENV !== 'production') Object.assign(window, { __curie: { curie, applyAction, labStore, experiments } });
   const fired = new Set<string>();
   let prev = labStore.get();
 
@@ -300,4 +298,13 @@ export function startCurieWatch() {
     const reading = Math.round((r.massOnPan - r.tareOffset + drift) * 10000) / 10000;
     if (reading !== r.balanceWeight) labStore.update('research', { balanceWeight: reading });
   }, 400);
+
+  // Burette dispensing simulation runs here so it's independent of rendering.
+  setInterval(() => {
+    const c = labStore.get().chemistry;
+    if (!c.buretteOpen || c.buretteML <= 0) return;
+    const step = Math.min(0.1, c.buretteML);
+    const dispensedML = Math.round((c.dispensedML + step) * 100) / 100;
+    labStore.update('chemistry', { dispensedML, buretteML: c.buretteML - step, phValue: titrationPH(dispensedML, c.flaskAcidML) });
+  }, 200);
 }
