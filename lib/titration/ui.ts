@@ -101,4 +101,4 @@ export const titrationControls = {
 };
 
 /** Clicking a piece of equipment plays its whole step (set by lib/titration/actions). */
-export const clickStep: { run: ((id: string) => boolean) | null } = { run: null };
+export const clickStep: { run: ((id: string) => boolean) | null; busy: (() => boolean) | null } = { run: null, busy: null };

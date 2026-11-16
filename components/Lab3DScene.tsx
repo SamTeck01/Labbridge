@@ -45,11 +45,11 @@ import BenchHandHUD from '@/components/BenchHandHUD';
 import ControlsHelp from '@/components/ControlsHelp';
 import ActionPrompts from '@/components/ActionPrompts';
 import { titrationPrompts } from '@/components/titration/TitrationHUD';
-import TitrationActions from '@/components/titration/TitrationActions';
+import '@/lib/titration/actions'; // clicking equipment plays its step
 import { useBenchUI } from '@/lib/benchUI';
 import { useFreePointer } from '@/lib/useFreePointer';
 import { titration } from '@/lib/titration/sim';
-import { titrationControls, useHandsUI } from '@/lib/titration/ui';
+import { titrationControls, useHandsUI, clickStep } from '@/lib/titration/ui';
 import LabSheet from '@/components/titration/LabSheet';
 import LabTutorial from '@/components/LabTutorial';
 import MiniMapRadar from '@/components/MiniMapRadar';
@@ -1293,7 +1293,7 @@ export default function Lab3DScene({
       const tb = chemBench();
       const heldAtPress = !!tb?.isHolding;
       // On a desktop the first click at a bench only captures the mouse for aiming
-      const capturing = !isTouch && !locked();
+      const capturing = !isTouch && !locked() && seatedStationRef.current !== 'chemistry'; // chemistry: the mouse stays free, clicks act
       const bench = !!tb && !capturing && tb.pointerDown(aim(e), e.button);
       mouseDown = { x: e.clientX, y: e.clientY, dragged: false, bench, heldAtPress };
     };
@@ -1301,7 +1301,7 @@ export default function Lab3DScene({
       const tb = chemBench();
       tb?.pointerUp(e.button);
       // Holding something: a click (not a drag to look around) puts it down there
-      if (tb && mouseDown?.bench && mouseDown.heldAtPress && !mouseDown.dragged && e.button === 0) tb.release();
+      if (tb && mouseDown?.bench && mouseDown.heldAtPress && !mouseDown.dragged && e.button === 0 && !clickStep.busy?.()) tb.release();
       if (mouseDown?.dragged || mouseDown?.bench) suppressClickUntil = performance.now() + 50;
       mouseDown = null;
     };
@@ -2027,7 +2027,6 @@ export default function Lab3DScene({
       {atWorkbench && seatedStation === 'chemistry' && (
         <>
           <TitrationHUD isTouch={isTouch} aiming onOpenSheet={() => setIsSheetOpen(true)} />
-          {!isSheetOpen && !isReading && <TitrationActions onOpenSheet={() => setIsSheetOpen(true)} />}
         </>
       )}
       {isSheetOpen && seatedStation === 'chemistry' && <LabSheet onClose={() => setIsSheetOpen(false)} />}

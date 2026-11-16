@@ -229,6 +229,7 @@ const byItem: Record<string, ActionId> = {
   chem_dropper: 'indicator',
   chem_flask: 'tile',
 };
+clickStep.busy = () => !!running;
 clickStep.run = (id) => {
   if (running) return true; // a step is playing: ignore clicks until it's done
   if (id === 'chem_stopcock') {
