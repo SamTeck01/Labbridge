@@ -217,6 +217,9 @@ export async function runAction(id: ActionId, openSheet?: () => void) {
     }
   } finally {
     setRunning(null);
+    const next = pending;
+    pending = null;
+    if (next) setTimeout(() => clickStep.run?.(next), 300);
   }
 }
 
@@ -229,9 +232,13 @@ const byItem: Record<string, ActionId> = {
   chem_dropper: 'indicator',
   chem_flask: 'tile',
 };
+let pending: string | null = null;
 clickStep.busy = () => !!running;
 clickStep.run = (id) => {
-  if (running) return true; // a step is playing: ignore clicks until it's done
+  if (running) {
+    pending = id; // a step is playing: do this one as soon as it's done
+    return true;
+  }
   if (id === 'chem_stopcock') {
     const v = s().valve;
     void runAction(v === 0 ? 'fast' : v > 0.3 ? 'drops' : 'close');

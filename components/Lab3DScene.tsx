@@ -456,6 +456,7 @@ export default function Lab3DScene({
   // Sitting down mechanic with smooth transition
   const sitDownAt = useCallback((station: Station) => {
     soundFx.playSitDown();
+    if (document.pointerLockElement) document.exitPointerLock(); // at a bench you click things with the mouse
     const anchor = seatAnchors.current[station];
     if (anchor && cameraRef.current) {
       const startPos = cameraRef.current.position.clone();
@@ -1293,7 +1294,7 @@ export default function Lab3DScene({
       const tb = chemBench();
       const heldAtPress = !!tb?.isHolding;
       // On a desktop the first click at a bench only captures the mouse for aiming
-      const capturing = !isTouch && !locked() && seatedStationRef.current !== 'chemistry'; // chemistry: the mouse stays free, clicks act
+      const capturing = false; // at a bench the mouse stays free: a click acts on what you click
       const bench = !!tb && !capturing && tb.pointerDown(aim(e), e.button);
       mouseDown = { x: e.clientX, y: e.clientY, dragged: false, bench, heldAtPress };
     };
@@ -1318,7 +1319,7 @@ export default function Lab3DScene({
       const atWorkbench = isSeatedRef.current && !!seatedStationRef.current;
       // Desktop: aim with the mouse everywhere, at the benches too (a crosshair, like any first-person sim)
       // At the chemistry bench the steps are buttons: keep the mouse free to press them
-      const buttonBench = atWorkbench && seatedStationRef.current === 'chemistry';
+      const buttonBench = atWorkbench;
       if (!isTouch && !buttonBench && document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock();
         if (atWorkbench) return; // the click that takes the mouse doesn't also act
@@ -1871,7 +1872,7 @@ export default function Lab3DScene({
 
       {showHelp && <ControlsHelp onClose={() => setShowHelp(false)} />}
       {/* At a bench on a laptop, before the mouse is captured: how to start aiming */}
-      {atWorkbench && seatedStation !== 'chemistry' && !isAiming && !isTouch && !isSheetOpen && !isViewingEyepieces && !isReading && (
+      {false && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-10 z-30 pointer-events-none px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-200">
           Click to aim with the mouse · <b>H</b> controls
         </div>
