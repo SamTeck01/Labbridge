@@ -99,3 +99,6 @@ export const titrationControls = {
   },
   get: () => controls,
 };
+
+/** Clicking a piece of equipment plays its whole step (set by lib/titration/actions). */
+export const clickStep: { run: ((id: string) => boolean) | null } = { run: null };

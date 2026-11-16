@@ -8,7 +8,7 @@ import { FirstPersonHands } from '@/lib/workbench/hands';
 import { Drops, LiquidColumn, LiquidInVessel, PourStream } from '@/lib/workbench/liquids';
 import { MAT, glassVessel, label } from '@/lib/workbench/kit';
 import { titration, flowFor, pourRate, permanentPink, SPLASH_TILT, PIPETTE, type PourTarget, type Under } from '@/lib/titration/sim';
-import { handsUI, titrationControls, type HeldKind, type TitrationControls } from '@/lib/titration/ui';
+import { handsUI, titrationControls, type HeldKind, type TitrationControls, clickStep } from '@/lib/titration/ui';
 
 /**
  * Titration by direct manipulation. Nothing here plays a canned animation: the student picks
@@ -753,6 +753,8 @@ export class TitrationBench {
       if (this.reading) this.readMode(false);
       return false;
     }
+    // One click plays the whole step for that piece of equipment (bottle: fill the burette…)
+    if (clickStep.run?.(id)) return true;
     if (id === 'chem_stopcock') {
       this.toggleTap(true);
       return true;

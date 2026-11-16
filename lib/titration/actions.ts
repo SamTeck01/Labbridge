@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { titration } from '@/lib/titration/sim';
-import { titrationControls, handsUI } from '@/lib/titration/ui';
+import { titrationControls, handsUI, clickStep } from '@/lib/titration/ui';
 
 /**
  * One-button steps for the titration: press a button and the hands do that step at a calm,
@@ -219,3 +219,25 @@ export async function runAction(id: ActionId, openSheet?: () => void) {
     setRunning(null);
   }
 }
+
+/** Click the equipment itself: the bottle fills the burette, the pipette measures the acid, the tap runs then drips then closes. */
+const byItem: Record<string, ActionId> = {
+  chem_naoh_bottle: 'fill',
+  chem_funnel: 'funnel',
+  chem_waste: 'jet',
+  chem_pipette: 'pipette',
+  chem_dropper: 'indicator',
+  chem_flask: 'tile',
+};
+clickStep.run = (id) => {
+  if (running) return true; // a step is playing: ignore clicks until it's done
+  if (id === 'chem_stopcock') {
+    const v = s().valve;
+    void runAction(v === 0 ? 'fast' : v > 0.3 ? 'drops' : 'close');
+    return true;
+  }
+  const a = byItem[id];
+  if (!a) return false;
+  void runAction(a);
+  return true;
+};
