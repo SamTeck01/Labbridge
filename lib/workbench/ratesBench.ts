@@ -3,7 +3,8 @@ import { labStore, obscureTime } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
 import { FirstPersonHands } from '@/lib/workbench/hands';
-import { BenchBase, type Focus } from '@/lib/workbench/benches';
+import { KnobBench, type Focus } from '@/lib/workbench/benches';
+import { Holder, type HoldItem } from '@/lib/workbench/holder';
 import { LiquidInVessel, PourStream } from '@/lib/workbench/liquids';
 import { MAT, Stopwatch, glassVessel, label, tagAll } from '@/lib/workbench/kit';
 
@@ -21,7 +22,7 @@ const FLASK: [number, number][] = [
 const toLathe = (p: [number, number][]): [number, number][] => [[0, 0], ...p.map(([y, r]) => [r, y] as [number, number])];
 const STOCK = [10, 20, 30, 40, 50]; // cm3 of thiosulfate stock (made up to 50 cm3 with water)
 
-export class RatesBench extends BenchBase {
+export class RatesBench extends KnobBench {
   protected ids = ['rates_flask', 'rates_acid', 'rates_watch', ...STOCK.map((v) => `rates_thio_${v}`)];
   private kit = new THREE.Group();
   private flask: LiquidInVessel;
@@ -93,6 +94,72 @@ export class RatesBench extends BenchBase {
     this.kit.add(this.watch.root);
 
     this.stream = new PourStream(scene, '#eef4f8');
+    this.setupHands(scene, hands, origin);
+  }
+
+  // ---------------- Hands-on: pick up a bottle or the acid and pour it yourself (hold R) ----------------
+  protected station = 'rates';
+  protected idleHints = ['Pick up a thiosulfate bottle and hold R over the flask to pour', 'Then the acid, and click the stopwatch at the same moment', 'Click the flask to empty and rinse it'];
+  private left = new Map<string, number>();
+  private pourAt = 0;
+  private spillSaid = 0;
+
+  private setupHands(scene: THREE.Scene, hands: FirstPersonHands, origin: THREE.Vector3) {
+    this.holder = new Holder(scene, () => this.camera, hands, origin.y, origin.clone(), {
+      onPour: (it, over, rate, dt, lip) => this.pourStep(it, over?.id === 'flask', rate, dt, lip),
+      onPutDown: (it) => this.left.set(it.id, it.id === 'acid' ? 10 : 50), // topped up for the next run
+    });
+    const lip = (x: number, y: number) => new THREE.Vector3(-x, y, 0);
+    STOCK.forEach((v) => {
+      this.holder!.add({ id: `thio_${v}`, name: `Thiosulfate ${v} cm³ + water`, obj: this.bottles[v], grip: 0.05, bottom: 0, radius: 0.025, lip: lip(0.01, 0.095) });
+      this.left.set(`thio_${v}`, 50);
+    });
+    this.holder.add({ id: 'acid', name: '10 cm³ dilute HCl', obj: this.acidCyl, grip: 0.09, bottom: 0, radius: 0.014, lip: lip(0.014, 0.165) });
+    this.left.set('acid', 10);
+    this.holder.zone({ id: 'flask', name: 'conical flask', pos: () => this.kit.localToWorld(this.flaskBase.clone().add(new THREE.Vector3(0, 0.15, 0))), r: 0.02, accepts: () => false });
+  }
+
+  private pourStep(it: HoldItem, intoFlask: boolean, rate: number, dt: number, lip: THREE.Vector3) {
+    const left = this.left.get(it.id) ?? 0;
+    if (left <= 0) return;
+    const ml = Math.min(left, rate * 25 * dt);
+    this.left.set(it.id, left - ml);
+    this.pourAt = performance.now();
+    const mouth = this.kit.localToWorld(this.flaskBase.clone().add(new THREE.Vector3(0, 0.15, 0)));
+    this.pour = { from: () => lip.clone(), to: intoFlask ? mouth : new THREE.Vector3(lip.x, this.kit.position.y, lip.z) };
+    const s = this.st();
+    if (!intoFlask) {
+      if (performance.now() - this.spillSaid > 4000) {
+        this.spillSaid = performance.now();
+        curie.say('That is going on the bench. Hold the bottle right over the flask.');
+      }
+      return;
+    }
+    if (it.id === 'acid') {
+      if (!s.thioCm3) {
+        if (performance.now() - this.spillSaid > 4000) {
+          this.spillSaid = performance.now();
+          curie.say('Thiosulfate first, then the acid.');
+        }
+        return;
+      }
+      this.flaskVolume += ml;
+      if (!s.acidAdded) {
+        labStore.update('rates', { acidAdded: true, startedAt: performance.now() });
+        curie.say('Acid in! Start the stopwatch now and watch the cross from above.');
+      }
+    } else {
+      const v = Number(it.id.slice(5));
+      if (s.thioCm3 && s.thioCm3 !== v) {
+        if (performance.now() - this.spillSaid > 4000) {
+          this.spillSaid = performance.now();
+          curie.say('The flask already has a mixture in it. Empty and rinse it first (click the flask).');
+        }
+        return;
+      }
+      this.flaskVolume += ml;
+      if (!s.thioCm3) labStore.update('rates', { thioCm3: v, acidAdded: false, startedAt: null, obscureAfter: obscureTime(v) * (0.95 + Math.random() * 0.1) });
+    }
   }
 
   private st() {
@@ -172,6 +239,8 @@ export class RatesBench extends BenchBase {
   }
 
   update(delta: number) {
+    this.updateKnobHand(delta);
+    if (this.pour && performance.now() - this.pourAt > 120 && !this.busy) this.pour = null;
     this.watch.update();
     const s = this.st();
     // Sulfur precipitate: milky yellow cloud thickening; the cross is hidden at cloud = 1

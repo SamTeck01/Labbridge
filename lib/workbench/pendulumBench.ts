@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { labStore, G, pendulumPeriod } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
 import { FirstPersonHands } from '@/lib/workbench/hands';
-import { BenchBase, type Focus } from '@/lib/workbench/benches';
+import { KnobBench, type Focus, type KnobSpec } from '@/lib/workbench/benches';
 import { MAT, Stopwatch, label, tagAll } from '@/lib/workbench/kit';
 
 /**
@@ -15,7 +15,7 @@ const LENGTHS = [0.3, 0.45, 0.6, 0.75];
 const PIVOT_Y = 0.98; // above the bench top
 const AMPLITUDE = 0.14; // rad (~8 degrees: small-angle regime)
 
-export class PendulumBench extends BenchBase {
+export class PendulumBench extends KnobBench {
   protected ids = ['pend_bob', 'pend_clamp', 'pend_watch'];
   private kit = new THREE.Group();
   private pivot = new THREE.Vector3();
@@ -25,6 +25,56 @@ export class PendulumBench extends BenchBase {
   private angle = 0;
   private t = 0;
   private held = false;
+  private amp = AMPLITUDE;
+  private lenAccum = 0;
+  protected station = 'pendulum';
+  protected idleHints = ['Hold the bob and pull it aside (scroll / drag), let go (Q) to release it', 'Hold the clamp to change the length', 'Click the stopwatch'];
+  protected knobs: Record<string, KnobSpec> = {
+    pend_bob: { name: 'Pendulum bob', side: 'right' },
+    pend_clamp: { name: 'Clamp (string length)', side: 'left' },
+  };
+  protected knobValue(id: string) {
+    if (id === 'pend_bob') {
+      const deg = Math.abs((this.angle * 180) / Math.PI);
+      return { value: Math.min(1, deg / 30), detail: `Pulled ${deg.toFixed(0)}° aside${deg > 10 ? ' (too far for the formula)' : ''}` };
+    }
+    return { value: (LENGTHS.indexOf(this.len()) + 1) / LENGTHS.length, detail: `${(this.len() * 100).toFixed(0)} cm` };
+  }
+  protected turnKnob(id: string, notches: number, fine: number) {
+    if (id === 'pend_bob') {
+      // Holding the bob: pull it aside by as much as you like (the formula wants under ~10°)
+      if (labStore.get().pendulum.swinging) labStore.update('pendulum', { swinging: false });
+      this.held = true;
+      this.angle = THREE.MathUtils.clamp(this.angle + notches * 0.025 * fine, -0.6, 0.6);
+    } else {
+      labStore.update('pendulum', { swinging: false });
+      this.angle = 0;
+      this.lenAccum += notches;
+      if (Math.abs(this.lenAccum) >= 1) {
+        const i = LENGTHS.indexOf(this.len());
+        const next = LENGTHS[THREE.MathUtils.clamp(i + Math.sign(this.lenAccum), 0, LENGTHS.length - 1)];
+        this.lenAccum = 0;
+        if (next !== this.len()) {
+          labStore.update('pendulum', { length: next });
+          soundFx.playKnobTick();
+        }
+      }
+    }
+  }
+
+  /** Letting go of the bob releases it from wherever you pulled it to. */
+  release() {
+    if (this.control?.id === 'pend_bob') {
+      this.held = false;
+      if (Math.abs(this.angle) > 0.02) {
+        this.amp = this.angle;
+        this.t = 0;
+        labStore.update('pendulum', { swinging: true });
+        soundFx.playClick();
+      }
+    }
+    super.release();
+  }
 
   constructor(scene: THREE.Scene, origin: THREE.Vector3, hands: FirstPersonHands, focus: Focus) {
     const kit = new THREE.Group();
@@ -52,7 +102,8 @@ export class PendulumBench extends BenchBase {
     const c2 = c1.clone();
     c2.position.z = 0.056;
     cork.add(c1, c2);
-    tagAll(cork, 'pend_clamp', 'Clamp & split cork', 'Change the string length', 'pendulum');
+    tagAll(cork, 'pend_clamp', 'Clamp & split cork', 'Hold and scroll to change the string length', 'pendulum');
+    cork.name = 'pend_clamp';
     // Metre rule standing behind the pendulum (0 at the pivot, reading down)
     const rule = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.9, 0.004), MAT.wood);
     rule.position.set(0.05, PIVOT_Y - 0.45, 0.0);
@@ -73,7 +124,8 @@ export class PendulumBench extends BenchBase {
     this.string.geometry.translate(0, -0.5, 0);
     this.string.position.copy(this.pivot);
     this.bob = new THREE.Mesh(new THREE.SphereGeometry(0.018, 20, 14), MAT.brass);
-    tagAll(this.bob, 'pend_bob', 'Pendulum bob', 'Pull aside and release / stop it', 'pendulum');
+    tagAll(this.bob, 'pend_bob', 'Pendulum bob', 'Hold it, pull aside, let go', 'pendulum');
+    this.bob.name = 'pend_bob';
     this.string.userData.keepSeparate = true;
     this.kit.add(this.string, this.bob);
 
@@ -146,11 +198,13 @@ export class PendulumBench extends BenchBase {
   }
 
   update(delta: number) {
+    this.updateKnobHand(delta);
     this.watch.update();
     if (labStore.get().pendulum.swinging && !this.held) {
       this.t += delta;
-      const w = Math.sqrt(G / this.len());
-      this.angle = AMPLITUDE * Math.exp(-0.015 * this.t) * Math.cos(w * this.t);
+      // Large swings are slower than the simple formula says (period grows ~ θ²/16)
+      const w = Math.sqrt(G / this.len()) / (1 + (this.amp * this.amp) / 16);
+      this.angle = this.amp * Math.exp(-0.015 * this.t) * Math.cos(w * this.t);
     } else if (!this.held) {
       this.angle = THREE.MathUtils.damp(this.angle, 0, 6, delta);
     }
@@ -169,5 +223,7 @@ export class PendulumBench extends BenchBase {
   reset() {
     this.angle = 0;
     this.t = 0;
+    this.amp = AMPLITUDE;
+    this.held = false;
   }
 }

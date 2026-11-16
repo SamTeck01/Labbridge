@@ -43,13 +43,9 @@ import ExperimentPanel from '@/components/ExperimentPanel';
 import TitrationHUD from '@/components/titration/TitrationHUD';
 import BenchHandHUD from '@/components/BenchHandHUD';
 import ControlsHelp from '@/components/ControlsHelp';
-import ActionPrompts from '@/components/ActionPrompts';
-import { titrationPrompts } from '@/components/titration/TitrationHUD';
-import '@/lib/titration/actions'; // clicking equipment plays its step
-import { useBenchUI } from '@/lib/benchUI';
 import { useFreePointer } from '@/lib/useFreePointer';
 import { titration } from '@/lib/titration/sim';
-import { titrationControls, useHandsUI, clickStep } from '@/lib/titration/ui';
+import { titrationControls, useHandsUI } from '@/lib/titration/ui';
 import LabSheet from '@/components/titration/LabSheet';
 import LabTutorial from '@/components/LabTutorial';
 import MiniMapRadar from '@/components/MiniMapRadar';
@@ -334,8 +330,6 @@ export default function Lab3DScene({
   const [isAiming, setIsAiming] = useState<boolean>(false);
   const [showHelp, setShowHelp] = useState<boolean>(false);
   const isReading = useHandsUI((h) => !!h.reading);
-  const handsState = useHandsUI((h) => h);
-  const benchState = useBenchUI((b) => b);
   // Panels that need the mouse give it back (the phone, the eyepiece view)
   useFreePointer(isPhoneOpen || isViewingEyepieces);
   // The next step's object: where it is on screen (for the marker / edge arrow)
@@ -456,7 +450,6 @@ export default function Lab3DScene({
   // Sitting down mechanic with smooth transition
   const sitDownAt = useCallback((station: Station) => {
     soundFx.playSitDown();
-    if (document.pointerLockElement) document.exitPointerLock(); // at a bench you click things with the mouse
     const anchor = seatAnchors.current[station];
     if (anchor && cameraRef.current) {
       const startPos = cameraRef.current.position.clone();
@@ -1294,7 +1287,7 @@ export default function Lab3DScene({
       const tb = chemBench();
       const heldAtPress = !!tb?.isHolding;
       // On a desktop the first click at a bench only captures the mouse for aiming
-      const capturing = false; // at a bench the mouse stays free: a click acts on what you click
+      const capturing = !isTouch && !locked();
       const bench = !!tb && !capturing && tb.pointerDown(aim(e), e.button);
       mouseDown = { x: e.clientX, y: e.clientY, dragged: false, bench, heldAtPress };
     };
@@ -1302,7 +1295,7 @@ export default function Lab3DScene({
       const tb = chemBench();
       tb?.pointerUp(e.button);
       // Holding something: a click (not a drag to look around) puts it down there
-      if (tb && mouseDown?.bench && mouseDown.heldAtPress && !mouseDown.dragged && e.button === 0 && !clickStep.busy?.()) tb.release();
+      if (tb && mouseDown?.bench && mouseDown.heldAtPress && !mouseDown.dragged && e.button === 0) tb.release();
       if (mouseDown?.dragged || mouseDown?.bench) suppressClickUntil = performance.now() + 50;
       mouseDown = null;
     };
@@ -1318,9 +1311,7 @@ export default function Lab3DScene({
       if (performance.now() < suppressClickUntil) return; // end of a drag, or a touch already handled
       const atWorkbench = isSeatedRef.current && !!seatedStationRef.current;
       // Desktop: aim with the mouse everywhere, at the benches too (a crosshair, like any first-person sim)
-      // At the chemistry bench the steps are buttons: keep the mouse free to press them
-      const buttonBench = atWorkbench;
-      if (!isTouch && !buttonBench && document.pointerLockElement !== renderer.domElement) {
+      if (!isTouch && document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock();
         if (atWorkbench) return; // the click that takes the mouse doesn't also act
       }
@@ -1814,11 +1805,6 @@ export default function Lab3DScene({
   }, [isTouch]);
 
 
-  // The crosshair prompt: the actions for what the hand is doing at this bench right now
-  const atChem = atWorkbench && seatedStation === 'chemistry';
-  const benchPrompts = !isAiming ? [] : atChem ? titrationPrompts(handsState) : atWorkbench && benchState.station === seatedStation ? benchState.prompts ?? [] : [];
-  const heldName = atChem ? (handsState.held ? handsState.held.name : handsState.onTap ? 'Burette tap' : null) : benchState.control?.name ?? null;
-
   return (
     <div className="relative w-full h-screen bg-slate-950 overflow-hidden select-none">
       {/* 3D WebGL Canvas Container */}
@@ -1872,7 +1858,7 @@ export default function Lab3DScene({
 
       {showHelp && <ControlsHelp onClose={() => setShowHelp(false)} />}
       {/* At a bench on a laptop, before the mouse is captured: how to start aiming */}
-      {false && (
+      {atWorkbench && !isAiming && !isTouch && !isSheetOpen && !isViewingEyepieces && !isReading && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-10 z-30 pointer-events-none px-3 py-1.5 rounded-full bg-slate-950/80 text-xs text-slate-200">
           Click to aim with the mouse · <b>H</b> controls
         </div>
@@ -1911,17 +1897,19 @@ export default function Lab3DScene({
           }`}
         />
 
-        {/* What you can do right now: the actions for what you hold, else for what you aim at */}
-        {(benchPrompts.length > 0 || hoveredAction) && (
-          <div className="absolute top-1/2 left-1/2 translate-x-6 translate-y-5 pointer-events-none">
-            {benchPrompts.length > 0 ? (
-              <ActionPrompts title={heldName ?? undefined} prompts={benchPrompts} />
-            ) : hoveredAction ? (
-              <ActionPrompts
-                title={hoveredAction.label}
-                prompts={hoveredAction.category === 'knob' ? [{ k: 'Click', v: 'Hold it' }, { k: 'Scroll', v: 'Turn' }] : [{ k: 'Click', v: hoveredAction.action }]}
-              />
-            ) : null}
+        {/* Hover Action Badge */}
+        {hoveredAction && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900/90 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-emerald-500/50 shadow-2xl flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <div className="text-left">
+                <span className="text-[11px] font-bold text-white block">{hoveredAction.label}</span>
+                <span className="text-[10px] text-emerald-300 block font-medium">
+                  {hoveredAction.category === 'knob' ? '[Hold click] grab · [Scroll] turn · ' : '[Click / E] '}
+                  {hoveredAction.action}
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -2026,12 +2014,10 @@ export default function Lab3DScene({
       {/* Seated Station Direct 3D Equipment Toolbar */}
       {/* At the workbench the hands do the work: just a way to step back */}
       {atWorkbench && seatedStation === 'chemistry' && (
-        <>
-          <TitrationHUD isTouch={isTouch} aiming onOpenSheet={() => setIsSheetOpen(true)} />
-        </>
+        <TitrationHUD isTouch={isTouch} onOpenSheet={() => setIsSheetOpen(true)} />
       )}
       {isSheetOpen && seatedStation === 'chemistry' && <LabSheet onClose={() => setIsSheetOpen(false)} />}
-      {atWorkbench && seatedStation !== 'chemistry' && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} aiming={isAiming} station={seatedStation} />}
+      {atWorkbench && seatedStation !== 'chemistry' && !isViewingEyepieces && <BenchHandHUD isTouch={isTouch} station={seatedStation} />}
       
 
 

@@ -88,8 +88,6 @@ export interface TitrationControls {
   eyeBy(m: number): void;
   /** Move what is held to a named place (used by Dr. Curie and tests). */
   carryTo(place: string): void;
-  /** True once what's held has reached where it was sent (or nothing is held). */
-  settled(): boolean;
 }
 
 let controls: TitrationControls | null = null;
@@ -99,6 +97,3 @@ export const titrationControls = {
   },
   get: () => controls,
 };
-
-/** Clicking a piece of equipment plays its whole step (set by lib/titration/actions). */
-export const clickStep: { run: ((id: string) => boolean) | null; busy: (() => boolean) | null } = { run: null, busy: null };

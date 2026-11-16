@@ -8,7 +8,7 @@ import { FirstPersonHands } from '@/lib/workbench/hands';
 import { Drops, LiquidColumn, LiquidInVessel, PourStream } from '@/lib/workbench/liquids';
 import { MAT, glassVessel, label } from '@/lib/workbench/kit';
 import { titration, flowFor, pourRate, permanentPink, SPLASH_TILT, PIPETTE, type PourTarget, type Under } from '@/lib/titration/sim';
-import { handsUI, titrationControls, type HeldKind, type TitrationControls, clickStep } from '@/lib/titration/ui';
+import { handsUI, titrationControls, type HeldKind, type TitrationControls } from '@/lib/titration/ui';
 
 /**
  * Titration by direct manipulation. Nothing here plays a canned animation: the student picks
@@ -753,8 +753,6 @@ export class TitrationBench {
       if (this.reading) this.readMode(false);
       return false;
     }
-    // One click plays the whole step for that piece of equipment (bottle: fill the burette…)
-    if (clickStep.run?.(id)) return true;
     if (id === 'chem_stopcock') {
       this.toggleTap(true);
       return true;
@@ -901,7 +899,6 @@ export class TitrationBench {
         this.publish();
       }
     },
-    settled: () => !this.held || this.carryGap < 0.012,
     carryTo: (place) => {
       const m = this.held;
       if (!m) return;
@@ -1032,8 +1029,6 @@ export class TitrationBench {
   private gripPos = new THREE.Vector3();
   private aimPoint: THREE.Vector3 | null = null;
   private steer = new THREE.Vector3();
-  /** How far what's held still is from where it's going (m), for scripted steps to wait on. */
-  private carryGap = 0;
 
   private updateHeld(m: Movable, dt: number) {
     // Where it should be (its base, upright): under the pointer, or carried to a named place
@@ -1049,7 +1044,6 @@ export class TitrationBench {
       this.aimPoint = aimAt ? aimAt.clone() : null;
       target = aimAt ? aimAt.add(this.steer).setY(this.benchY + this.lift + m.bottom) : null;
     }
-    this.carryGap = target ? m.obj.position.distanceTo(target) : 0;
     if (!target) return;
     this.resolveCollisions(m, target);
     this.carryTarget.copy(target);

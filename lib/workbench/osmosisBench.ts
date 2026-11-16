@@ -3,7 +3,8 @@ import { labStore, osmosisChange } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
 import { FirstPersonHands } from '@/lib/workbench/hands';
-import { BenchBase, type Focus } from '@/lib/workbench/benches';
+import { KnobBench, type Focus } from '@/lib/workbench/benches';
+import { Holder, type HoldItem } from '@/lib/workbench/holder';
 import { MAT, glassVessel, label, tagAll } from '@/lib/workbench/kit';
 
 /**
@@ -14,7 +15,7 @@ import { MAT, glassVessel, label, tagAll } from '@/lib/workbench/kit';
 
 export const MOLARITY = [0, 0.2, 0.4, 0.6, 0.8];
 
-export class OsmosisBench extends BenchBase {
+export class OsmosisBench extends KnobBench {
   protected ids = ['osm_strips', 'osm_balance', ...MOLARITY.map((_, i) => `osm_tube_${i}`)];
   private kit = new THREE.Group();
   private tubes: THREE.Group[] = [];
@@ -95,6 +96,125 @@ export class OsmosisBench extends BenchBase {
     this.kit.add(this.loose);
     scene.add(this.kit);
     this.showMass(null);
+    this.setupHands(scene, hands, origin);
+  }
+
+  // ---------------- Hands-on: carry each strip with your fingers ----------------
+  protected station = 'osmosis';
+  protected idleHints = ['Click the potato strips to take one', 'Put it on the balance pan, then into a tube', 'After 30 minutes: click a tube to take the strip out, blot it on the towel, weigh it'];
+  private stripItem: HoldItem | null = null;
+  private strip: { fresh: number | null; tube: number | null; phase: 'fresh' | 'weighed' | 'wet' | 'blotted' | 'done'; mass: number } | null = null;
+
+  private setupHands(scene: THREE.Scene, hands: FirstPersonHands, origin: THREE.Vector3) {
+    this.holder = new Holder(scene, () => this.camera, hands, origin.y, origin.clone(), {
+      onPutDown: (_it, home) => {
+        if (home) this.loose.visible = false;
+      },
+    });
+    this.stripItem = this.holder.add({ id: 'strip', name: 'Potato strip', obj: this.loose, grip: 0.006, bottom: 0.004, radius: 0.012, tip: new THREE.Vector3(), freePlace: true });
+    const w = (v: THREE.Vector3) => () => this.kit.localToWorld(v.clone());
+    this.holder.zone({
+      id: 'pan',
+      name: 'balance pan',
+      pos: w(this.pan.clone().add(new THREE.Vector3(0, 0.04, -0.01))),
+      r: 0.04,
+      accepts: (it) => it.id === 'strip' && this.onBalance === null,
+      rest: () => ({ pos: this.kit.localToWorld(this.pan.clone().add(new THREE.Vector3(0, 0.045, -0.01))) }),
+      onDrop: () => this.weigh(),
+    });
+    this.tubes.forEach((g, i) =>
+      this.holder!.zone({
+        id: `tube_${i}`,
+        name: `${MOLARITY[i].toFixed(1)} M tube`,
+        pos: w(g.position.clone().add(new THREE.Vector3(0, 0.16, 0))),
+        r: 0.014,
+        accepts: (it) => it.id === 'strip' && !!this.strip && this.strip.phase === 'weighed' && !this.st().tubes[i].inTube && this.st().tubes[i].final == null,
+        rest: () => null,
+        onDrop: () => this.intoTube(i),
+      })
+    );
+    this.holder.zone({
+      id: 'towel',
+      name: 'paper towel',
+      pos: w(new THREE.Vector3(0.05, 0.004, 0.12)),
+      r: 0.05,
+      accepts: (it) => it.id === 'strip' && this.strip?.phase === 'wet',
+      rest: () => ({ pos: this.kit.localToWorld(new THREE.Vector3(0.05, 0.006, 0.12)) }),
+      onDrop: () => {
+        if (this.strip) this.strip.phase = 'blotted';
+        soundFx.playGlassSlide();
+      },
+    });
+  }
+
+  /** Clicking the strips tile (a new strip) or a tube (taking a strip out after 30 min). */
+  protected spawnPick(id: string) {
+    if (!this.holder || !this.stripItem || this.strip && this.strip.phase !== 'done' && this.loose.visible) return false;
+    const s = this.st();
+    if (id === 'osm_strips') {
+      const i = s.tubes.findIndex((t, k) => t.initial == null && this.kit.getObjectByName(`fresh_strip_${k}`)?.visible);
+      if (i < 0) return curie.say('All the strips are used.'), true;
+      const fresh = this.kit.getObjectByName(`fresh_strip_${i}`)!;
+      fresh.visible = false;
+      this.loose.position.copy(fresh.getWorldPosition(new THREE.Vector3()));
+      this.loose.quaternion.identity();
+      this.loose.visible = true;
+      this.strip = { fresh: i, tube: null, phase: 'fresh', mass: this.masses[i] };
+      return this.holder.pick(this.stripItem);
+    }
+    if (id.startsWith('osm_tube_')) {
+      const i = Number(id.slice(9));
+      const t = s.tubes[i];
+      if (!t.inTube) return false;
+      if (s.minutes < 30) return curie.say('Leave the strips in the solutions for 30 minutes first.'), true;
+      this.stripsInTube[i].visible = false;
+      labStore.update('osmosis', { tubes: s.tubes.map((x, k) => (k === i ? { ...x, inTube: false } : x)) });
+      const mass = Math.round(t.initial! * (1 + osmosisChange(MOLARITY[i]) / 100 + (Math.random() - 0.5) * 0.01) * 100) / 100;
+      this.strip = { fresh: null, tube: i, phase: 'wet', mass };
+      this.loose.position.copy(this.kit.localToWorld(this.tubes[i].position.clone().add(new THREE.Vector3(0, 0.16, 0))));
+      this.loose.visible = true;
+      return this.holder.pick(this.stripItem);
+    }
+    return false;
+  }
+
+  /** On the pan: the display shows its mass. */
+  private weigh() {
+    const st = this.strip;
+    if (!st) return;
+    this.onBalance = 0;
+    soundFx.playBeep();
+    if (st.phase === 'fresh') {
+      st.phase = 'weighed';
+      this.showMass(st.mass);
+    } else if (st.phase === 'wet' || st.phase === 'blotted') {
+      // Unblotted, surface water adds to the mass
+      const m = st.phase === 'wet' ? Math.round(st.mass * 1.04 * 100) / 100 : st.mass;
+      if (st.phase === 'wet') curie.say('Blot it first: water on the surface adds to the mass.');
+      this.showMass(m);
+      const s = this.st();
+      labStore.update('osmosis', { tubes: s.tubes.map((x, k) => (k === st.tube ? { ...x, final: m } : x)) });
+      st.phase = 'done';
+    } else this.showMass(st.mass);
+    // Lifting it off the pan clears the display
+    const off = () => {
+      if (this.holder?.held?.id === 'strip' || !this.loose.visible) {
+        this.onBalance = null;
+        this.showMass(null);
+      } else setTimeout(off, 300);
+    };
+    setTimeout(off, 300);
+  }
+
+  private intoTube(i: number) {
+    const st = this.strip;
+    if (!st) return;
+    this.loose.visible = false;
+    this.stripsInTube[i].visible = true;
+    const s = this.st();
+    labStore.update('osmosis', { tubes: s.tubes.map((x, k) => (k === i ? { ...x, initial: st.mass, inTube: true } : x)) });
+    this.strip = null;
+    soundFx.playDropLiquid();
   }
 
   private showMass(g: number | null) {
@@ -185,7 +305,8 @@ export class OsmosisBench extends BenchBase {
     }
   }
 
-  update() {
+  update(delta = 1 / 60) {
+    this.updateKnobHand(delta);
     // Strips visibly swell or shrink while they sit in solution
     const s = this.st();
     this.stripsInTube.forEach((strip, i) => {
@@ -195,6 +316,8 @@ export class OsmosisBench extends BenchBase {
   }
 
   reset() {
+    this.strip = null;
+    this.loose.visible = false;
     this.onBalance = null;
     this.showMass(null);
     this.stripsInTube.forEach((s) => (s.visible = false));
