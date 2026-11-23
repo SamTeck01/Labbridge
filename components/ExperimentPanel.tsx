@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Circle, ClipboardList, FlaskConical, X, Trophy, Droplet, RotateCcw, Repeat, Flag, Info } from 'lucide-react';
 import { experiments, experimentForStation, getExperiment, useExperiments, assistLevel } from '@/lib/experiments';
-import { labStore, titrationPH, useLab, type Station } from '@/lib/labStore';
+import { labStore, titrationPH, useLab, circuit, type Station } from '@/lib/labStore';
 import { curie } from '@/lib/curie';
 import BuretteReading from '@/components/BuretteReading';
+import MeterReading from '@/components/MeterReading';
 import PracticalExtras from '@/components/PracticalExtras';
 import { soundFx } from '@/lib/soundEffects';
 import { metaFor, MISTAKE_KIND, SKILL_LABEL } from '@/lib/practicalMeta';
@@ -38,10 +39,27 @@ export default function ExperimentPanel({
   const lastResult = useExperiments((s) => s.lastResult);
   const [error, setError] = useState<string | null>(null);
   const goggles = useLab((st) => st.player.goggles);
-  const [reading, setReading] = useState<number | null>(null);
+  const [reading, setReading] = useState<{ actual: number; which: 'initial' | 'final' } | null>(null);
+  const [meters, setMeters] = useState<{ amps: number; volts: number } | null>(null);
   const [confirmRestart, setConfirmRestart] = useState(false);
 
   const history = useExperiments((s) => s.history);
+  const openMeters = () => {
+    const p = labStore.get().physics;
+    if (!p.wired) return setError('The circuit is incomplete: plug in the return lead.');
+    if (!p.switchClosed) return setError('Close the switch first: no current is flowing.');
+    const c = circuit(p.voltage, p.resistance, p.switchClosed, p.wired);
+    setError(null);
+    setMeters({ amps: c.current, volts: c.vResistor });
+  };
+  // Clicking a meter on the bench opens the close-up
+  useEffect(() => {
+    const on = () => {
+      if (experiments.get().run?.experimentId === 'ohms-law') openMeters();
+    };
+    window.addEventListener('labbridge:readMeters', on);
+    return () => window.removeEventListener('labbridge:readMeters', on);
+  });
   const active = getExperiment(run?.experimentId);
   const available = experimentForStation(station);
   const meta = metaFor(active?.id ?? available?.id);
@@ -185,11 +203,14 @@ export default function ExperimentPanel({
     if (active.id === 'titration') {
       const c = labStore.get().chemistry;
       if (c.buretteOpen) return setError('Close the burette before reading it.');
-      if (c.dispensedML <= 0) return setError('Nothing dispensed yet.');
+      if (c.buretteML <= 0) return setError('The burette is empty: fill it first.');
+      const which = experiments.burettePending();
+      if (which === 'final' && c.dispensedML <= 0) return setError('Titrate first, then take the final reading.');
       setError(null);
-      setReading(c.dispensedML);
+      setReading({ actual: Math.round((50 - c.buretteML) * 100) / 100, which });
       return;
     }
+    if (active.id === 'ohms-law') return openMeters();
     const err = experiments.record();
     setError(err);
     if (!err) soundFx.playSuccessChime();
@@ -207,11 +228,24 @@ export default function ExperimentPanel({
     <>
     {reading !== null && (
       <BuretteReading
-        actual={reading}
+        actual={reading.actual}
+        title={reading.which === 'initial' ? 'Initial burette reading' : 'Final burette reading'}
         onCancel={() => setReading(null)}
         onSubmit={(v) => {
-          experiments.recordManual({ label: 'Titre', value: v, unit: 'mL', extra: { actual: reading } });
+          experiments.recordBurette(v);
           setReading(null);
+          soundFx.playSuccessChime();
+        }}
+      />
+    )}
+    {meters && (
+      <MeterReading
+        amps={meters.amps}
+        volts={meters.volts}
+        onCancel={() => setMeters(null)}
+        onSubmit={(i, v) => {
+          experiments.recordMeters(i, v);
+          setMeters(null);
           soundFx.playSuccessChime();
         }}
       />
@@ -271,7 +305,7 @@ export default function ExperimentPanel({
           {run_.readings.map((r, i) => <p key={i}>{r.label}: {r.value} {r.unit}</p>)}
         </div>
       )}
-      <PracticalExtras def={active} answered={run_.readings.some((x) => x.label === 'Answer')} />
+      <PracticalExtras def={active} answered={run_.readings.some((x) => x.label === 'Answer')} readings={run_.readings} />
       {active.readingsNeeded > 0 && (
         <div className="flex gap-2">
           {active.id === 'titration' && (

@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { experiments, type ExperimentDef } from '@/lib/experiments';
-import { useLab, INKS, osmosisChange } from '@/lib/labStore';
+import { experiments, type ExperimentDef, type Reading } from '@/lib/experiments';
+import { useLab, labStore, INKS, osmosisChange } from '@/lib/labStore';
 import { MOLARITY } from '@/lib/workbench/osmosisBench';
 import { soundFx } from '@/lib/soundEffects';
 
 /** Practical-specific parts of the panel: extra actions, data tables, measuring views, final answer. */
-export default function PracticalExtras({ def, answered }: { def: ExperimentDef; answered: boolean }) {
+export default function PracticalExtras({ def, answered, readings = [] }: { def: ExperimentDef; answered: boolean; readings?: Reading[] }) {
   const lab = useLab((s) => s);
   const [text, setText] = useState('');
   const [showPaper, setShowPaper] = useState(false);
@@ -39,6 +39,39 @@ export default function PracticalExtras({ def, answered }: { def: ExperimentDef;
         </table>
       )}
 
+      {def.id === 'chroma' && lab.chroma.spots >= 3 && !lab.chroma.inSolvent && !lab.chroma.removed && (
+        <div className="text-xs">
+          <p className="text-slate-400 mb-1">How deep will you hang the paper?</p>
+          {[
+            { h: 'high' as const, label: 'Baseline just above the solvent' },
+            { h: 'low' as const, label: 'Baseline under the solvent' },
+          ].map((o) => (
+            <button
+              key={o.h}
+              onClick={() => {
+                soundFx.playClick();
+                labStore.update('chroma', { height: o.h });
+                window.dispatchEvent(new CustomEvent('labbridge:benchTap', { detail: { station: 'chroma', id: 'chroma_paper' } }));
+              }}
+              className="w-full min-h-10 mb-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left px-3"
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {def.id === 'ohms-law' && readings.some((x) => x.extra?.R !== undefined) && (
+        <table className="text-xs tabular-nums w-full">
+          <thead className="text-slate-400">
+            <tr><th className="text-left font-normal">Rheostat</th><th className="font-normal">I / A</th><th className="font-normal">V / V</th></tr>
+          </thead>
+          <tbody>
+            {readings.filter((x) => x.extra?.R !== undefined).map((x, i) => (
+              <tr key={i}><td>{x.extra!.R} Ω</td><td className="text-center">{x.extra!.I}</td><td className="text-center">{x.extra!.V}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       {def.id === 'chroma' && lab.chroma.removed && (
         <button onClick={() => setShowPaper((v) => !v)} className="py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm">
           {showPaper ? 'Hide' : 'Measure'} the chromatogram
@@ -46,7 +79,7 @@ export default function PracticalExtras({ def, answered }: { def: ExperimentDef;
       )}
       {def.id === 'chroma' && showPaper && <Chromatogram front={lab.chroma.front} />}
 
-      {def.answer && !answered && (lab.osmosis.tubes.every((t) => t.final != null) || def.id !== 'osmosis') && (def.id !== 'chroma' || lab.chroma.removed) && (
+      {def.answer && !answered && (lab.osmosis.tubes.every((t) => t.final != null) || def.id !== 'osmosis') && (def.id !== 'chroma' || lab.chroma.removed) && (def.id !== 'ohms-law' || readings.filter((x) => x.extra?.R !== undefined).length >= 4) && (
         <div className="flex gap-2 items-end">
           <label className="flex-1 text-xs text-slate-400">
             {def.answer.prompt}

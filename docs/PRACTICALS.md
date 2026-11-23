@@ -12,7 +12,7 @@ For each practical this lists what the simulation does, what is simplified, and 
 - **Expected observation:** sharp image once focus is within the depth of field; the depth of field shrinks with magnification (sharpness sensitivity 3/6/12/18).
 - **Common mistakes:** starting on high power; coarse focus at high power.
 - **Simplifications:** slides are prepared for the student; no stain choice; light intensity is a simple multiplier.
-- **Needs review:** the coarse-focus crack is warned about in the safety text but **not simulated**.
+- **Crack (implemented):** turning the coarse knob to raise the stage at 40×/100× cracks the slide (image ruined, safety mistake). A fresh slide from the box recovers.
 
 ### Osmosis in potato strips
 - **Objective:** % change in mass in 0.0–0.8 M sucrose; estimate the isotonic concentration.
@@ -33,7 +33,8 @@ For each practical this lists what the simulation does, what is simplified, and 
   - no acid (spoils the run);
   - overshoot over 26.5 mL (recoverable: becomes the rough titre, repeat).
 - **Scoring:** mean of the closest concordant pair vs 25.00 mL; reading accuracy of each titre vs the true meniscus; technique; endpoint control (credited if an overshoot was followed by concordant repeats).
-- **Simplifications:** the burette is always filled to exactly 0.00, so the initial reading is not taken (real practice records one); a measuring cylinder stands in for a pipette.
+- **Readings (implemented):** the burette fills to just below zero (a reading of 0.10–0.60 mL); the student reads initial and final values; titre = final − initial.
+- **Simplifications:** a measuring cylinder stands in for a pipette.
 - **Needs review:** most syllabuses use a **25.0 cm³ pipette**, not a cylinder, for the acid. Consider swapping the apparatus.
 
 ### Flame tests
@@ -61,8 +62,7 @@ For each practical this lists what the simulation does, what is simplified, and 
 - **Model:** dyes travel Rf × solvent distance; A = blue 0.28 + yellow 0.72, B = red 0.47, unknown = blue 0.28 + red 0.47; the solvent front slows as it climbs.
 - **Expected:** Rf(red) ≈ 0.47; the unknown is identified as a mixture containing A's blue and B's red.
 - **Mistakes:** spotting without a baseline.
-- **Simplifications:** the paper is always hung correctly with the baseline above the solvent, so the student **cannot** make the classic "spots below solvent" mistake.
-- **Needs review:** add a placement choice so that mistake is possible and visible (the dyes wash into the solvent).
+- **Placement (implemented):** the student chooses how deep to hang the paper. With the baseline under the solvent, the spots dissolve away and the run is spoiled, with an explanation.
 
 ### Accurate weighing
 - **Objective:** 0.1000–0.1500 g to four decimal places.
@@ -73,13 +73,13 @@ For each practical this lists what the simulation does, what is simplified, and 
 ## Physics
 
 ### Ohm's law
-- **Objective (as built):** current at three or more resistances with a fixed 12 V; show I = V / R.
-- **Model:** I = V / R, ideal; over 1 A is a safety mistake.
-- **Needs review (important):**
-  1. The load is drawn as a **filament bulb**, which is **non-ohmic** (its resistance rises as it heats). Teaching Ohm's law with it is scientifically wrong. It should be a fixed resistor, or the practical should be reframed as "I–V of a bulb".
-  2. There is **no voltmeter**, so the student never measures V across the component.
-  3. The current is **recorded automatically**, so the student doesn't practise reading the ammeter.
-- **Recommended flow:** fixed resistor; voltmeter in parallel, ammeter in series; vary the supply in steps; read both meters; plot V against I; the gradient is R.
+- **Objective:** show V ∝ I for a fixed resistor and find R from the gradient of V against I.
+- **Circuit:** 12 V supply → switch → ammeter (series) → 12 Ω resistor (brown-red-black-gold) → rheostat (10–100 Ω) → back; voltmeter across the resistor only.
+- **Model:** I = V_supply / (12 + R_rheostat); V_resistor = 12 I. Meters are analogue (0–1 A, 0–10 V) and read by the student in a close-up.
+- **Valid procedure:** complete the circuit → close the switch → read both meters → change the rheostat → repeat (4+) → open the switch → R = gradient.
+- **Mistakes:** over 0.5 A (the resistor overheats, a safety mistake, recoverable by turning the rheostat up).
+- **Expected result:** R ≈ 12 Ω; full credit within 5%.
+- **Simplifications:** ideal meters (no meter resistance); the resistor doesn't actually change value when hot (the warning teaches the idea).
 
 ### Measuring g with a pendulum
 - **Objective:** g from T = 2π√(L/g) at three or more lengths.

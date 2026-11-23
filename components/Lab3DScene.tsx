@@ -54,6 +54,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { labStore, useLab, type LabState, type Station } from '@/lib/labStore';
 import { curie, useCurie, startCurieWatch } from '@/lib/curie';
+import { startLabSimulation } from '@/lib/labSim';
 import { createWhiteboardNotes } from '@/lib/whiteboardNotes';
 import { createCurieNPC, type CurieNPC } from '@/lib/curieNPC';
 import { disposeObject, loadLabModel, swapInModel, clearModelCache, wireInteractiveNodes } from '@/lib/assetLoader';
@@ -254,21 +255,7 @@ function ApparatusSync({
       uData.potKnob.rotation.y = (physicsState.resistance / 100) * Math.PI * 1.5;
     }
 
-    if (uData.bulbLight && uData.bulbGlass) {
-      const isLit = physicsState.switchClosed;
-      const power = isLit ? (physicsState.voltage ** 2 / physicsState.resistance) * 0.08 : 0;
-      uData.bulbLight.intensity = Math.min(3.5, power * 2.5);
-      const glassMat = uData.bulbGlass.material as THREE.MeshStandardMaterial;
-      if (glassMat) {
-        glassMat.emissiveIntensity = isLit ? 1.0 : 0.05;
-      }
-    }
-
-    // Ammeter needle: 0-1 A full scale, sweeps left to right
-    if (uData.ammeterNeedle) {
-      const amps = physicsState.switchClosed ? physicsState.voltage / physicsState.resistance : 0;
-      (uData.ammeterNeedle as THREE.Object3D).rotation.z = 0.87 - Math.min(1, amps) * 1.74;
-    }
+    // The resistor, ammeter needle and voltmeter are driven by CircuitBench from the lab store
   }, [physicsState, physicsVersion, physEquipmentRef, benchesRef]);
 
   // Update 3D Analytical Bench States
@@ -720,14 +707,22 @@ export default function Lab3DScene({
   }, [sitDownAt]);
 
   useEffect(() => {
+    startLabSimulation();
     startCurieWatch();
     const onDrop = () => titrationBenchRef.current?.visualDrop();
     window.addEventListener('labbridge:drop', onDrop);
+    // A panel button that does a bench action (e.g. hang the chromatography paper)
+    const onBenchTap = (e: Event) => {
+      const d = (e as CustomEvent<{ station: Station; id: string }>).detail;
+      benchesRef.current[d.station]?.tap(d.id);
+    };
+    window.addEventListener('labbridge:benchTap', onBenchTap);
     const off = experiments.onEvent((e) => {
       if (e.type === 'started' || e.type === 'reset') Object.values(benchesRef.current).forEach((b) => b?.reset());
     });
     return () => {
       window.removeEventListener('labbridge:drop', onDrop);
+      window.removeEventListener('labbridge:benchTap', onBenchTap);
       off();
     };
   }, []);
@@ -1355,7 +1350,8 @@ export default function Lab3DScene({
       // Render only when needed: full rate while something moves, a trickle when idle (keeps laptops cool)
       if (!scheduler.shouldRender(now, isAnimating())) return;
       const frameMs = now - lastTime;
-      const delta = Math.min(frameMs / 1000, 0.1);
+      // Animations keep real time down to ~4 fps (slow phones), without huge jumps after a stall
+      const delta = Math.min(frameMs / 1000, 0.25);
       if (scheduler.mode === 'active') quality.frame(frameMs); // idle frames are slow on purpose
       if (renderer.shadowMap.enabled && ++shadowFrame % 6 === 0) renderer.shadowMap.needsUpdate = true;
       lastTime = now;

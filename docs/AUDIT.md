@@ -29,7 +29,8 @@ The audit was run on the click-to-do version that is live now, by reading the co
 | C4 | **No overview of practicals.** Students had to walk around to discover benches and had no idea of difficulty or where to start. | Fixed: practical library (subject, learn, difficulty, time, apparatus, safety, exam skills, best score, "Start here", one tap to the bench). |
 | C5 | **Onboarding was three text cards** that taught nothing by doing. | Fixed: a five-task orientation that ticks off as the student does each thing. It never blocks the lab and adapts to short phone screens. |
 | C6 | **Mistakes said what was wrong but not why it mattered**, and every mistake looked the same. | Fixed: each mistake is typed (safety, procedure, measurement, technique) and marked as recoverable or spoiling the run, with "what it does to your result → what to do now". |
-| C7 | **Ohm's law uses a filament bulb as the resistor and has no voltmeter.** A bulb is non-ohmic, and the "current" reading is recorded for the student, not read off the meter. | Open, needs a science decision (see `PRACTICALS.md`). |
+| C7 | **Ohm's law used a filament bulb, which doesn't obey Ohm's law, and had no voltmeter.** The current was also recorded for the student instead of read off the meter. | Fixed: a 12 Ω resistor (brown-red-black-gold bands) with an ammeter in series and a voltmeter across it. The student reads both dials in a close-up, takes 4+ rheostat settings and finds R from the gradient. |
+| C8 | **Closing the burette tap waited for the hand animation.** On a slow laptop about 8 mL ran through after the click, so the app caused the overshoot, not the student. Found by the laptop click test. | Fixed: the tap closes the instant it's clicked, even mid-animation. |
 
 ## 2. High-impact improvements
 
@@ -37,13 +38,12 @@ The audit was run on the click-to-do version that is live now, by reading the co
 - Done: **fading help**. Guided on the first attempt, hints only after one completion, on your own after two. Curie still steps in for mistakes and safety; this is shown in the panel.
 - Done: brief shows learn, apparatus, difficulty, time and exam skills before starting.
 - Done: results explain "what to do differently".
-- Open: student-read instruments everywhere. Burette reading is student-read; the ammeter, balance and stopwatch values are still taken automatically in some practicals.
-- Open: microscope: "coarse focus at high power cracks the slide" is warned about but not simulated.
+- Done: burette (initial and final, titre = final − initial) and both electrical meters are read by the student from close-ups. Balance and stopwatch values are still displayed digitally, as on the real instruments.
+- Done: microscope. Coarse focus at 40×/100× drives the slide into the lens and cracks it. This is recoverable with a fresh slide.
 - Open: save the 3D apparatus state so a refresh mid-practical restores the bench, not just the checklist.
 
 ## 3. Medium priority
 
-- Ohm's law: switch to a fixed resistor, add a voltmeter in parallel, vary the supply and plot V against I.
 - Rates: a temperature variable (water bath) would let students see a second factor.
 - Pendulum: let the student read the length off the metre rule instead of it being shown.
 - Osmosis: record length as well as mass (several exam boards use length).
@@ -59,14 +59,14 @@ The audit was run on the click-to-do version that is live now, by reading the co
 
 | Practical | Current flow | Problems found | Done now / recommended |
 |---|---|---|---|
-| Microscopy | 4× → focus → 10× → 40× → capture | Crack-the-slide warning not simulated; no drawing/labelling | Why per step. Recommend: crack consequence, labelled drawing. |
+| Microscopy | 4× → focus → 10× → 40× → capture | Crack-the-slide not simulated; no drawing/labelling | **Fixed**: crack and recovery. Recommend a labelled drawing. |
 | Osmosis | Weigh → tube ×5 → wait 30 min → blot and reweigh → isotonic point | Blotting is automatic (no technique); mass only | Why per step. Recommend: length option, blotting choice. |
-| Titration | Fill → acid → indicator → mix → titrate → endpoint → read | One titre only; overshoot was a dead end; burette always filled to exactly 0.00 | **Fixed**: repeat runs, concordance, overshoot recovery. Recommend: read an initial reading too. |
+| Titration | Fill → acid → indicator → mix → initial reading → titrate → endpoint → final reading | One titre only; overshoot was a dead end; burette always filled to exactly 0.00; tap closed late | **Fixed**: repeat runs, concordance, overshoot recovery, fill near zero with an initial reading, instant tap. |
 | Flame tests | Sash → light → blue flame → 5 samples → gas off | Correct method flagged as contamination; dirty loop gave no feedback | **Fixed**: residue model, mixed colours, cleaning taught. |
 | Rates | Pour mixture → acid → stop clock at cross → record → repeat | Only concentration varies | Works; recommend temperature. |
-| Chromatography | Baseline → spots → into solvent → remove → Rf | Cannot do it wrong in placement (baseline is always above the solvent) | Works; recommend a "too low" placement choice. |
+| Chromatography | Baseline → spots → choose depth → into solvent → remove → Rf | Couldn't hang it too low | **Fixed**: depth choice; a low baseline dissolves the spots and spoils the run, with an explanation. |
 | Weighing | Tare → open → add → close → record | Fine; drift with the shield open teaches well | Works. |
-| Ohm's law | Plug lead → close switch → 3 readings → open | Filament bulb (non-ohmic), no voltmeter, current auto-read | Flagged (C7). |
+| Ohm's law | Plug lead → close switch → read meters at 4+ settings → open → R from gradient | Filament bulb, no voltmeter, auto-read | **Fixed** (C7). |
 | Pendulum | Release → time 10 swings → 3 lengths | Fixed set of 4 lengths; amplitude fixed small | Works; recommend reading length off the rule. |
 
 ## 6. Cross-platform
@@ -74,20 +74,20 @@ The audit was run on the click-to-do version that is live now, by reading the co
 - Fixed (phone, landscape): the orientation card covered the Practicals button and half the view. It is now compact at the bottom, shows only the current task, and hides once a practical starts.
 - Fixed (phone): the Practicals button overlapped Dr. Curie's bubble at a bench. It is hidden at benches on short screens.
 - Library opens as a bottom sheet on phones with 44 px+ targets.
-- Open: hand animations use a frame delta clamped to 0.1 s, so below about 10 fps they run in slow motion. Low-end phones at 15–30 fps are unaffected, but this should be time-based.
+- Fixed: the frame delta cap is raised from 0.1 s to 0.25 s, so hand animations keep real time down to about 4 fps.
 - Open: portrait phones get a "rotate" prompt; there is no real portrait layout.
 
 ## 7. Architecture risks
 
 - Fixed: **duplicated implementations**. Six components (station modals, seated toolbar, old microscope viewer, old tutorial; about 2,600 lines) were unused and are removed.
-- Open: legacy `setChemistryState`/`setPhysicsState` React state in `Lab3DScene.tsx` still exists alongside `labStore`, a risk of the UI and the simulation disagreeing. Everything new goes through `labStore`.
-- Open: burette dispensing runs on a `setInterval` inside `curie.ts` (Dr. Curie's module), so the simulation is coupled to the AI module. It should move to the titration bench or the store.
+- Partly fixed: the old physics sync also drove the ammeter needle and the bulb, fighting the bench. Removed. Legacy React state still exists for some switches and should be retired.
+- Fixed: the burette and balance timers moved out of Dr. Curie's module into `lib/labSim.ts`.
 - Open: `Lab3DScene.tsx` is about 1,850 lines and does scene setup, input, HUD and bench wiring.
 - Open: mistakes are recorded once per practical. With repeat runs a second overshoot isn't counted again. That's acceptable for scoring, but noted.
 
 ## Tests
 
-`tools/tests/practicals.mjs` (Playwright, 21 checks) covers:
+`tools/tests/practicals.mjs` (Playwright, 31 checks) and `tools/tests/laptop-journey.mjs` (a first-time student at 1366×768 doing titration and Ohm's law with real mouse clicks) cover:
 - the orientation and the library;
 - titration overshoot, new run, concordance and scoring;
 - restart;

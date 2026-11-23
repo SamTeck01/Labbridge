@@ -185,7 +185,7 @@ export class MicroscopeBench extends BenchBase {
       await H.move('right', { wrist: onStage.clone().add(new THREE.Vector3(0.03, 0.015, 0.06)) }, 0.3);
       H.release('right', this.scene);
       this.looseSlide.visible = false;
-      labStore.update('biology', { slideIndex: (bio().slideIndex + 1) % SPECIMEN_CATALOG.length });
+      labStore.update('biology', { slideIndex: (bio().slideIndex + 1) % SPECIMEN_CATALOG.length, cracked: false });
       soundFx.playGlassSlide();
       await H.move('right', { grip: 0.1 }, 0.12);
       await H.rest('right', 0.5);
@@ -208,6 +208,16 @@ export class MicroscopeBench extends BenchBase {
       const at = this.pos(id);
       if (!at) return;
       const step = (coarse ? 0.05 : 0.015) * (up ? 1 : -1);
+      const high = bio().objective === '40x' || bio().objective === '100x';
+      if (coarse && up && high && !bio().cracked) {
+        // The coarse knob moves the stage a long way: at high power it drives the slide into the lens
+        await this.turn(side, at, 0.8, () => {
+          labStore.update('biology', { cracked: true, coarseFocus: THREE.MathUtils.clamp(bio().coarseFocus + step, 0, 1) });
+          soundFx.playGlassSlide();
+          soundFx.playBeep();
+        });
+        return;
+      }
       await this.turn(side, at, up ? 0.8 : -0.8, () => {
         const b = bio();
         const key = coarse ? 'coarseFocus' : 'fineFocus';
@@ -305,11 +315,91 @@ export class MicroscopeBench extends BenchBase {
 // ---------------------------------------------------------------------------------------------
 
 export class CircuitBench extends BenchBase {
-  protected ids = ['phys_knife_switch', 'phys_potentiometer', 'phys_voltage_knob', 'phys_return_lead'];
+  protected ids = ['phys_knife_switch', 'phys_potentiometer', 'phys_voltage_knob', 'phys_return_lead', 'phys_bulb', 'phys_ammeter_needle', 'phys_voltmeter'];
   private voltSpin = 0;
   private needle = 0.87;
   private needleVel = 0;
+  private vNeedle = 0.87;
+  private vNeedleVel = 0;
   private glow = 0;
+  private resistor: THREE.Group | null = null;
+  private voltmeterNeedle: THREE.Object3D | null = null;
+
+  /**
+   * The component under test is a fixed resistor, not a filament lamp (a lamp's resistance rises as
+   * it heats, so it doesn't obey Ohm's law). It sits where the lamp was, with a voltmeter across it.
+   */
+  private buildResistor() {
+    const u = this.rig.userData;
+    const glass = u.bulbGlass as THREE.Mesh | undefined;
+    if (!glass) return;
+    this.rig.updateMatrixWorld(true);
+    const at = glass.getWorldPosition(new THREE.Vector3());
+    glass.visible = false;
+    const light = u.bulbLight as THREE.PointLight | undefined;
+    if (light) light.visible = false;
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.05, 16), new THREE.MeshStandardMaterial({ color: '#d9c39a', roughness: 0.6 }));
+    body.rotation.z = Math.PI / 2;
+    g.add(body);
+    // 12 ohm, 5%: brown, red, black, gold
+    ['#6b3e1f', '#c81e1e', '#111111', '#c9a227'].forEach((c, i) => {
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0095, 0.0095, 0.004, 16), new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: i === 3 ? 0.6 : 0 }));
+      band.rotation.z = Math.PI / 2;
+      band.position.x = -0.016 + i * 0.009 + (i === 3 ? 0.006 : 0);
+      g.add(band);
+    });
+    const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.0012, 0.0012, 0.11, 6), new THREE.MeshStandardMaterial({ color: '#b8bcc2', metalness: 0.8, roughness: 0.3 }));
+    wire.rotation.z = Math.PI / 2;
+    g.add(wire);
+    g.position.copy(at).add(new THREE.Vector3(0, -0.03, 0));
+    g.traverse((o) => tagInteractive(o, 'phys_bulb', 'Fixed resistor (value unknown)', 'The component under test: find its resistance', 'physics', 'primary'));
+    this.scene.add(g);
+    this.resistor = g;
+
+    // Voltmeter across the resistor: a moving-coil meter like the ammeter, 0-10 V
+    const vm = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.075, 0.05), new THREE.MeshStandardMaterial({ color: '#1f2937', roughness: 0.6 }));
+    vm.add(box);
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 160;
+    const x = c.getContext('2d')!;
+    x.fillStyle = '#f8f5ea';
+    x.fillRect(0, 0, 256, 160);
+    x.strokeStyle = '#111';
+    x.fillStyle = '#111';
+    x.lineWidth = 2;
+    x.beginPath();
+    x.arc(128, 150, 110, Math.PI * 1.22, Math.PI * 1.78);
+    x.stroke();
+    x.font = 'bold 18px sans-serif';
+    x.textAlign = 'center';
+    for (let v = 0; v <= 10; v++) {
+      const a = Math.PI * 1.22 + (v / 10) * Math.PI * 0.56;
+      x.beginPath();
+      x.moveTo(128 + Math.cos(a) * (v % 2 ? 104 : 98), 150 + Math.sin(a) * (v % 2 ? 104 : 98));
+      x.lineTo(128 + Math.cos(a) * 112, 150 + Math.sin(a) * 112);
+      x.stroke();
+      if (v % 2 === 0) x.fillText(String(v), 128 + Math.cos(a) * 84, 156 + Math.sin(a) * 84);
+    }
+    x.font = 'bold 28px sans-serif';
+    x.fillText('V', 128, 120);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.088, 0.055), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c) }));
+    face.position.z = 0.0255;
+    vm.add(face);
+    const pivot = new THREE.Group();
+    pivot.position.set(0, -0.025, 0.027);
+    const n = new THREE.Mesh(new THREE.BoxGeometry(0.0015, 0.042, 0.001), new THREE.MeshBasicMaterial({ color: '#b91c1c' }));
+    n.position.y = 0.021;
+    pivot.add(n);
+    vm.add(pivot);
+    this.voltmeterNeedle = pivot;
+    vm.position.copy(at).add(new THREE.Vector3(0.16, 0.0, 0.02));
+    vm.lookAt(vm.position.clone().add(new THREE.Vector3(0, 0, 1)));
+    vm.traverse((o) => tagInteractive(o, 'phys_voltmeter', 'Voltmeter (across the resistor)', 'Read both meters', 'physics', 'primary'));
+    this.scene.add(vm);
+  }
 
   protected async perform(id: string) {
     const H = this.hands;
@@ -346,6 +436,9 @@ export class CircuitBench extends BenchBase {
       soundFx.playClick();
       await H.move(side, { grip: 0.15 }, 0.1);
       await H.rest(side, 0.45);
+    } else if (id === 'phys_bulb' || id === 'phys_ammeter_needle' || id === 'phys_voltmeter') {
+      // Lean in and read the meters (the close-up is the panel's reading dialog)
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('labbridge:readMeters'));
     } else if (id === 'phys_voltage_knob') {
       const at = this.pos('phys_voltage_knob');
       if (!at) return;
@@ -386,19 +479,24 @@ export class CircuitBench extends BenchBase {
     if (knob) knob.rotation.y = damp(knob.rotation.y, -(s.resistance / 100) * Math.PI * 1.5, 8, delta);
 
     // Ammeter needle: a damped spring, so it swings and settles like a real moving-coil meter
-    const { current, power } = circuit(s.voltage, s.resistance, s.switchClosed, s.wired);
+    if (!this.resistor) this.buildResistor();
+    const { current, vResistor } = circuit(s.voltage, s.resistance, s.switchClosed, s.wired);
     const target = 0.87 - Math.min(1, current) * 1.74;
     this.needleVel += ((target - this.needle) * 60 - this.needleVel * 9) * delta;
     this.needle += this.needleVel * delta;
     const needle = u.ammeterNeedle as THREE.Object3D | undefined;
     if (needle) needle.rotation.z = this.needle;
-
-    // Filament warms up and cools down rather than switching instantly
-    this.glow = damp(this.glow, s.switchClosed ? Math.min(1, power / 8) : 0, 7, delta);
-    const light = u.bulbLight as THREE.PointLight | undefined;
-    if (light) light.intensity = this.glow * 3.5;
-    const glass = (u.bulbGlass as THREE.Mesh | undefined)?.material as THREE.MeshStandardMaterial | undefined;
-    if (glass?.emissive) glass.emissiveIntensity = 0.05 + this.glow * 1.6;
+    // Voltmeter (0-10 V full scale) swings the same way
+    const vt = 0.87 - Math.min(1, vResistor / 10) * 1.74;
+    this.vNeedleVel += ((vt - this.vNeedle) * 60 - this.vNeedleVel * 9) * delta;
+    this.vNeedle += this.vNeedleVel * delta;
+    if (this.voltmeterNeedle) this.voltmeterNeedle.rotation.z = this.vNeedle;
+    // A resistor carrying too much current gets hot: a faint glow at the body
+    this.glow = damp(this.glow, current > 0.5 ? 1 : 0, 2, delta);
+    this.resistor?.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (m?.emissive) m.emissive.setRGB(this.glow * 0.5, this.glow * 0.12, 0);
+    });
   }
 }
 

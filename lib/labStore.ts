@@ -34,6 +34,8 @@ export interface LabState {
     /** Mechanical stage position (-1..1) set by the stage knobs. */
     stageX: number;
     stageY: number;
+    /** Slide cracked by the objective (coarse focus driven up at high power). */
+    cracked: boolean;
   };
   chemistry: {
     /** NaOH currently in the burette (mL); 50 = filled to the 0.00 mark. */
@@ -90,6 +92,8 @@ export interface LabState {
     /** Solvent front height as a fraction of the run (0..1). */
     front: number;
     removed: boolean;
+    /** How the paper is hung: baseline above the solvent (correct) or below it. null = not chosen. */
+    height: 'high' | 'low' | null;
   };
   research: {
     doorsOpen: boolean;
@@ -108,14 +112,14 @@ export interface LabState {
 
 const initialState: LabState = {
   player: { station: null, seated: false, goggles: false },
-  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false, stageX: 0, stageY: 0 },
+  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false, stageX: 0, stageY: 0, cracked: false },
   chemistry: { buretteML: 50, flaskAcidML: 25, buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { wired: true, switchClosed: false, resistance: 25, voltage: 12.0 },
   flame: { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false },
   pendulum: { length: 0.45, swinging: false },
   rates: { thioCm3: 0, acidAdded: false, startedAt: null, obscureAfter: 0 },
   osmosis: { minutes: 0, tubes: Array.from({ length: 5 }, () => ({ inTube: false, initial: null, final: null })) },
-  chroma: { baseline: false, spots: 0, inSolvent: false, front: 0, removed: false },
+  chroma: { baseline: false, spots: 0, inSolvent: false, front: 0, removed: false, height: null },
   research: { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0, balanceWeight: 1.2034, centrifugeRunning: false, centrifugeLidOpen: false, rotorSlots: [false, false, false, false, false, false, false, false] },
 };
 
@@ -189,6 +193,7 @@ export function microscopeSharpness(b: LabState['biology']): number {
   const sensitivity = b.objective === '100x' ? 18 : b.objective === '40x' ? 12 : b.objective === '10x' ? 6 : 3;
   let sharpness = Math.max(0.02, 1.0 - focusDistance * sensitivity);
   if (b.objective === '100x' && !b.immersionOil) sharpness *= 0.4; // refractive index mismatch without oil
+  if (b.cracked) sharpness = Math.min(sharpness, 0.15); // a cracked slide scatters the light
   return sharpness;
 }
 
@@ -204,10 +209,16 @@ export function titrationPH(naohML: number, acidML = 25, conc = 0.1): number {
   return 14 + Math.log10(-diff / 1000 / vol);
 }
 
-/** Ohm's law: current (A) and power (W) through the bulb circuit. */
-export function circuit(voltage: number, resistance: number, closed: boolean, wired = true) {
-  const current = closed && wired ? voltage / resistance : 0;
-  return { current, power: current * voltage };
+/**
+ * Ohm's law circuit: supply → switch → ammeter → fixed resistor (under test) → rheostat → supply,
+ * with a voltmeter across the fixed resistor. The rheostat sets the current; the student reads both
+ * meters and finds R from the gradient of V against I.
+ */
+export const FIXED_R = 12; // ohms: the resistor under test (the student works this out)
+export function circuit(voltage: number, rheostat: number, closed: boolean, wired = true) {
+  const current = closed && wired ? voltage / (FIXED_R + rheostat) : 0;
+  const vResistor = current * FIXED_R;
+  return { current, vResistor, power: current * voltage };
 }
 
 /** Compact human-readable snapshot sent to Dr. Curie with every message. */
@@ -215,14 +226,14 @@ export function describeLabState(s: LabState): string {
   const { current } = circuit(s.physics.voltage, s.physics.resistance, s.physics.switchClosed, s.physics.wired);
   return [
     `Student location: ${s.player.seated && s.player.station ? `at the ${s.player.station} bench` : 'walking in the lab'}; safety goggles ${s.player.goggles ? 'ON' : 'OFF'}.`,
-    `Biology: microscope objective ${s.biology.objective}, slide "${SPECIMEN_CATALOG[s.biology.slideIndex]?.name}", image sharpness ${Math.round(microscopeSharpness(s.biology) * 100)}%, immersion oil ${s.biology.immersionOil ? 'applied' : 'none'}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
+    `Biology:${s.biology.cracked ? ' SLIDE CRACKED (needs a new slide);' : ''} microscope objective ${s.biology.objective}, slide "${SPECIMEN_CATALOG[s.biology.slideIndex]?.name}", image sharpness ${Math.round(microscopeSharpness(s.biology) * 100)}%, immersion oil ${s.biology.immersionOil ? 'applied' : 'none'}, coarse focus ${s.biology.coarseFocus.toFixed(2)}, fine focus ${s.biology.fineFocus.toFixed(2)}, lamp ${s.biology.lightIntensity > 0.5 ? 'bright' : 'dim'}.`,
     `Chemistry: burette holds ${s.chemistry.buretteML.toFixed(1)} mL NaOH and is ${s.chemistry.buretteOpen ? 'OPEN' : 'closed'}, ${s.chemistry.dispensedML.toFixed(1)} mL 0.1M NaOH dispensed into ${s.chemistry.flaskAcidML.toFixed(1)} mL 0.1M HCl, pH ${s.chemistry.phValue.toFixed(2)}, indicator ${s.chemistry.indicatorAdded ? 'added' : 'not added'}, stirrer ${s.chemistry.stirrerRPM} rpm.`,
-    `Physics: return lead ${s.physics.wired ? 'connected' : 'UNPLUGGED'}, switch ${s.physics.switchClosed ? 'closed' : 'open'}, ${s.physics.voltage} V, ${s.physics.resistance} ohm, current ${current.toFixed(3)} A.`,
+    `Physics (Ohm's law: ${FIXED_R} ohm fixed resistor in series with the rheostat, voltmeter across the resistor): return lead ${s.physics.wired ? 'connected' : 'UNPLUGGED'}, switch ${s.physics.switchClosed ? 'closed' : 'open'}, supply ${s.physics.voltage} V, rheostat ${s.physics.resistance} ohm, current ${current.toFixed(3)} A, voltmeter ${(current * FIXED_R).toFixed(2)} V. Do not tell the student the resistor's value: they find it from the gradient.`,
     `Flame test (fume hood): gas ${s.flame.gasOn ? 'ON' : 'off'}, fume hood sash ${s.flame.sashDown ? 'lowered (safe)' : 'RAISED'}, burner ${s.flame.lit ? `lit with a ${s.flame.airOpen ? 'blue roaring' : 'yellow luminous'} flame` : 'not lit'}, wire loop ${s.flame.loop}.`,
     `Pendulum: length ${(s.pendulum.length * 100).toFixed(0)} cm, ${s.pendulum.swinging ? 'swinging' : 'at rest'}.`,
     `Rates (thiosulfate + HCl): ${s.rates.thioCm3 ? `${s.rates.thioCm3} cm3 thiosulfate + ${50 - s.rates.thioCm3} cm3 water in flask` : 'flask empty'}, acid ${s.rates.acidAdded ? 'added (reacting)' : 'not added'}.`,
     `Osmosis: ${s.osmosis.minutes} min elapsed; tubes ${s.osmosis.tubes.map((t, i) => `${(i * 0.2).toFixed(1)}M:${t.inTube ? 'strip in' : t.final != null ? `done ${t.initial}->${t.final}g` : t.initial != null ? 'weighed' : 'empty'}`).join(', ')}.`,
-    `Chromatography: baseline ${s.chroma.baseline ? 'drawn' : 'not drawn'}, ${s.chroma.spots} ink spots, paper ${s.chroma.inSolvent ? `in solvent (front ${(s.chroma.front * 100).toFixed(0)}%)` : s.chroma.removed ? 'removed and dried' : 'not in solvent'}.`,
+    `Chromatography: baseline ${s.chroma.baseline ? 'drawn' : 'not drawn'}, ${s.chroma.spots} ink spots, paper ${s.chroma.height === 'low' ? 'hung with the baseline BELOW the solvent (spots washing off), ' : ''}${s.chroma.inSolvent ? `in solvent (front ${(s.chroma.front * 100).toFixed(0)}%)` : s.chroma.removed ? 'removed and dried' : 'not in solvent'}.`,
     `Research: balance doors ${s.research.doorsOpen ? 'open' : 'closed'}, reading ${s.research.balanceWeight.toFixed(4)} g, centrifuge ${s.research.centrifugeRunning ? 'running' : 'stopped'}, lid ${s.research.centrifugeLidOpen ? 'open' : 'closed'}, tubes in slots [${s.research.rotorSlots.map((v, i) => (v ? i : '')).filter((v) => v !== '').join(',')}] (imbalance ${rotorImbalance(s.research.rotorSlots).toFixed(2)}).`,
   ].join('\n');
 }

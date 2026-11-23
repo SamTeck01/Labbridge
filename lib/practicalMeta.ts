@@ -73,6 +73,7 @@ export const PRACTICAL_META: Record<string, PracticalMeta> = {
       capture: 'A record of what you saw, like a labelled drawing in your practical book.',
     },
     mistakes: {
+      cracked: { kind: 'safety', recoverable: true, consequence: 'At 40× the lens is almost touching the slide. The coarse knob moves the stage a long way, so it drove the slide into the lens and cracked it. In a real lab that can also scratch an expensive lens.', fix: 'Take a fresh slide from the box, go back to 4×, and use only the fine focus at 40×.' },
       highFirst: { kind: 'technique', recoverable: true, consequence: 'At high power the field is tiny and the lens sits close to the slide, so you can lose the specimen or crack the slide.', fix: 'Go back to 4×, focus, then work up.' },
       noOil: { kind: 'technique', recoverable: true, consequence: 'Light bends as it leaves the glass into air, so the 100× image stays blurred.', fix: 'Add a drop of immersion oil, or use 40×.' },
     },
@@ -104,9 +105,10 @@ export const PRACTICAL_META: Record<string, PracticalMeta> = {
       acid: 'A known volume of acid is what you are neutralising.',
       indicator: 'Phenolphthalein is colourless in acid and turns pink once all the acid is used up: that is the endpoint.',
       stir: 'Each drop must mix in, or you will see pink where the drop lands before the whole flask is neutral.',
+      initial: 'The burette is rarely filled exactly to 0.00, so you record where it starts. Titre = final reading − initial reading.',
       titrate: 'Add alkali quickly at first, then slowly as you get close.',
       endpoint: 'The first faint pink that stays is the endpoint. Past it, every extra drop makes the titre too big.',
-      record: 'Read the bottom of the meniscus at eye level, to the nearest 0.05 mL.',
+      record: 'Read the bottom of the meniscus at eye level, to the nearest 0.05 mL, then subtract the initial reading.',
       concordant: 'One titre could be a fluke. Two that agree within 0.10 mL show your result is reliable.',
     },
     mistakes: {
@@ -167,6 +169,7 @@ export const PRACTICAL_META: Record<string, PracticalMeta> = {
     },
     mistakes: {
       noBaseline: { kind: 'procedure', recoverable: true, consequence: 'With no baseline there is no fixed point to measure distances from.', fix: 'Draw the baseline before spotting next time.' },
+      drowned: { kind: 'procedure', recoverable: false, consequence: 'With the spots below the solvent surface, the dyes dissolve into the beaker instead of being carried up the paper, so nothing separates.', fix: 'Restart the practical and hang the paper so the baseline is just above the solvent.' },
     },
   },
   weighing: {
@@ -189,19 +192,20 @@ export const PRACTICAL_META: Record<string, PracticalMeta> = {
   },
   'ohms-law': {
     subject: 'Physics',
-    difficulty: 'Starter',
-    minutes: 8,
-    learn: 'Measure current at different resistances and show that current = voltage ÷ resistance.',
-    apparatus: ['Power supply', 'Knife switch', 'Rheostat (variable resistor)', 'Ammeter', 'Connecting leads'],
-    skills: ['setup', 'measurement', 'recording', 'interpretation', 'safety'],
+    difficulty: 'Intermediate',
+    minutes: 10,
+    learn: 'Measure current and voltage for a resistor and show they are proportional: V = I × R.',
+    apparatus: ['Power supply (12 V)', 'Knife switch', 'Fixed resistor (under test)', 'Rheostat (variable resistor)', 'Ammeter (in series)', 'Voltmeter (across the resistor)', 'Connecting leads'],
+    skills: ['apparatus', 'setup', 'measurement', 'recording', 'calculation', 'interpretation', 'safety'],
     why: {
       wire: 'Current only flows round a complete loop.',
       close: 'The switch completes the circuit; leave it open while you change connections.',
-      measure: 'Several readings over a wide range show the relationship, not just one point.',
-      open: 'Opening the switch stops current, so nothing heats up when you finish.',
+      measure: 'The ammeter goes in series because current is the same all round a series loop; the voltmeter goes across the resistor because it compares the two ends. The rheostat changes the current so you get several points.',
+      open: 'Opening the switch stops current, so nothing heats up while you work.',
+      answer: 'If V ÷ I is the same every time, V is proportional to I: that is Ohm’s law, and the constant is the resistance.',
     },
     mistakes: {
-      overcurrent: { kind: 'safety', recoverable: true, consequence: 'Too much current heats the wires and can burn out the bulb or damage the ammeter.', fix: 'Turn the resistance up before taking more readings.' },
+      overcurrent: { kind: 'safety', recoverable: true, consequence: 'Too much current heats the resistor; a hot resistor changes its resistance, so your readings stop fitting a straight line (and it can burn out).', fix: 'Turn the rheostat up to reduce the current, then carry on.' },
     },
   },
   pendulum: {

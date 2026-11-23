@@ -92,6 +92,7 @@ export class ChromaBench extends BenchBase {
   private placePaper(hanging: boolean) {
     if (hanging) {
       this.paper.position.copy(this.inBeaker);
+      if (this.st().height === 'low') this.paper.position.y -= 0.03; // baseline ends up under the surface
       this.paper.rotation.set(0, 0, 0);
     } else {
       this.paper.position.copy(this.onBench);
@@ -101,7 +102,7 @@ export class ChromaBench extends BenchBase {
 
   private redraw() {
     const s = this.st();
-    const key = `${s.baseline}|${s.spots}|${s.front.toFixed(3)}`;
+    const key = `${s.baseline}|${s.spots}|${s.front.toFixed(3)}|${s.height}`;
     if (key === this.drawnKey) return;
     this.drawnKey = key;
     const g = this.ctx;
@@ -129,8 +130,21 @@ export class ChromaBench extends BenchBase {
       g.stroke();
     }
     // Spots: each dye travels Rf x (front - baseline) once the solvent passes it
+    // Spots under the solvent dissolve into the beaker: they fade and nothing climbs
+    const drowned = s.height === 'low' && s.front > 0;
     for (let i = 0; i < s.spots; i++) {
       INKS[i].dyes.forEach((d) => {
+        if (drowned) {
+          const fade = Math.max(0, 1 - s.front * 4);
+          if (fade <= 0) return;
+          g.globalAlpha = fade;
+          g.fillStyle = d.colour;
+          g.beginPath();
+          g.ellipse(W * SPOT_X[i], y(BASELINE), 5, 4, 0, 0, Math.PI * 2);
+          g.fill();
+          g.globalAlpha = 1;
+          return;
+        }
         const run = Math.max(0, s.front - BASELINE);
         const at = BASELINE + d.rf * run;
         const spread = 4 + run * 10;
@@ -173,6 +187,7 @@ export class ChromaBench extends BenchBase {
     } else if (id === 'chroma_paper' || id === 'chroma_beaker') {
       if (!s.inSolvent && !s.removed) {
         if (s.spots < INKS.length) return curie.say('Spot all three inks on the baseline before it goes in.');
+        if (!s.height) return curie.say('First choose how deep to hang the paper (in your practical panel): the baseline must end up just above the solvent.');
         // Lift the paper and hang it from the rod, baseline just above the solvent
         const from = paperWorld();
         await H.move('right', { wrist: from.clone().add(new THREE.Vector3(0.03, 0.04, 0.06)), grip: 0.55 }, 0.45);

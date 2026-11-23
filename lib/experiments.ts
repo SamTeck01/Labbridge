@@ -1,7 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { labStore, microscopeSharpness, titrationPH, SALTS, type LabState, type Station } from '@/lib/labStore';
+import { labStore, microscopeSharpness, titrationPH, circuit, FIXED_R, SALTS, type LabState, type Station } from '@/lib/labStore';
 import { stopwatches } from '@/lib/workbench/kit';
 
 /**
@@ -104,13 +104,14 @@ export const EXPERIMENTS: ExperimentDef[] = [
     safety: ['Goggles on: NaOH is corrosive.', 'Close the burette before you walk away.'],
     intro: "Today we're finding the endpoint of HCl with NaOH. Start by filling the burette: pick up the NaOH bottle and pour it through the funnel.",
     steps: [
-      { id: 'fill', text: 'Fill the burette with 0.1 M NaOH to 0.00 mL', coach: 'Pick up the NaOH bottle and pour it through the funnel into the burette until it reaches the zero mark.', done: (l) => l.chemistry.buretteML >= 49.5 },
+      { id: 'fill', text: 'Fill the burette with 0.1 M NaOH to near the 0.00 mark', coach: 'Pick up the NaOH bottle and pour it through the funnel into the burette, up to just below the zero mark.', done: (l) => l.chemistry.buretteML >= 49.3 },
       { id: 'acid', text: 'Pour 25.0 mL of 0.1 M HCl into the flask', coach: 'Now the measuring cylinder of HCl. Pour all 25 mL into the conical flask.', done: (l) => l.chemistry.flaskAcidML >= 24.5 },
       { id: 'indicator', text: 'Add 2–3 drops of phenolphthalein to the flask', coach: 'Take the dropper from the indicator bottle and squeeze a few drops into the flask.', done: (l) => l.chemistry.indicatorAdded },
       { id: 'stir', text: 'Mix: switch on the stirrer, or swirl the flask', coach: 'Each addition has to mix in. Switch on the stirrer, or hold the flask and swirl it by hand (tap the flask).', done: (l, r) => l.chemistry.stirrerRPM > 0 || (r.events.swirled ?? 0) > 0 },
+      { id: 'initial', text: 'Read and record the initial burette reading', coach: 'Before any alkali goes in, read the burette at eye level: the bottom of the meniscus, to the nearest 0.05 mL. It is rarely exactly 0.00.', done: (_l, r) => r.readings.some((x) => x.label === 'Initial') },
       { id: 'titrate', text: 'Open the burette and titrate', coach: 'Open the stopcock. Run it steadily at first; the endpoint is near 25 mL.', done: (l) => l.chemistry.dispensedML > 0.5 },
       { id: 'endpoint', text: 'Close the burette at the first permanent pink', coach: 'Near 24 mL, close it and add single drops. Stop at the first faint pink that stays.', done: (l) => l.chemistry.phValue >= 8.2 && !l.chemistry.buretteOpen },
-      { id: 'record', text: 'Record the titre', coach: 'Read the burette at eye level and record your titre.', done: (_l, r) => r.readings.length >= 1 },
+      { id: 'record', text: 'Read the final burette reading (titre = final − initial)', coach: 'Read the burette again at eye level. Your titre is the final reading minus the initial reading.', done: (_l, r) => r.readings.some((x) => x.label === 'Titre') },
       {
         id: 'concordant',
         text: 'Repeat until two titres agree within 0.10 mL',
@@ -141,7 +142,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
         { label: 'Accuracy', points: band(err, [[0.1, 30], [0.3, 24], [0.6, 15], [1.5, 6]]), max: 30, note: `${pair ? `Mean concordant titre ${titre.toFixed(2)} mL` : `Best titre ${titre.toFixed(2)} mL`} vs 25.00 mL expected (error ${err.toFixed(2)} mL).` },
         { label: 'Concordant results', points: pair ? 10 : 0, max: 10, note: pair ? `${pair[0].toFixed(2)} and ${pair[1].toFixed(2)} mL agree within 0.10 mL.` : `No two of your ${titres.length} titre(s) agree within 0.10 mL.` },
         (() => {
-          const errs = titres.map((x) => Math.abs(x.value - (x.extra?.actual ?? x.value)));
+          const errs = titres.map((x) => x.extra?.readErr ?? Math.abs(x.value - (x.extra?.actual ?? x.value)));
           const readErr = errs.length ? Math.max(...errs) : 0;
           return { label: 'Burette reading', points: readErr <= 0.05 ? 10 : readErr <= 0.15 ? 5 : 0, max: 10, note: readErr <= 0.05 ? 'Every burette reading matched the meniscus.' : `One reading was ${readErr.toFixed(2)} mL away from the meniscus.` };
         })(),
@@ -167,6 +168,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     mistakes: [
       { id: 'highFirst', message: "Don't start on high power. Go back to 4× and focus there first; it protects the slide and the lens.", check: (l, r) => (l.biology.objective === '40x' || l.biology.objective === '100x') && !r.completedSteps.includes('focus4') },
       { id: 'noOil', message: '100× is an oil-immersion lens. Without oil the image will be blurry.', check: (l) => l.biology.objective === '100x' && !l.biology.immersionOil },
+      { id: 'cracked', message: 'Crack! The coarse knob drove the slide into the 40× lens. At high power only the fine focus is used. Take a fresh slide from the box.', check: (l) => l.biology.cracked },
     ],
     recordLabel: 'Capture image (use the eyepiece view)',
     readingsNeeded: 0,
@@ -185,33 +187,44 @@ export const EXPERIMENTS: ExperimentDef[] = [
     id: 'ohms-law',
     station: 'physics',
     title: "Verifying Ohm's Law",
-    objective: 'Measure the current through the circuit at three or more resistances and show that V = I × R.',
-    safety: ['Keep current under 1 A to protect the bulb and meter.', 'Open the switch when you finish.'],
-    intro: "We'll verify Ohm's law. First complete the circuit: the return lead is unplugged. Then close the switch and record the current at three rheostat settings.",
+    objective: 'Measure the current through a fixed resistor and the voltage across it at four or more settings of the rheostat, and find its resistance from the gradient of V against I.',
+    safety: ['Keep the current under 0.5 A: above that the resistor overheats.', 'Open the switch when you change connections and when you finish.'],
+    intro: "Ohm's law today. The fixed resistor is the component under test: the ammeter is in series with it and the voltmeter across it. First complete the circuit: the return lead is unplugged.",
     steps: [
       { id: 'wire', text: 'Plug the return lead into the power supply', coach: 'The circuit is incomplete: pick up the loose red lead and plug it into the power supply terminal.', done: (l) => l.physics.wired },
-      { id: 'close', text: 'Close the knife switch', coach: 'Close the knife switch to complete the circuit.', done: (l) => l.physics.switchClosed },
-      { id: 'measure', text: 'Record current at 3 different resistances', coach: 'Record the ammeter reading, change the rheostat, and repeat. Three settings at least.', done: (_l, r) => new Set(r.readings.map((x) => x.extra?.R)).size >= 3 },
-      { id: 'open', text: 'Open the switch when finished', coach: 'Good data. Open the switch to make the circuit safe.', done: (l, r) => !l.physics.switchClosed && r.readings.length >= 3 },
+      { id: 'close', text: 'Close the knife switch', coach: 'Close the knife switch to complete the circuit. Both needles should move.', done: (l) => l.physics.switchClosed },
+      {
+        id: 'measure',
+        text: 'Read both meters at 4 or more rheostat settings',
+        coach: 'Click a meter to read it. Record the current and voltage, turn the rheostat, and repeat. Four settings at least.',
+        done: (_l, r) => new Set(r.readings.filter((x) => x.extra?.R !== undefined).map((x) => x.extra!.R)).size >= 4,
+      },
+      { id: 'open', text: 'Open the switch', coach: 'Good data. Open the switch so nothing heats up while you work out the answer.', done: (l, r) => !l.physics.switchClosed && r.readings.length >= 4 },
+      { id: 'answer', text: 'Find the resistance from your readings', coach: 'Resistance = V ÷ I. Plot V against I: the points lie on a straight line through the origin, and the gradient is R.', done: (_l, r) => r.readings.some((x) => x.label === 'Answer') },
     ],
     mistakes: [
-      { id: 'overcurrent', message: "That's over 1 A. Turn the resistance up before you burn out the bulb.", check: (l) => l.physics.wired && l.physics.switchClosed && l.physics.voltage / l.physics.resistance > 1 },
+      { id: 'overcurrent', message: 'Over 0.5 A: the resistor is getting hot, and hot resistors change their resistance. Turn the rheostat up.', check: (l) => circuit(l.physics.voltage, l.physics.resistance, l.physics.switchClosed, l.physics.wired).current > 0.5 },
     ],
-    recordLabel: 'Record ammeter reading',
-    readingsNeeded: 3,
+    recordLabel: 'Read the meters',
+    readingsNeeded: 4,
     record: (l) => {
       if (!l.physics.wired) return 'The circuit is incomplete: plug in the return lead.';
       if (!l.physics.switchClosed) return 'Close the switch first: no current is flowing.';
-      const I = l.physics.voltage / l.physics.resistance;
-      return { label: `I at R = ${l.physics.resistance} Ω`, value: Math.round(I * 1000) / 1000, unit: 'A', extra: { R: l.physics.resistance, V: l.physics.voltage } };
+      return 'Click the ammeter or voltmeter to read them.';
     },
+    answer: { prompt: 'Resistance of the resistor (gradient of V against I)', unit: 'Ω' },
     evaluate: (r) => {
-      const Rs = [...new Set(r.readings.map((x) => x.extra?.R ?? 0))];
-      const span = Rs.length ? Math.max(...Rs) - Math.min(...Rs) : 0;
+      const pts = r.readings.filter((x) => x.extra?.R !== undefined);
+      const n = new Set(pts.map((x) => x.extra!.R)).size;
+      const iErr = pts.length ? pts.reduce((a, x) => a + Math.abs((x.extra!.I ?? 0) - (x.extra!.Iact ?? 0)), 0) / pts.length : 1;
+      const vErr = pts.length ? pts.reduce((a, x) => a + Math.abs((x.extra!.V ?? 0) - (x.extra!.Vact ?? 0)), 0) / pts.length : 1;
+      const ans = r.readings.find((x) => x.label === 'Answer')?.value ?? -1;
+      const err = Math.abs(ans - FIXED_R) / FIXED_R;
       return [
-        { label: 'Data collected', points: Math.round((Math.min(3, Rs.length) / 3) * 50), max: 50, note: `${Rs.length} distinct resistance settings.` },
-        { label: 'Range of data', points: span >= 40 ? 20 : span >= 20 ? 10 : 0, max: 20, note: `Resistances spanned ${span} Ω.` },
-        { label: 'Safety', points: (r.mistakes.includes('overcurrent') ? 0 : 20) + (r.completedSteps.includes('open') ? 10 : 0), max: 30, note: r.mistakes.includes('overcurrent') ? 'Exceeded 1 A.' : 'Current kept in the safe range.' },
+        { label: 'Data collected', points: Math.round((Math.min(4, n) / 4) * 30), max: 30, note: `${n} different rheostat settings.` },
+        { label: 'Reading the meters', points: (iErr <= 0.01 ? 13 : iErr <= 0.03 ? 7 : 0) + (vErr <= 0.1 ? 12 : vErr <= 0.3 ? 6 : 0), max: 25, note: `Your current readings were off by ${iErr.toFixed(3)} A and voltages by ${vErr.toFixed(2)} V on average.` },
+        { label: 'Resistance', points: band(err, [[0.05, 30], [0.1, 22], [0.2, 10]]), max: 30, note: `You found ${ans.toFixed(1)} Ω; the resistor is ${FIXED_R} Ω (brown-red-black bands).` },
+        { label: 'Safety', points: (r.mistakes.includes('overcurrent') ? 0 : 10) + (r.completedSteps.includes('open') ? 5 : 0), max: 15, note: r.mistakes.includes('overcurrent') ? 'Let the current go above 0.5 A.' : 'Current kept in the safe range.' },
       ];
     },
   },
@@ -406,11 +419,14 @@ export const EXPERIMENTS: ExperimentDef[] = [
     steps: [
       { id: 'baseline', text: 'Draw a pencil baseline', coach: 'Pencil, not pen: graphite doesn’t dissolve, so it won’t run up the paper.', done: (l) => l.chroma.baseline },
       { id: 'spots', text: 'Spot the three inks on the baseline', coach: 'Small, concentrated spots on the line: A, B and the unknown.', done: (l) => l.chroma.spots >= 3 },
-      { id: 'run', text: 'Hang the paper in the solvent', coach: 'Lower it so the baseline sits just above the solvent.', done: (l) => l.chroma.inSolvent || l.chroma.removed },
+      { id: 'run', text: 'Hang the paper in the solvent', coach: 'Choose how deep to hang it, then lower it in. The baseline must sit just above the solvent.', done: (l) => l.chroma.inSolvent || l.chroma.removed },
       { id: 'remove', text: 'Remove the paper near the top and let it dry', coach: 'Take it out before the front reaches the top.', done: (l) => l.chroma.removed },
       { id: 'answer', text: 'Measure and calculate the Rf of the red dye', coach: 'Rf = distance moved by the dye ÷ distance moved by the solvent, both from the baseline.', done: (_l, r) => r.readings.some((x) => x.label === 'Answer') },
     ],
-    mistakes: [{ id: 'noBaseline', message: 'Spotting without a baseline: you won’t be able to measure the distances.', check: (l) => l.chroma.spots > 0 && !l.chroma.baseline }],
+    mistakes: [
+      { id: 'noBaseline', message: 'Spotting without a baseline: you won’t be able to measure the distances.', check: (l) => l.chroma.spots > 0 && !l.chroma.baseline },
+      { id: 'drowned', message: 'The baseline is under the solvent: the ink spots are dissolving into the beaker instead of climbing the paper. This chromatogram can’t be used. Restart and hang it higher.', check: (l) => l.chroma.height === 'low' && (l.chroma.inSolvent || l.chroma.removed) },
+    ],
     recordLabel: '',
     readingsNeeded: 0,
     record: () => 'Measure the paper to calculate Rf.',
@@ -419,7 +435,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       const ans = r.readings.find((x) => x.label === 'Answer')?.value ?? -1;
       const err = Math.abs(ans - 0.47);
       return [
-        { label: 'Rf value', points: band(err, [[0.03, 50], [0.07, 35], [0.15, 15]]), max: 50, note: `You calculated ${ans.toFixed(2)}; the red dye’s Rf is about 0.47.` },
+        { label: 'Rf value', points: r.mistakes.includes('drowned') ? 0 : band(err, [[0.03, 50], [0.07, 35], [0.15, 15]]), max: 50, note: `You calculated ${ans.toFixed(2)}; the red dye’s Rf is about 0.47.` },
         { label: 'Technique', points: r.mistakes.includes('noBaseline') ? 15 : 35, max: 35, note: r.mistakes.includes('noBaseline') ? 'Spotted before drawing the baseline.' : 'Pencil baseline, small spots, removed in time.' },
         { label: 'Interpretation', points: 15, max: 15, note: 'The unknown contains the blue dye of A and the red dye of B (matching Rf values).' },
       ];
@@ -581,9 +597,9 @@ export const experiments = {
     if (def.id === 'titration') labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
     if (def.id === 'weighing') labStore.update('research', { doorsOpen: false, massOnPan: 1.2034, tareOffset: 0 });
     if (['pendulum', 'rates', 'osmosis', 'chroma'].includes(def.station)) labStore.resetKey(STATION_STATE[def.station]);
-    if (def.id === 'ohms-law') labStore.update('physics', { wired: false, switchClosed: false, resistance: 25, voltage: 12 });
+    if (def.id === 'ohms-law') labStore.update('physics', { wired: false, switchClosed: false, resistance: 40, voltage: 12 });
     if (def.id === 'flame') labStore.update('flame', { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false });
-    if (def.id === 'microscopy') labStore.update('biology', { objective: '10x', coarseFocus: 0.2, fineFocus: 0.5, immersionOil: false });
+    if (def.id === 'microscopy') labStore.update('biology', { objective: '10x', coarseFocus: 0.2, fineFocus: 0.5, immersionOil: false, cracked: false });
     set({ run: { experimentId: id, startedAt: Date.now(), completedSteps: [], readings: [], mistakes: [], events: {} }, lastResult: null });
     emit({ type: 'started', message: def.intro });
     evaluate();
@@ -632,6 +648,49 @@ export const experiments = {
     set({ run: { ...run, readings: [...run.readings, r] } });
     evaluate();
     return null;
+  },
+  /**
+   * Titration: the student's burette reading. With no open run reading it is the initial reading;
+   * otherwise it is the final one and the titre (final − initial, from the student's own values) follows.
+   */
+  recordBurette(value: number) {
+    const run = state.run;
+    if (!run) return;
+    const c = labStore.get().chemistry;
+    const actual = Math.round((50 - c.buretteML) * 100) / 100;
+    const last = [...run.readings].reverse().find((x) => x.label === 'Initial' || x.label === 'Titre');
+    if (last?.label !== 'Initial') {
+      set({ run: { ...run, readings: [...run.readings, { label: 'Initial', value, unit: 'mL', extra: { actual } }] } });
+    } else {
+      const titre = Math.round((value - last.value) * 100) / 100;
+      const readErr = Math.max(Math.abs(value - actual), Math.abs(last.value - (last.extra?.actual ?? last.value)));
+      set({
+        run: {
+          ...run,
+          readings: [
+            ...run.readings,
+            { label: 'Final', value, unit: 'mL', extra: { actual } },
+            { label: 'Titre', value: titre, unit: 'mL', extra: { actual: Math.round(c.dispensedML * 100) / 100, readErr } },
+          ],
+        },
+      });
+    }
+    evaluate();
+  },
+  /** Whether the next burette reading is the initial one. */
+  burettePending(): 'initial' | 'final' {
+    const last = [...(state.run?.readings ?? [])].reverse().find((x) => x.label === 'Initial' || x.label === 'Titre');
+    return last?.label === 'Initial' ? 'final' : 'initial';
+  },
+  /** Ohm's law: the student's reading of both meters at the current rheostat setting. */
+  recordMeters(I: number, V: number) {
+    const run = state.run;
+    if (!run) return;
+    const p = labStore.get().physics;
+    const { current, vResistor } = circuit(p.voltage, p.resistance, p.switchClosed, p.wired);
+    const reading: Reading = { label: `Rheostat ${p.resistance} Ω`, value: I, unit: `A · ${V} V`, extra: { I, V, Iact: Math.round(current * 1000) / 1000, Vact: Math.round(vResistor * 100) / 100, R: p.resistance } };
+    set({ run: { ...run, readings: [...run.readings, reading] } });
+    evaluate();
   },
   /** A reading the student took themselves (e.g. read off the burette scale). */
   recordManual(reading: Reading) {

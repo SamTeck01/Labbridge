@@ -6,7 +6,7 @@ import React, { useState } from 'react';
  * Close-up of the burette scale at the meniscus. The student reads the bottom of the meniscus at eye
  * level and types the volume (to 0.05 mL, like a real burette). The true level is drawn, not shown.
  */
-export default function BuretteReading({ actual, onSubmit, onCancel }: { actual: number; onSubmit: (v: number) => void; onCancel: () => void }) {
+export default function BuretteReading({ actual, title = 'Read the burette', onSubmit, onCancel }: { actual: number; title?: string; onSubmit: (v: number) => void; onCancel: () => void }) {
   const [text, setText] = useState('');
   const PX = 60; // pixels per mL
   const H = 260;
@@ -29,7 +29,7 @@ export default function BuretteReading({ actual, onSubmit, onCancel }: { actual:
   return (
     <div className="fixed inset-0 z-[60] bg-slate-950/80 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 text-slate-100 w-full max-w-sm">
-        <h3 className="text-sm font-semibold mb-1">Read the burette</h3>
+        <h3 className="text-sm font-semibold mb-1">{title}</h3>
         <p className="text-xs text-slate-400 mb-3">Eye level with the meniscus. Read the bottom of the curve, to the nearest 0.05 mL. The scale reads downward from 0.</p>
         <div className="flex gap-4 items-center">
           <svg width={150} height={H} className="rounded-lg bg-[#eef3f6] shrink-0">

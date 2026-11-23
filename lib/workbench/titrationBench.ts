@@ -20,6 +20,8 @@ const FLASK_PROFILE: [number, number][] = [
 const CLEAR = new THREE.Color('#e8f1ff');
 const PINK = new THREE.Color('#ff3d9a');
 const NAOH_BOTTLE_START_ML = 400;
+/** A realistic starting reading: 0.10-0.60 mL, in 0.05 mL steps. */
+const pickFillReading = () => (2 + Math.floor(Math.random() * 11)) * 0.05;
 
 export class TitrationBench {
   private busy = false;
@@ -31,6 +33,8 @@ export class TitrationBench {
   private bottleHome = new THREE.Matrix4();
   private cylinderHome = new THREE.Matrix4();
   private bottleML = NAOH_BOTTLE_START_ML;
+  /** mL in the burette after filling: just below the 0.00 mark, like a real fill (reading 0.10-0.60). */
+  private fillTo = 50 - pickFillReading();
   private cylinderML = 25;
   private buretteMain!: LiquidColumn;
   private buretteStem!: LiquidColumn;
@@ -109,6 +113,14 @@ export class TitrationBench {
   tap(id: string, _point?: THREE.Vector3): boolean {
     const known = ['chem_naoh_bottle', 'chem_hcl_cylinder', 'chem_indicator', 'chem_dropper', 'chem_flask', 'chem_stopcock', 'chem_stirrer_knob'];
     if (!known.includes(id)) return false;
+    // Closing the tap can never wait: the flow stops the instant the student clicks
+    if (id === 'chem_stopcock' && labStore.get().chemistry.buretteOpen) {
+      labStore.update('chemistry', { buretteOpen: false });
+      soundFx.playClick();
+      void this.hands.move('left', { twist: 0 }, 0.18);
+      if (this.queued === 'chem_stopcock') this.queued = null;
+      return true;
+    }
     if (this.busy) {
       this.queued = id; // performed when the current action finishes
       return true;
@@ -195,17 +207,17 @@ export class TitrationBench {
   private async fillBurette() {
     if (!this.bottle) return;
     const c = labStore.get().chemistry;
-    if (c.buretteML >= 49.9) return;
+    if (c.buretteML >= this.fillTo - 0.02) return;
     const grip = await this.pickUp(this.bottle, 0.08);
     const funnel = this.anchor('anchor_funnel_mouth')!;
     // Look up at the funnel while filling, like you would at a real burette
     this.focus(funnel.clone().add(new THREE.Vector3(0, -0.06, 0)));
     await this.pourFrom(this.bottle, funnel, 1.55, (dt) => {
       const cur = labStore.get().chemistry.buretteML;
-      const add = Math.min(50 - cur, 18 * dt);
+      const add = Math.max(0, Math.min(this.fillTo - cur, 18 * dt));
       this.bottleML -= add;
-      labStore.update('chemistry', { buretteML: Math.min(50, cur + add) });
-      return cur + add >= 50;
+      labStore.update('chemistry', { buretteML: Math.min(this.fillTo, cur + add) });
+      return cur + add >= this.fillTo - 1e-6;
     });
     this.focus(null);
     await this.putBack(this.bottle, grip, this.bottleHome);
@@ -304,9 +316,9 @@ export class TitrationBench {
       await H.move('left', { wrist: at, grip: 0.45, twist: 0 }, 0.45);
       this.stopcockHandParked = true;
     }
-    await H.move('left', { twist: open ? 0 : 0.6 }, 0.18);
     labStore.update('chemistry', { buretteOpen: !open });
     soundFx.playClick();
+    await H.move('left', { twist: open ? 0 : 0.6 }, 0.18);
     if (open) {
       // Closed: hand can return to rest (unless the student keeps titrating dropwise)
       await H.wait(0.4);
@@ -407,6 +419,7 @@ export class TitrationBench {
   /** Reset props for a fresh practical. */
   reset() {
     this.bottleML = NAOH_BOTTLE_START_ML;
+    this.fillTo = 50 - pickFillReading();
     this.cylinderML = 25;
     this.flash = 0;
   }
