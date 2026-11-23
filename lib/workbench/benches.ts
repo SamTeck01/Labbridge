@@ -395,10 +395,23 @@ export class CircuitBench extends BenchBase {
     pivot.add(n);
     vm.add(pivot);
     this.voltmeterNeedle = pivot;
-    vm.position.copy(at).add(new THREE.Vector3(0.16, 0.0, 0.02));
-    vm.lookAt(vm.position.clone().add(new THREE.Vector3(0, 0, 1)));
+    // In front of the resistor (toward the student), clear of the ammeter, facing the student
+    vm.position.copy(at).add(new THREE.Vector3(0, 0.0, 0.0)).addScaledVector(TOWARD_STUDENT, 0.15);
+    vm.lookAt(vm.position.clone().add(TOWARD_STUDENT));
     vm.traverse((o) => tagInteractive(o, 'phys_voltmeter', 'Voltmeter (across the resistor)', 'Read both meters', 'physics', 'primary'));
     this.scene.add(vm);
+    // Two leads from the voltmeter's terminals to either end of the resistor: it is connected across it
+    const lead = (from: THREE.Vector3, to: THREE.Vector3, colour: string) => {
+      const d = to.clone().sub(from);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.0018, 0.0018, d.length(), 6), new THREE.MeshStandardMaterial({ color: colour, roughness: 0.6 }));
+      m.position.copy(from).addScaledVector(d, 0.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+      this.scene.add(m);
+    };
+    const rEnd = (sx: number) => g.position.clone().add(new THREE.Vector3(sx * 0.045, 0, 0));
+    const vTerm = (sx: number) => vm.position.clone().add(new THREE.Vector3(sx * 0.035, -0.035, 0));
+    lead(vTerm(-1), rEnd(-1), '#b91c1c');
+    lead(vTerm(1), rEnd(1), '#111827');
   }
 
   protected async perform(id: string) {

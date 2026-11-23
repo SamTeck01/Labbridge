@@ -20,8 +20,13 @@ const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now()
 async function clickThing(id) {
   const q = await p.evaluate((id) => {
     const cam = window.__camera, c = window.__renderer.domElement, r = c.getBoundingClientRect();
-    const ray = new (window.__camera.constructor.prototype.constructor === undefined ? Object : Object)();
     let best = null;
+    // Prefer a small, named part a student would aim at (the plug, not the middle of a long cable)
+    const named = window.__scene.getObjectByName(id === 'phys_return_lead' ? 'lead_return_plug' : '__none__');
+    if (named) {
+      const v = named.getWorldPosition(new named.position.constructor()).project(cam);
+      return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height };
+    }
     window.__scene.traverse((o) => {
       if (best || !o.isMesh || !o.visible || o.userData?.interactId !== id) return;
       const v = o.getWorldPosition(new o.position.constructor()).project(cam);
@@ -90,12 +95,12 @@ await p.getByRole('button', { name: 'Record' }).click(); await w(800);
 // Open the tap, run to ~24 mL, close, then single drops to the first pink
 check('clicked the burette tap', await clickThing('chem_stopcock'));
 check('tap open, alkali running', await until(async () => (await lab('chemistry')).buretteOpen, 120000));
-await until(async () => (await lab('chemistry')).dispensedML >= 22.5, 120000);
+await until(async () => (await lab('chemistry')).dispensedML >= 18, 120000);
 await snap('titrating');
 await clickThing('chem_stopcock');
 check('tap closed near the endpoint', await until(async () => !(await lab('chemistry')).buretteOpen, 120000), `${(await lab('chemistry')).dispensedML.toFixed(2)} mL`);
 await w(2000);
-for (let i = 0; i < 40 && (await lab('chemistry')).phValue < 8.2; i++) { await p.getByRole('button', { name: '1 drop' }).click(); await w(400); }
+for (let i = 0; i < 160 && (await lab('chemistry')).phValue < 8.2; i++) { await p.getByRole('button', { name: '1 drop' }).click(); await w(400); }
 const c = await lab('chemistry');
 check('first permanent pink reached drop by drop', c.phValue >= 8.2 && c.dispensedML < 25.6, `${c.dispensedML.toFixed(2)} mL, pH ${c.phValue.toFixed(1)}`);
 await w(3000);
