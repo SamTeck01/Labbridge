@@ -109,6 +109,22 @@ const O = await p.evaluate(() => {
 check("Ohm's law completes from meter readings and a gradient", O.done && O.R === 30, `score ${O.score}`);
 check('over 0.5 A through the resistor is a safety mistake', O.hot);
 
+// ---- Pendulum: the student measures L to the centre of the bob
+const PD = await p.evaluate(() => {
+  const { experiments: X, labStore: L } = window.__curie;
+  X.start('pendulum');
+  L.update('pendulum', { swinging: true, length: 0.45 });
+  window.__benches.pendulum.watch.elapsed = 13.46; // 10 swings at 45 cm
+  const ok = X.recordPendulum(45) === null && !X.get().run.mistakes.includes('lengthToEdge');
+  window.__benches.pendulum.watch.elapsed = 13.5;
+  X.recordPendulum(47); // to the bottom of the bob
+  const caught = X.get().run.mistakes.includes('lengthToEdge');
+  X.abandon();
+  return { ok, caught };
+});
+check('pendulum reading uses the length the student measured', PD.ok);
+check('measuring to the edge of the bob is caught', PD.caught);
+
 // ---- Restart in the middle of a practical
 const R = await p.evaluate(() => {
   const { experiments: X, labStore: L } = window.__curie;

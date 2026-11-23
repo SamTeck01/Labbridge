@@ -305,7 +305,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     steps: [
       { id: 'release', text: 'Pull the bob aside a little and release it', coach: 'Tap the bob: a small angle only, then let go cleanly.', done: (l) => l.pendulum.swinging },
       { id: 'time', text: 'Time 10 complete swings and record', coach: 'Start the stopwatch as the bob passes the centre, count ten swings, stop. Then record.', done: (_l, r) => r.readings.length >= 1 },
-      { id: 'lengths', text: 'Repeat for at least 3 different lengths', coach: 'Change the length at the clamp and repeat. Three lengths at least.', done: (_l, r) => new Set(r.readings.map((x) => x.extra?.L)).size >= 3 },
+      { id: 'lengths', text: 'Repeat for at least 3 different lengths', coach: 'Change the length at the clamp and repeat. Three lengths at least.', done: (_l, r) => new Set(r.readings.map((x) => x.extra?.Lact ?? x.extra?.L)).size >= 3 },
     ],
     mistakes: [
       {
@@ -313,9 +313,14 @@ export const EXPERIMENTS: ExperimentDef[] = [
         message: "That time doesn't match the swing: count ten FULL swings (there and back), starting the clock as it passes the middle.",
         check: (_l, r) =>
           r.readings.some((x) => {
-            const T = 2 * Math.PI * Math.sqrt((x.extra?.L ?? 1) / 9.81);
+            const T = 2 * Math.PI * Math.sqrt((x.extra?.Lact ?? x.extra?.L ?? 1) / 9.81);
             return Math.abs(x.value / 10 - T) / T > 0.2;
           }),
+      },
+      {
+        id: 'lengthToEdge',
+        message: 'That length is off by more than 1 cm: measure from the point of suspension to the centre of the bob, not its top or bottom.',
+        check: (_l, r) => r.readings.some((x) => x.extra?.Lact !== undefined && Math.abs((x.extra.L ?? 0) - x.extra.Lact) > 0.012),
       },
     ],
     recordLabel: 'Record 10 swings',
@@ -330,7 +335,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       const gs = r.readings.map((x) => (4 * Math.PI * Math.PI * (x.extra?.L ?? 0)) / Math.pow(x.value / 10, 2));
       const g = gs.length ? gs.reduce((a, b) => a + b, 0) / gs.length : 0;
       const err = Math.abs(g - 9.81) / 9.81;
-      const Ls = new Set(r.readings.map((x) => x.extra?.L)).size;
+      const Ls = new Set(r.readings.map((x) => x.extra?.Lact ?? x.extra?.L)).size;
       return [
         { label: 'Value of g', points: band(err, [[0.03, 50], [0.07, 38], [0.15, 22], [0.3, 8]]), max: 50, note: `Your data give g = ${g.toFixed(2)} m/s² (accepted 9.81).` },
         { label: 'Range of data', points: Math.min(3, Ls) * 10, max: 30, note: `${Ls} different string lengths.` },
@@ -691,6 +696,19 @@ export const experiments = {
     const reading: Reading = { label: `Rheostat ${p.resistance} Ω`, value: I, unit: `A · ${V} V`, extra: { I, V, Iact: Math.round(current * 1000) / 1000, Vact: Math.round(vResistor * 100) / 100, R: p.resistance } };
     set({ run: { ...run, readings: [...run.readings, reading] } });
     evaluate();
+  },
+  /** Pendulum: ten-swing time from the stopwatch with the length the student measured (cm). */
+  recordPendulum(lengthCm: number): string | null {
+    const run = state.run;
+    const def = getExperiment(run?.experimentId);
+    if (!run || !def || def.id !== 'pendulum') return 'No practical running.';
+    const r = def.record(labStore.get(), run);
+    if (typeof r === 'string') return r;
+    const L = lengthCm / 100;
+    const Lact = labStore.get().pendulum.length;
+    set({ run: { ...run, readings: [...run.readings, { ...r, label: `L = ${lengthCm} cm`, extra: { L, Lact } }] } });
+    evaluate();
+    return null;
   },
   /** A reading the student took themselves (e.g. read off the burette scale). */
   recordManual(reading: Reading) {

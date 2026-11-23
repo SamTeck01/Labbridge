@@ -221,6 +221,7 @@ export const PRACTICAL_META: Record<string, PracticalMeta> = {
       lengths: 'g comes from how the period changes with length, so you need several lengths.',
     },
     mistakes: {
+      lengthToEdge: { kind: 'measurement', recoverable: true, consequence: 'g is calculated from L, so a length measured to the top or bottom of the bob (about 2 cm out) gives a wrong g.', fix: 'Measure from the point of suspension to the centre of the bob.' },
       badTiming: { kind: 'measurement', recoverable: true, consequence: 'That time does not fit 10 full swings, so it would give a wrong value of g.', fix: 'Start the watch as the bob passes the middle, count 10 complete swings, then stop.' },
     },
   },

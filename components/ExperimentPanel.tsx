@@ -7,6 +7,7 @@ import { labStore, titrationPH, useLab, circuit, type Station } from '@/lib/labS
 import { curie } from '@/lib/curie';
 import BuretteReading from '@/components/BuretteReading';
 import MeterReading from '@/components/MeterReading';
+import LengthReading from '@/components/LengthReading';
 import PracticalExtras from '@/components/PracticalExtras';
 import { soundFx } from '@/lib/soundEffects';
 import { metaFor, MISTAKE_KIND, SKILL_LABEL } from '@/lib/practicalMeta';
@@ -41,6 +42,7 @@ export default function ExperimentPanel({
   const goggles = useLab((st) => st.player.goggles);
   const [reading, setReading] = useState<{ actual: number; which: 'initial' | 'final' } | null>(null);
   const [meters, setMeters] = useState<{ amps: number; volts: number } | null>(null);
+  const [measureL, setMeasureL] = useState<number | null>(null);
   const [confirmRestart, setConfirmRestart] = useState(false);
 
   const history = useExperiments((s) => s.history);
@@ -211,6 +213,14 @@ export default function ExperimentPanel({
       return;
     }
     if (active.id === 'ohms-law') return openMeters();
+    if (active.id === 'pendulum') {
+      // Check the stopwatch first, then the student measures the length on the rule
+      const r = active.record(labStore.get(), run_);
+      if (typeof r === 'string') return setError(r);
+      setError(null);
+      setMeasureL(labStore.get().pendulum.length * 100);
+      return;
+    }
     const err = experiments.record();
     setError(err);
     if (!err) soundFx.playSuccessChime();
@@ -235,6 +245,18 @@ export default function ExperimentPanel({
           experiments.recordBurette(v);
           setReading(null);
           soundFx.playSuccessChime();
+        }}
+      />
+    )}
+    {measureL !== null && (
+      <LengthReading
+        lengthCm={measureL}
+        onCancel={() => setMeasureL(null)}
+        onSubmit={(cm) => {
+          const err = experiments.recordPendulum(cm);
+          setMeasureL(null);
+          setError(err);
+          if (!err) soundFx.playSuccessChime();
         }}
       />
     )}
