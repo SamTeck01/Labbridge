@@ -43,6 +43,8 @@ export class FlameBench extends BenchBase {
   private light: THREE.PointLight | null = null;
   private saltColour = new THREE.Color();
   private saltStrength = 0;
+  /** What is left on the loop from earlier samples; only heating it after an acid dip removes it. */
+  private residue: SaltKey[] = [];
   private t = 0;
   private gasUnlitFor = 0;
   private warnedGas = false;
@@ -188,15 +190,15 @@ export class FlameBench extends BenchBase {
       await this.pickUpLoop();
       const well = this.pos(`anchor_salt_${key}`);
       if (!well) return;
-      const loopState = f().loop;
-      if (loopState !== 'clean') {
-        // Dipping a used loop carries the previous sample over
-        experiments.count('contaminated');
-      }
+      // A clean loop (dry, or just moistened with acid) picks up the sample cleanly; a used one
+      // carries the last sample over into this one
+      const dirty = this.residue.length > 0 || f().loop === 'dirty' || f().loop in SALTS;
+      if (dirty) experiments.count('contaminated');
       await this.tipTo(well.clone().add(new THREE.Vector3(0, 0.05, 0)), 0.5);
       await this.tipTo(well, 0.3);
       soundFx.playGlassSlide();
-      labStore.update('flame', { loop: loopState === 'clean' ? key : 'dirty' });
+      if (dirty) this.residue = [...new Set([...this.residue, key])];
+      labStore.update('flame', { loop: dirty ? 'dirty' : key });
       await this.tipTo(well.clone().add(new THREE.Vector3(0, 0.08, 0)), 0.35);
     } else if (id === 'flame_zone') {
       await this.heatLoop();
@@ -261,20 +263,38 @@ export class FlameBench extends BenchBase {
       this.saltStrength = 1;
       soundFx.playSuccessChime();
       if (!blue) experiments.count('luminousTest');
-      experiments.addReading({ label: `${salt.name} flame`, value: salt.nm, unit: `nm · ${salt.colour}` });
-      curie.say(`${salt.name}: a ${salt.colour} flame (${salt.nm} nm).`);
+      if (blue) {
+        experiments.addReading({ label: `${salt.name} flame`, value: salt.nm, unit: `nm · ${salt.colour}` });
+        curie.say(`${salt.name}: a ${salt.colour} flame. That colour identifies the ${salt.name.split(' ')[0].toLowerCase()} ion.`);
+      } else {
+        curie.say(`Hard to tell: the yellow flame’s own colour is swamping the sample. Open the air hole and test ${salt.name.toLowerCase()} again.`);
+      }
       await this.hands.wait(2.2);
+      this.residue = [loop as SaltKey];
       labStore.update('flame', { loop: 'dirty' });
     } else if (loop === 'acid') {
-      // Burning off the acid: a brief orange flicker, then no colour = clean
-      this.saltColour.set('#ffb070');
-      this.saltStrength = 0.35;
+      // Heating an acid-dipped loop burns off what was on it: a brief flicker of the old colour,
+      // then no colour = clean
+      this.saltColour.set(this.residue.length ? SALTS[this.residue[0]].hex : '#ffb070');
+      this.saltStrength = this.residue.length ? 0.45 : 0.3;
       await this.hands.wait(1.6);
+      this.residue = [];
       labStore.update('flame', { loop: 'clean' });
+      curie.say('No colour left in the flame: the loop is clean. Dip it in acid, then into the next sample.');
     } else if (loop === 'dirty') {
-      this.saltColour.set('#ff9a50');
-      this.saltStrength = 0.5;
-      await this.hands.wait(1.5);
+      if (this.residue.length > 1) {
+        // Two samples on one loop: the colours mix and the test identifies nothing
+        const [a, b] = this.residue;
+        this.saltColour.set(SALTS[a].hex).lerp(new THREE.Color(SALTS[b].hex), 0.5);
+        this.saltStrength = 0.9;
+        curie.say(`Two colours at once: ${SALTS[a].colour} and ${SALTS[b].colour} mixed. You can’t identify the ion from that. Clean the loop (acid, then heat until no colour) and test it again.`);
+      } else {
+        // The old sample still glows: the loop was never cleaned
+        this.saltColour.set(this.residue.length ? SALTS[this.residue[0]].hex : '#ff9a50');
+        this.saltStrength = 0.5;
+        curie.say('That colour is left over from the last sample. Dip the loop in acid and heat it until the flame shows no colour.');
+      }
+      await this.hands.wait(1.8);
     } else {
       await this.hands.wait(0.8);
     }
@@ -352,6 +372,7 @@ export class FlameBench extends BenchBase {
 
   reset() {
     this.saltStrength = 0;
+    this.residue = [];
     this.warnedGas = false;
     this.collarAngle = 0;
     this.tapAngle = 0;

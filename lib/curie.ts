@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { labStore, describeLabState, titrationPH, type Station, type Objective } from '@/lib/labStore';
 import { soundFx } from '@/lib/soundEffects';
-import { experiments, getExperiment } from '@/lib/experiments';
+import { experiments, getExperiment, assistLevel } from '@/lib/experiments';
 
 /**
  * Dr. Curie's "brain": one shared conversation used by every chat surface
@@ -249,7 +249,15 @@ export function startCurieWatch() {
       if (def) curie.walkTo(def.station);
       curie.coach(e.message);
     } else if (e.type === 'step') {
-      curie.coach(e.message);
+      // Fade the help as the student gets better at this practical
+      const run = experiments.get().run;
+      const level = assistLevel(run?.experimentId);
+      if (level === 'guided') curie.coach(e.message);
+      else if (level === 'supported') {
+        const def = getExperiment(run?.experimentId);
+        const next = def?.steps.find((st) => !run!.completedSteps.includes(st.id));
+        if (next) curie.coach(`Next: ${next.text.charAt(0).toLowerCase()}${next.text.slice(1)}.`);
+      }
     } else if (e.type === 'mistake') {
       curie.coach(e.message);
       soundFx.playBeep();

@@ -79,6 +79,17 @@ export interface RunState {
   events: Record<string, number>;
 }
 
+/** Two titres within 0.10 mL of each other (the closest such pair), or null. */
+export function concordantPair(titres: number[]): [number, number] | null {
+  let best: [number, number] | null = null;
+  for (let i = 0; i < titres.length; i++)
+    for (let j = i + 1; j < titres.length; j++) {
+      const d = Math.abs(titres[i] - titres[j]);
+      if (d <= 0.1 + 1e-9 && (!best || d < Math.abs(best[0] - best[1]))) best = [titres[i], titres[j]];
+    }
+  return best;
+}
+
 const band = (err: number, bands: [number, number][]) => {
   for (const [limit, pts] of bands) if (err <= limit) return pts;
   return 0;
@@ -100,6 +111,12 @@ export const EXPERIMENTS: ExperimentDef[] = [
       { id: 'titrate', text: 'Open the burette and titrate', coach: 'Open the stopcock. Run it steadily at first; the endpoint is near 25 mL.', done: (l) => l.chemistry.dispensedML > 0.5 },
       { id: 'endpoint', text: 'Close the burette at the first permanent pink', coach: 'Near 24 mL, close it and add single drops. Stop at the first faint pink that stays.', done: (l) => l.chemistry.phValue >= 8.2 && !l.chemistry.buretteOpen },
       { id: 'record', text: 'Record the titre', coach: 'Read the burette at eye level and record your titre.', done: (_l, r) => r.readings.length >= 1 },
+      {
+        id: 'concordant',
+        text: 'Repeat until two titres agree within 0.10 mL',
+        coach: 'One titre could be a fluke. Press “New run”, refill, and titrate again, slowing to single drops about 1 mL before your last titre. Two titres within 0.10 mL finish the practical.',
+        done: (_l, r) => concordantPair(r.readings.filter((x) => x.label === 'Titre').map((x) => x.value)) !== null,
+      },
     ],
     mistakes: [
       { id: 'noIndicator', message: "Stop. You're titrating without indicator, so you won't see the endpoint.", check: (l) => l.chemistry.dispensedML > 0 && !l.chemistry.indicatorAdded },
@@ -114,18 +131,22 @@ export const EXPERIMENTS: ExperimentDef[] = [
       return { label: 'Titre', value: Math.round(l.chemistry.dispensedML * 100) / 100, unit: 'mL' };
     },
     evaluate: (r) => {
-      const titre = r.readings[0]?.value ?? 0;
+      const titres = r.readings.filter((x) => x.label === 'Titre');
+      const pair = concordantPair(titres.map((x) => x.value));
+      // The result is the mean of the concordant pair (or the best single titre if there isn't one)
+      const titre = pair ? (pair[0] + pair[1]) / 2 : titres.length ? titres.reduce((a, b) => (Math.abs(b.value - 25) < Math.abs(a.value - 25) ? b : a)).value : 0;
       const err = Math.abs(titre - 25.0);
       const indicatorFirst = !r.mistakes.includes('noIndicator');
       return [
-        { label: 'Accuracy', points: band(err, [[0.1, 40], [0.3, 32], [0.6, 20], [1.5, 8]]), max: 40, note: `Titre ${titre.toFixed(2)} mL vs 25.00 mL expected (error ${err.toFixed(2)} mL).` },
+        { label: 'Accuracy', points: band(err, [[0.1, 30], [0.3, 24], [0.6, 15], [1.5, 6]]), max: 30, note: `${pair ? `Mean concordant titre ${titre.toFixed(2)} mL` : `Best titre ${titre.toFixed(2)} mL`} vs 25.00 mL expected (error ${err.toFixed(2)} mL).` },
+        { label: 'Concordant results', points: pair ? 10 : 0, max: 10, note: pair ? `${pair[0].toFixed(2)} and ${pair[1].toFixed(2)} mL agree within 0.10 mL.` : `No two of your ${titres.length} titre(s) agree within 0.10 mL.` },
         (() => {
-          const actual = r.readings[0]?.extra?.actual ?? titre;
-          const readErr = Math.abs(titre - actual);
-          return { label: 'Burette reading', points: readErr <= 0.05 ? 10 : readErr <= 0.15 ? 5 : 0, max: 10, note: `You read ${titre.toFixed(2)} mL; the meniscus was at ${actual.toFixed(2)} mL.` };
+          const errs = titres.map((x) => Math.abs(x.value - (x.extra?.actual ?? x.value)));
+          const readErr = errs.length ? Math.max(...errs) : 0;
+          return { label: 'Burette reading', points: readErr <= 0.05 ? 10 : readErr <= 0.15 ? 5 : 0, max: 10, note: readErr <= 0.05 ? 'Every burette reading matched the meniscus.' : `One reading was ${readErr.toFixed(2)} mL away from the meniscus.` };
         })(),
         { label: 'Technique', points: (indicatorFirst ? 15 : 0) + (r.completedSteps.includes('stir') ? 15 : 0), max: 30, note: indicatorFirst ? 'Indicator added before titrating.' : 'Titrated before adding indicator.' },
-        { label: 'Safety & control', points: r.mistakes.includes('overshoot') ? 5 : 20, max: 20, note: r.mistakes.includes('overshoot') ? 'Overshot the endpoint by more than 1.5 mL.' : 'Controlled approach to the endpoint.' },
+        { label: 'Control at the endpoint', points: r.mistakes.includes('overshoot') ? (pair ? 12 : 5) : 20, max: 20, note: r.mistakes.includes('overshoot') ? (pair ? 'One run overshot, but you repeated it and got concordant titres: exactly the right response.' : 'A run overshot the endpoint by more than 1.5 mL.') : 'Controlled approach to the endpoint.' },
       ];
     },
   },
@@ -238,7 +259,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       { id: 'sash', text: 'Lower the fume hood sash to working height', coach: 'First, pull the fume hood sash down to working height. It shields your face and keeps the fumes in the hood.', done: (l) => l.flame.sashDown },
       { id: 'light', text: 'Turn on the gas and light the Bunsen burner', coach: 'Gas tap on, then the lighter to the top of the barrel. Never leave gas running unlit.', done: (l) => l.flame.lit },
       { id: 'blue', text: 'Open the air hole for a blue, non-luminous flame', coach: 'Turn the air collar to open the air hole. A yellow flame would hide the colours.', done: (l) => l.flame.lit && l.flame.airOpen },
-      { id: 'tests', text: 'Test all five samples, cleaning the loop between each', coach: 'Pick up the loop. For each sample: dip in the acid, heat until no colour, dip in the sample, then hold it at the edge of the flame.', done: (_l, r) => new Set(r.readings.map((x) => x.label)).size >= 5 },
+      { id: 'tests', text: 'Test all five samples, cleaning the loop between each', coach: 'For each sample: dip the loop in acid and heat it until the flame shows no colour (clean). Dip it in acid again, then into the sample, and hold it at the edge of the flame.', done: (_l, r) => new Set(r.readings.map((x) => x.label)).size >= 5 },
       { id: 'off', text: 'Turn the gas off', coach: "All five done. Turn the gas off at the tap, and don't touch the barrel: it stays hot.", done: (l, r) => !l.flame.gasOn && r.readings.length >= 5 },
     ],
     mistakes: [
@@ -417,6 +438,16 @@ function stopwatchTime(id: string): number | null {
 export const FLAME_COLOURS = SALTS;
 
 export const getExperiment = (id: string | null | undefined) => EXPERIMENTS.find((e) => e.id === id);
+
+/**
+ * How much help the student gets: full coaching the first time, just the next step once they have
+ * done it before, and only mistakes and safety once they have done it twice.
+ */
+export type AssistLevel = 'guided' | 'supported' | 'independent';
+export function assistLevel(experimentId: string | null | undefined): AssistLevel {
+  const done = state.history.filter((h) => h.experimentId === experimentId).length;
+  return done >= 2 ? 'independent' : done === 1 ? 'supported' : 'guided';
+}
 export const experimentForStation = (s: Station | null) => EXPERIMENTS.find((e) => e.station === s);
 
 // ---------------- Store (persisted) ----------------
@@ -567,6 +598,30 @@ export const experiments = {
     set({ lastResult: null });
     if (def) cleanUp(def);
   },
+  /**
+   * Titration: a fresh run with the same burette. The flask is rinsed and the measuring cylinder
+   * refilled; the student refills the burette, adds acid and indicator again. Earlier titres are kept.
+   */
+  newTitrationRun() {
+    const run = state.run;
+    if (!run || run.experimentId !== 'titration') return;
+    labStore.update('chemistry', { buretteML: 0, flaskAcidML: 0, buretteOpen: false, dispensedML: 0, indicatorAdded: false, stirrerRPM: 0, phValue: titrationPH(0, 0) });
+    set({ run: { ...run, events: { ...run.events, runs: (run.events.runs ?? 1) + 1 } } });
+    emit({ type: 'reset', message: '' });
+    emit({ type: 'step', message: 'New run: rinse done, cylinder refilled. Refill the burette, add the 25 mL of acid and the indicator, then titrate. Go fast to about 1 mL before your last titre, then single drops.' });
+  },
+  /** End the practical now with the readings taken so far (so a student is never stuck). */
+  finishNow() {
+    if (state.run) finish();
+  },
+  /** Restart the current practical from the beginning: fresh apparatus, no readings. */
+  restart() {
+    const id = state.run?.experimentId;
+    if (!id) return;
+    const def = getExperiment(id);
+    if (def) cleanUp(def);
+    this.start(id);
+  },
   /** Take a reading for the active experiment. Returns an error message, or null on success. */
   record(): string | null {
     const run = state.run;
@@ -618,6 +673,7 @@ export const experiments = {
       `Current step: ${step?.text ?? 'finished'}.`,
       `Readings: ${run.readings.map((r) => `${r.label} = ${r.value} ${r.unit}`).join('; ') || 'none'}.`,
       `Mistakes so far: ${run.mistakes.join(', ') || 'none'}.`,
+      `Assistance level: ${assistLevel(def.id)} (guided = coach every step; supported = brief hints; independent = only step in for mistakes, safety or questions).`,
     ].join('\n');
   },
 };

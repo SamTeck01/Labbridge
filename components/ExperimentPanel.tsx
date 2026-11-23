@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CheckCircle2, Circle, ClipboardList, FlaskConical, X, Trophy, Droplet } from 'lucide-react';
-import { experiments, experimentForStation, getExperiment, useExperiments } from '@/lib/experiments';
+import { CheckCircle2, Circle, ClipboardList, FlaskConical, X, Trophy, Droplet, RotateCcw, Repeat, Flag, Info } from 'lucide-react';
+import { experiments, experimentForStation, getExperiment, useExperiments, assistLevel } from '@/lib/experiments';
 import { labStore, titrationPH, useLab, type Station } from '@/lib/labStore';
 import { curie } from '@/lib/curie';
 import BuretteReading from '@/components/BuretteReading';
 import PracticalExtras from '@/components/PracticalExtras';
 import { soundFx } from '@/lib/soundEffects';
+import { metaFor, MISTAKE_KIND, SKILL_LABEL } from '@/lib/practicalMeta';
 
 /** Practical brief, live procedure checklist, readings and results for the bench the student is at. */
 /** compact: at a workbench only the current step is shown, keeping the apparatus clear. */
@@ -38,9 +39,14 @@ export default function ExperimentPanel({
   const [error, setError] = useState<string | null>(null);
   const goggles = useLab((st) => st.player.goggles);
   const [reading, setReading] = useState<number | null>(null);
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
+  const history = useExperiments((s) => s.history);
   const active = getExperiment(run?.experimentId);
   const available = experimentForStation(station);
+  const meta = metaFor(active?.id ?? available?.id);
+  const scores = history.filter((h) => h.experimentId === (active?.id ?? available?.id)).map((h) => h.score);
+  const best = scores.length ? Math.max(...scores) : null;
 
   if (lastResult) {
     return (
@@ -76,6 +82,14 @@ export default function ExperimentPanel({
               ))}
             </div>
           )}
+          {lastResult.mistakes.length > 0 && (
+            <div className="text-sm mb-4">
+              <p className="font-medium mb-1">What to do differently</p>
+              <ul className="space-y-1 text-xs text-slate-300 list-disc pl-4">
+                {lastResult.mistakes.map((m) => <li key={m}>{m}</li>)}
+              </ul>
+            </div>
+          )}
           <p className="text-xs text-slate-400 mb-4">Dr. Curie is giving you feedback. It appears in her speech bubble and on your phone.</p>
           <div className="flex gap-2">
             <button onClick={() => experiments.start(lastResult.experimentId)} className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm">Try again</button>
@@ -95,7 +109,22 @@ export default function ExperimentPanel({
           <ClipboardList className="w-4 h-4" /> Practical
         </div>
         <h3 className="text-base font-semibold mb-1">{available.title}</h3>
-        <p className="text-sm text-slate-300 mb-3 [@media(max-height:500px)]:text-xs [@media(max-height:500px)]:line-clamp-3">{available.objective}</p>
+        {meta && (
+          <p className="text-[11px] text-slate-400 mb-2">
+            {meta.subject} · {meta.difficulty} · about {meta.minutes} min{best !== null ? ` · best ${best}/100` : ''}
+          </p>
+        )}
+        <p className="text-sm text-slate-300 mb-2 [@media(max-height:500px)]:text-xs [@media(max-height:500px)]:line-clamp-3">{meta?.learn ?? available.objective}</p>
+        {meta && (
+          <details className="mb-3 text-xs text-slate-300 [@media(max-height:500px)]:hidden">
+            <summary className="cursor-pointer text-slate-400 hover:text-slate-200">Aim, apparatus and skills</summary>
+            <p className="mt-2"><span className="text-slate-400">Aim: </span>{available.objective}</p>
+            <p className="mt-1.5 text-slate-400">Apparatus</p>
+            <ul className="list-disc pl-4">{meta.apparatus.map((a) => <li key={a}>{a}</li>)}</ul>
+            <p className="mt-1.5 text-slate-400">Exam skills you practise</p>
+            <div className="flex flex-wrap gap-1 mt-1">{meta.skills.map((k) => <span key={k} className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">{SKILL_LABEL[k]}</span>)}</div>
+          </details>
+        )}
         <ul className="text-xs text-rose-300 mb-3 space-y-0.5 [@media(max-height:500px)]:hidden">
           {available.safety.map((s) => <li key={s}>⚠ {s}</li>)}
         </ul>
@@ -141,7 +170,7 @@ export default function ExperimentPanel({
             Continue
           </button>
         )}
-        <button onClick={() => experiments.abandon()} title="Abandon practical" className="shrink-0 p-1 text-slate-400 hover:text-white">
+        <button onClick={() => { if (window.confirm('Stop this practical? Your readings so far will be lost.')) experiments.abandon(); }} title="Abandon practical" className="shrink-0 p-1 text-slate-400 hover:text-white">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -149,6 +178,8 @@ export default function ExperimentPanel({
   }
 
   const run_ = run!;
+  const currentId = active.steps.find((x) => !run_.completedSteps.includes(x.id))?.id;
+  const currentWhy = currentId ? meta?.why[currentId] : undefined;
   const record = () => {
     // Titration: the student reads the burette scale themselves
     if (active.id === 'titration') {
@@ -193,8 +224,11 @@ export default function ExperimentPanel({
           <span className="ml-1 text-xs font-normal text-slate-400 tabular-nums">
             {run_.completedSteps.length}/{active.steps.length}
           </span>
+          <span className="block text-[10px] font-normal text-teal-300/80 uppercase tracking-wide" title="Dr. Curie gives less help as you get better at this practical">
+            {{ guided: 'Guided by Dr. Curie', supported: 'Hints only', independent: 'On your own' }[assistLevel(active.id)]}
+          </span>
         </h3>
-        <button onClick={() => experiments.abandon()} title="Abandon practical" className="text-slate-400 hover:text-white">
+        <button onClick={() => { if (window.confirm('Stop this practical? Your readings so far will be lost.')) experiments.abandon(); }} title="Abandon practical" className="text-slate-400 hover:text-white">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -210,6 +244,28 @@ export default function ExperimentPanel({
           );
         })}
       </ol>
+      {currentWhy && (
+        <p className="flex gap-1.5 text-xs text-sky-200/90 bg-sky-500/10 border border-sky-500/20 rounded-lg px-2 py-1.5 mb-3 [@media(max-height:500px)]:hidden">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span><span className="font-semibold">Why: </span>{currentWhy}</span>
+        </p>
+      )}
+      {run_.mistakes.length > 0 && (
+        <ul className="space-y-1.5 mb-3">
+          {run_.mistakes.map((id) => {
+            const m = meta?.mistakes[id];
+            const msg = active.mistakes.find((x) => x.id === id)?.message ?? id;
+            const kind = m ? MISTAKE_KIND[m.kind] : MISTAKE_KIND.procedure;
+            return (
+              <li key={id} className={`text-xs rounded-lg border px-2 py-1.5 ${kind.tone}`}>
+                <span className="font-semibold">{kind.label}{m && !m.recoverable ? ' · spoils this run' : ''}: </span>
+                <span className="text-slate-200">{m ? m.consequence : msg}</span>
+                {m && <span className="block text-slate-300 mt-0.5">→ {m.fix}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {run_.readings.length > 0 && (
         <div className="text-xs text-slate-300 mb-3 tabular-nums">
           {run_.readings.map((r, i) => <p key={i}>{r.label}: {r.value} {r.unit}</p>)}
@@ -229,6 +285,29 @@ export default function ExperimentPanel({
         </div>
       )}
       {error && <p className="text-xs text-amber-300 mt-2">{error}</p>}
+      {active.id === 'titration' && run_.readings.some((x) => x.label === 'Titre') && (
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => { soundFx.playClick(); experiments.newTitrationRun(); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium">
+            <Repeat className="w-3.5 h-3.5" /> New run
+          </button>
+          <button onClick={() => experiments.finishNow()} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium">
+            <Flag className="w-3.5 h-3.5" /> Finish with these results
+          </button>
+        </div>
+      )}
+      <button
+        onClick={() => {
+          if (confirmRestart) {
+            setConfirmRestart(false);
+            setError(null);
+            experiments.restart();
+          } else setConfirmRestart(true);
+        }}
+        onBlur={() => setConfirmRestart(false)}
+        className="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-slate-800"
+      >
+        <RotateCcw className="w-3.5 h-3.5" /> {confirmRestart ? 'Tap again to restart from the beginning' : 'Restart practical'}
+      </button>
     </div>
     </>
   );

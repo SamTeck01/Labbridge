@@ -40,7 +40,8 @@ import {
 import EyepieceOcularOverlay from '@/components/EyepieceOcularOverlay';
 import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneModal';
 import ExperimentPanel from '@/components/ExperimentPanel';
-import LabTutorial from '@/components/LabTutorial';
+import LabOrientation from '@/components/LabOrientation';
+import PracticalLibrary from '@/components/PracticalLibrary';
 import MiniMapRadar from '@/components/MiniMapRadar';
 import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
@@ -312,6 +313,8 @@ export default function Lab3DScene({
 
   // Phone State
   const [isPhoneOpen, setIsPhoneOpen] = useState<boolean>(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [libraryOpened, setLibraryOpened] = useState(false);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
   const [phoneAIPrompt, setPhoneAIPrompt] = useState<string | undefined>(undefined);
   const [phoneAIContext, setPhoneAIContext] = useState<string | undefined>(undefined);
@@ -1642,7 +1645,8 @@ export default function Lab3DScene({
       <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} onGoTo={sitDownAt} />
 
       <GogglesFrame />
-      {labReady && <LabTutorial isTouch={isTouch} />}
+      {labReady && <LabOrientation isTouch={isTouch} libraryOpened={libraryOpened} onOpenLibrary={() => { setShowLibrary(true); setLibraryOpened(true); }} />}
+      {showLibrary && <PracticalLibrary onClose={() => setShowLibrary(false)} onGo={sitDownAt} />}
 
       {/* Dr. Curie speech bubble */}
       {curieSpeech && !isPhoneOpen && (
@@ -1711,6 +1715,13 @@ export default function Lab3DScene({
               {isSeated && seatedStation ? `Seated @ ${seatedStation.toUpperCase()}` : 'Exploring Laboratory'}
             </span>
           </div>
+        </button>
+        <button
+          onClick={() => { setShowLibrary(true); setLibraryOpened(true); }}
+          className={`min-h-11 flex items-center gap-2 ${atWorkbench ? '[@media(max-height:500px)]:hidden' : ''} bg-slate-950/85 hover:bg-slate-900/90 backdrop-blur-xl px-3.5 py-2 rounded-full border border-slate-700/80 hover:border-teal-500/50 shadow-2xl text-xs font-semibold text-white`}
+          title="All practicals"
+        >
+          🧪 <span>Practicals</span>
         </button>
       </div>
 
