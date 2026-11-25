@@ -21,15 +21,15 @@ await w(5000);
 // ---- Orientation and library
 check('orientation shows on first visit', await p.getByText('Your first visit').waitFor({ timeout: 60000 }).then(() => true, () => false));
 await p.getByRole('button', { name: /Practicals/ }).click(); await w(800);
-const cards = await p.locator('[role=dialog] li').count();
+const cards = await p.locator('nav[aria-label=Practicals] button').count();
 check('library lists 9 practicals', cards === 9, `${cards} cards`);
-check('library marks a starting point', await p.getByText('Start here').isVisible());
+check('library marks a starting point', await p.getByText('start here').first().isVisible());
 await p.screenshot({ path: `${out}/library.png` });
-await p.getByText('Observing Cells Under the Microscope').click(); await w(400);
-await p.getByRole('button', { name: 'Go to bench' }).click(); await w(9000);
+await p.getByRole('button', { name: /Observing Cells/ }).click(); await w(400);
+await p.getByRole('button', { name: /Start with Dr. Curie/ }).click(); await w(9000);
 const station = await p.evaluate(() => window.__curie.labStore.get().player.station);
 check('“Go to bench” seats the student at the microscope', station === 'biology', String(station));
-check('orientation ticked “Choose a practical”', await p.getByText('Go to the bench, goggles on').isVisible());
+check('orientation moved on to goggles', await p.getByText('Go to the bench, goggles on').isVisible());
 
 // ---- Titration logic: initial/final readings, overshoot -> new run -> concordant -> result
 const T = await p.evaluate(async () => {
