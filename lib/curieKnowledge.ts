@@ -62,17 +62,31 @@ function currentStep() {
   return step ? { def, step, why: PRACTICAL_META[def.id]?.why[step.id] } : null;
 }
 
-/** Offline answer: useful, short, built from the practical data. */
+const LAB_WORDS = /(burette|titr|flask|acid|alkali|indicator|microscope|slide|focus|lens|flame|loop|salt|circuit|meter|volt|amp|resist|pendulum|swing|balance|weigh|tare|osmosis|potato|sucrose|chromat|ink|solvent|rf|thiosulfate|cross|step|next|why|how|help|stuck|show|do|what|reading|record|result|score|goggles|safe)/i;
+let turn = 0;
+const pick = (xs: string[]) => xs[turn++ % xs.length];
+
+/** Offline answer: useful, short, built from the practical data. Varies its wording so it never sounds canned. */
 export function localAnswer(question: string): string {
   const q = question.toLowerCase();
   const cur = currentStep();
-  if (/(answer|titre|value of|what is r\b|what is g\b|rf)/.test(q) && cur) {
-    return "I won't give you the number. That's the point of measuring it! Take the reading carefully and I'll check it with you.";
+  const next = cur ? `${cur.step.text.charAt(0).toLowerCase()}${cur.step.text.slice(1)}` : '';
+  if (cur && /(answer|titre|the value|what is (r|g)\b|rf value|just tell|give me the number)/.test(q)) {
+    return pick([
+      "I won't give you the number. Measuring it is the skill the examiner marks.\nTake your reading, tell me what you got, and I'll check it with you.",
+      "Nice try! The number has to come from your own reading.\nRead it carefully at eye level, then tell me and I'll say if it looks right.",
+      "If I tell you, you lose the marks for measuring it.\nDo the reading and I'll help you check it.",
+    ]);
+  }
+  if (!LAB_WORDS.test(q)) {
+    return cur ? `Ha, good question, but let's keep that for after the lab.\nRight now: ${next}.` : "Ha, let's keep that for after the lab. Choose a practical and I'll guide you.";
   }
   if (cur) {
-    const why = cur.why ? ` Why: ${cur.why}` : '';
-    if (/why/.test(q)) return cur.why ? `${cur.why}` : `It keeps your result accurate. Next: ${cur.step.text}.`;
-    return `Next step: ${cur.step.text}.${why} ${cur.step.coach ?? ''}`.trim();
+    if (/(don.?t (get|understand)|confus|explain|simple|meaning)/.test(q)) {
+      return `Let me put it simply.\nDo this: ${next}.${cur.step.coach ? `\nHow: ${cur.step.coach}` : ''}`;
+    }
+    if (/why/.test(q)) return cur.why ? `Why? ${cur.why}` : `It keeps your result accurate.\nNext: ${next}.`;
+    return `${pick(['Next', 'Your next step', 'Now'])}: ${next}.${cur.why ? `\nWhy: ${cur.why}` : ''}\nSay "show me" if you want me to do it first.`;
   }
   const run = experiments.get().run;
   if (!run) return 'Walk up to me, or press Practicals, and choose one. New here? Start with the microscope.';

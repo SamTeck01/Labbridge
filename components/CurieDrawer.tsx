@@ -70,7 +70,7 @@ export default function CurieDrawer({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 border-t border-white/10">
-        <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-1 px-1">
+        <div className="flex flex-wrap gap-1.5 pb-2">
           {quick.map((q) => (
             <button key={q} onClick={() => ask(q)} disabled={loading} className="shrink-0 text-xs px-3 min-h-9 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-40">
               {q}
