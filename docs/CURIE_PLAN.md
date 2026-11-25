@@ -119,7 +119,6 @@ There are currently 4 main benches, 4 side benches and the fume hood, all built 
 | Phase | Contents | Size |
 |---|---|---|
 | **0. Curie desk and 4 tables** | NPC desk, proximity prompt, Practical modal, walk-and-seat flow (3.10); 4-table layout with per-practical apparatus loaded and disposed (3.11) | ~1–2 days |
-
 | **1. Foundations** | Generated prompt with all 9 practicals (P1, P2); local coach with offline fallback (P4, P5); rate limit and input checks (P7); answer-withholding and off-topic rules (P10) | ~1 day |
 | **2. Teaching tools** | `highlight`, `walk_to` (9 stations), `show_close_up`, `safety_stop`; remove operate tools (P3); idle nudges | ~1 day |
 | **3. Voice and surface** | `speechSynthesis` with mute; bubble-to-drawer conversation; streaming (P6, P9, P11) | ~1 day |
