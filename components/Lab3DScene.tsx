@@ -317,6 +317,7 @@ export default function Lab3DScene({
   const nearCurieRef = useRef(false);
   const [metCurie, setMetCurie] = useState(false);
   const [showCurie, setShowCurie] = useState(false);
+  const lastGoggleNagRef = useRef(0);
   const [libraryOpened, setLibraryOpened] = useState(false);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
   const [phoneAIPrompt, setPhoneAIPrompt] = useState<string | undefined>(undefined);
@@ -558,6 +559,11 @@ export default function Lab3DScene({
     }
 
     // At a hands-on bench, the hands perform it
+    // Working without goggles: still allowed, but Curie says so straight away (at most every 12 s)
+    if (data.station && !labStore.get().player.goggles && Date.now() - lastGoggleNagRef.current > 12000) {
+      lastGoggleNagRef.current = Date.now();
+      curie.say('Goggles first! Tap “Put on safety goggles” on the left, then try again.');
+    }
     if (data.station && benchesRef.current[data.station as 'biology']?.tap(String(data.interactId), lastHitPointRef.current ?? undefined)) {
       return;
     }
@@ -1648,7 +1654,9 @@ export default function Lab3DScene({
         curieMoving = !atTarget;
         // Talking distance: close to her, standing, and she is at her desk spot (not busy at a bench)
         const dx = camera.position.x - curieNPC.root.position.x, dz = camera.position.z - curieNPC.root.position.z;
-        const near = !isSeatedRef.current && !c.targetStation && atTarget && dx * dx + dz * dz < 2.4 * 2.4;
+        // Hysteresis (2.4 m to show, 3.2 m to hide) so the card doesn't flicker while she idles
+        const d2 = dx * dx + dz * dz;
+        const near = !isSeatedRef.current && !c.targetStation && (nearCurieRef.current ? d2 < 3.2 * 3.2 : atTarget && d2 < 2.4 * 2.4);
         if (near !== nearCurieRef.current) {
           nearCurieRef.current = near;
           setNearCurie(near);
@@ -1735,7 +1743,7 @@ export default function Lab3DScene({
       <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} onGoTo={sitDownAt} />
 
       <GogglesFrame />
-      {labReady && !nearCurie && <LabOrientation isTouch={isTouch} libraryOpened={libraryOpened} metCurie={metCurie} onOpenLibrary={() => { setShowLibrary(true); setLibraryOpened(true); }} />}
+      {labReady && !nearCurie && !isSeated && <LabOrientation isTouch={isTouch} libraryOpened={libraryOpened} metCurie={metCurie} onOpenLibrary={() => { setShowLibrary(true); setLibraryOpened(true); }} />}
       {showLibrary && (
         <PracticalLibrary
           onClose={() => setShowLibrary(false)}
