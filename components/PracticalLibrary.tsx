@@ -45,7 +45,7 @@ export default function PracticalLibrary({ onClose, onGo }: { onClose: () => voi
         onClick={(ev) => ev.stopPropagation()}
         className="w-full sm:max-w-3xl h-[88dvh] sm:h-[min(620px,90dvh)] bg-[#0e1525] text-slate-100 border border-white/10 rounded-t-2xl sm:rounded-2xl flex flex-col overflow-hidden"
       >
-        <header className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+        <header className="flex items-center gap-3 px-5 py-4 [@media(max-height:500px)]:py-2 border-b border-white/10">
           {mobileDetail && (
             <button className="sm:hidden -ml-2 p-2 text-slate-300" onClick={() => setMobileDetail(false)} aria-label="Back to the list">
               <ArrowLeft className="w-5 h-5" />
@@ -94,8 +94,8 @@ export default function PracticalLibrary({ onClose, onGo }: { onClose: () => voi
           </nav>
 
           {/* Detail */}
-          <section className={`${mobileDetail ? 'flex' : 'hidden'} sm:flex flex-col flex-1 min-w-0`}>
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+          <section className={`${mobileDetail ? 'flex' : 'hidden'} sm:flex flex-col flex-1 min-w-0 min-h-0`}>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 [@media(max-height:500px)]:py-3">
               <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-teal-300/90">{m.subject}</p>
               <h3 className="mt-1 text-xl font-semibold tracking-tight leading-snug">{e.title}</h3>
               <p className="mt-2 text-sm text-slate-300 leading-relaxed">{m.learn}</p>
@@ -117,7 +117,7 @@ export default function PracticalLibrary({ onClose, onGo }: { onClose: () => voi
               <h4 className="mt-5 text-xs font-medium text-slate-400">Exam skills</h4>
               <p className="mt-1 text-sm text-slate-300">{m.skills.map((k) => SKILL_LABEL[k]).join(', ')}</p>
             </div>
-            <footer className="px-6 py-4 border-t border-white/10 flex items-center gap-3">
+            <footer className="px-6 py-4 [@media(max-height:500px)]:py-2 border-t border-white/10 flex items-center gap-3">
               <p className="hidden sm:block flex-1 text-xs text-slate-400">Dr. Curie will walk you to the bench.</p>
               <button
                 onClick={() => { onGo(e.station, e.id); onClose(); }}

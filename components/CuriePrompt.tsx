@@ -11,7 +11,7 @@ export default function CuriePrompt({ isTouch, onChoose, onAsk }: { isTouch: boo
   return (
     <div className="fixed left-1/2 -translate-x-1/2 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-[55] w-[min(92vw,380px)] animate-[fadeUp_180ms_ease-out]" role="dialog" aria-label="Dr. Curie">
       <div className="rounded-2xl bg-[#0e1525]/95 border border-white/10 p-3 text-slate-100 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.7)]">
-        <div className="flex items-center gap-3 px-1 pb-3">
+        <div className="flex items-center gap-3 px-1 pb-3 [@media(max-height:500px)]:hidden">
           <span className="w-9 h-9 rounded-full bg-teal-500/15 border border-teal-400/40 grid place-items-center text-teal-200 text-sm font-semibold" aria-hidden>
             C
           </span>
