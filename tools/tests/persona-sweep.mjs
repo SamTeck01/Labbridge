@@ -17,7 +17,7 @@ async function openLab(ctxOpts = {}) {
   p.on('console', (m) => m.type() === 'error' && !/Failed to load resource|assistant|GEMINI|favicon/i.test(m.text()) && errs.push('console: ' + m.text().slice(0, 160)));
   p.on('dialog', (d) => d.accept());
   await p.goto(URL); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(3000);
-  await p.getByText('Enter Lab').first().click().catch(() => errs.push('no Enter Lab button'));
+  await p.getByText('Enter the lab').first().click().catch(() => errs.push('no Enter Lab button'));
   for (let i = 0; i < 90; i++) { if (await p.evaluate(() => !!window.__sitDownAt && !!window.__benches && !!window.__curie)) break; await p.waitForTimeout(2000); }
   await p.waitForTimeout(3000);
   return { ctx, p, errs };
@@ -125,7 +125,7 @@ if (run('slow')) {
   const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage();
   const cdp = await ctx.newCDPSession(p); await cdp.send('Network.enable'); await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 400, downloadThroughput: 50000, uploadThroughput: 25000 });
   const t = Date.now(); await p.goto(URL, { timeout: 300000 }); const tLanding = Date.now() - t;
-  await p.getByText('Enter Lab').first().click({ timeout: 120000 }).catch(() => {});
+  await p.getByText('Enter the lab').first().click({ timeout: 120000 }).catch(() => {});
   let tLab = -1; for (let i = 0; i < 150; i++) { if (await p.evaluate(() => !!window.__benches)) { tLab = Date.now() - t; break; } await p.waitForTimeout(2000); }
   await p.screenshot({ path: `${out}/slow3g.png` });
   const bytes = await p.evaluate(() => performance.getEntriesByType('resource').reduce((a, r) => a + (r.transferSize || r.encodedBodySize || 0), 0));

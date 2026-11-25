@@ -10,84 +10,66 @@ interface ChatTurn {
   content: string;
 }
 
-// Actions Dr. Curie may take in the lab. The client validates and applies them to the lab store.
+const STATIONS = ['biology', 'osmosis', 'chemistry', 'rates', 'chroma', 'hood', 'research', 'physics', 'pendulum'];
+
+// What Dr. Curie can do in the lab. The client checks and performs them.
 const tools: FunctionDeclaration[] = [
   {
-    name: 'set_microscope_objective',
-    description: 'Rotate the microscope turret to an objective lens.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { objective: { type: Type.STRING, enum: ['4x', '10x', '40x', '100x'] } },
-      required: ['objective'],
-    },
+    name: 'walk_to',
+    description: 'Walk over to a bench (to supervise, point something out, or demonstrate).',
+    parameters: { type: Type.OBJECT, properties: { station: { type: Type.STRING, enum: STATIONS } }, required: ['station'] },
   },
   {
-    name: 'set_burette',
-    description: 'Open or close the burette stopcock at the chemistry bench.',
-    parameters: { type: Type.OBJECT, properties: { open: { type: Type.BOOLEAN } }, required: ['open'] },
+    name: 'highlight',
+    description: 'Make one piece of apparatus glow so the student can find it. Use this to show what to click next.',
+    parameters: { type: Type.OBJECT, properties: { station: { type: Type.STRING, enum: STATIONS }, part: { type: Type.STRING, description: 'An apparatus id from the knowledge list' } }, required: ['station', 'part'] },
   },
   {
-    name: 'add_indicator',
-    description: 'Add phenolphthalein indicator to the titration flask.',
-    parameters: { type: Type.OBJECT, properties: {} },
-  },
-  {
-    name: 'set_stirrer',
-    description: 'Set the magnetic stirrer speed.',
-    parameters: { type: Type.OBJECT, properties: { rpm: { type: Type.NUMBER, description: 'One of 0, 400 or 800' } }, required: ['rpm'] },
-  },
-  {
-    name: 'set_circuit_switch',
-    description: 'Close or open the knife switch on the physics circuit.',
-    parameters: { type: Type.OBJECT, properties: { closed: { type: Type.BOOLEAN } }, required: ['closed'] },
-  },
-  {
-    name: 'set_resistance',
-    description: 'Set the potentiometer resistance in ohms (10-100).',
-    parameters: { type: Type.OBJECT, properties: { ohms: { type: Type.NUMBER } }, required: ['ohms'] },
-  },
-  {
-    name: 'set_balance_door',
-    description: 'Slide the analytical balance draft-shield door open or closed.',
-    parameters: { type: Type.OBJECT, properties: { open: { type: Type.BOOLEAN } }, required: ['open'] },
-  },
-  {
-    name: 'tare_balance',
-    description: 'Press TARE on the analytical balance to zero it.',
-    parameters: { type: Type.OBJECT, properties: {} },
-  },
-  {
-    name: 'set_centrifuge',
-    description: 'Start or stop the benchtop centrifuge.',
-    parameters: { type: Type.OBJECT, properties: { running: { type: Type.BOOLEAN } }, required: ['running'] },
-  },
-  {
-    name: 'go_to_station',
-    description: 'Walk over to a workstation to supervise or demonstrate.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { station: { type: Type.STRING, enum: ['biology', 'chemistry', 'physics', 'research'] } },
-      required: ['station'],
-    },
+    name: 'use_apparatus',
+    description:
+      'Operate one piece of apparatus for the student, exactly as if they clicked it (e.g. fill the burette, close the tap, focus the microscope). Use it when the student asks you to show them or do it, or for safety. Say what you did and why.',
+    parameters: { type: Type.OBJECT, properties: { station: { type: Type.STRING, enum: STATIONS }, part: { type: Type.STRING, description: 'An apparatus id from the knowledge list' } }, required: ['station', 'part'] },
   },
 ];
 
-const systemInstruction = `You are Dr. Curie, the lab manager of the LabBridge virtual science laboratory. You are a physical character walking the lab floor.
-You supervise students at four benches: biology (microscopy), chemistry (acid-base titration), physics (DC circuits) and research (analytical balance, centrifuge).
-You receive a live snapshot of every instrument with each message. Use it: refer to actual readings, spot mistakes (e.g. burette left open past the 25 mL endpoint, focusing at 100x without oil) and give the next concrete step.
-Enforce lab safety like a real lab manager. Be warm but concise: 2-4 sentences unless asked for detail.
-When you use a tool you physically walk to that bench and operate the equipment in front of the student. You may use tools to demonstrate or fix the setup, but prefer guiding the student to do it themselves; only act when asked or when safety requires it. Always say what you did.
-When a practical is in progress (see ACTIVE PRACTICAL in the lab state), you are teaching it: guide the student toward the current step, explain the why behind each step, and let them do the work themselves. Only operate the equipment for them if they ask you to demonstrate.`;
+const systemInstruction = `You are Dr. Curie, the lab manager of LabBridge, a 3D school science lab. You walk the lab floor as a character.
+Your students are 13-18 year olds, many in Nigeria, many without access to a real lab. Write at a simple reading level: short sentences, everyday words, one idea per sentence. 2-3 sentences unless asked for more.
+Every message comes with LIVE LAB STATE and a KNOWLEDGE list of the practicals (and the active one in detail). Use them: refer to the real readings and the current step.
+How you teach:
+- Guide the student to the next step and explain WHY it is done that way.
+- When they make a mistake, say what it does to the result, then how to fix it.
+- Safety comes first, always.
+- Never give away a measured answer (a titre, R, g, an Rf value, a mass). Ask a guiding question instead.
+- If they ask something off-topic, answer in one friendly line, then bring them back to the practical.
+- You can act: highlight shows them what to click; use_apparatus does it for them. If they ask "show me" or "do it for me", do it with use_apparatus and explain each action. Otherwise prefer highlight so they learn by doing.
+- If ASSISTANCE is independent, keep quiet unless asked or unsafe.`;
+
+// ---- Abuse guard: a small per-client budget (in memory; enough for a single region deployment)
+const WINDOW_MS = 10 * 60 * 1000;
+const MAX_REQUESTS = 30;
+const hits = new Map<string, number[]>();
+function allowed(key: string) {
+  const t = Date.now();
+  const list = (hits.get(key) ?? []).filter((x) => t - x < WINDOW_MS);
+  if (list.length >= MAX_REQUESTS) return false;
+  list.push(t);
+  hits.set(key, list);
+  if (hits.size > 5000) hits.delete(hits.keys().next().value as string);
+  return true;
+}
 
 export async function POST(req: NextRequest) {
-  let body: { messages?: ChatTurn[]; labState?: string; event?: string };
+  let body: { messages?: ChatTurn[]; labState?: string; knowledge?: string; event?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const messages = (body.messages || []).slice(-20);
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
+  if (!allowed(ip)) return NextResponse.json({ error: 'Too many questions at once. Give it a few minutes.' }, { status: 429 });
+
+  const messages = (body.messages || []).slice(-12).map((m) => ({ role: m.role, content: String(m.content).slice(0, 1500) }));
   if (!messages.length && !body.event) {
     return NextResponse.json({ error: 'messages or event is required' }, { status: 400 });
   }
@@ -105,7 +87,7 @@ export async function POST(req: NextRequest) {
     parts: [{ text: m.content }],
   }));
 
-  const liveContext = `[LIVE LAB STATE]\n${body.labState || 'unknown'}`;
+  const liveContext = `[KNOWLEDGE]\n${String(body.knowledge || '').slice(0, 6000)}\n\n[LIVE LAB STATE]\n${String(body.labState || 'unknown').slice(0, 4000)}`;
   if (body.event) {
     contents.push({ role: 'user', parts: [{ text: `${liveContext}\n\n[LAB EVENT - react as lab manager, briefly] ${body.event}` }] });
   } else {
@@ -113,21 +95,30 @@ export async function POST(req: NextRequest) {
     last.parts = [{ text: `${liveContext}\n\n${messages[messages.length - 1].content}` }];
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents,
-      config: { systemInstruction, temperature: 0.6, tools: [{ functionDeclarations: tools }] },
-    });
-
-    const actions = (response.functionCalls || []).map((c) => ({ name: c.name, args: c.args || {} }));
-    let text = response.text || '';
-    if (!text && actions.length) text = 'Let me set that up for you.';
-
-    return NextResponse.json({ text, actions });
-  } catch (error) {
-    console.error('Dr. Curie request failed:', error);
-    return NextResponse.json({ error: 'Dr. Curie could not respond. Check the server logs.' }, { status: 502 });
-  }
+  // Streamed as newline-delimited JSON: {"text": "..."} chunks, then {"actions": [...]}
+  const ai = new GoogleGenAI({ apiKey });
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (o: unknown) => controller.enqueue(encoder.encode(JSON.stringify(o) + '\n'));
+      const actions: { name?: string; args: Record<string, unknown> }[] = [];
+      try {
+        const res = await ai.models.generateContentStream({
+          model: MODEL,
+          contents,
+          config: { systemInstruction, temperature: 0.5, maxOutputTokens: 400, tools: [{ functionDeclarations: tools }] },
+        });
+        for await (const chunk of res) {
+          if (chunk.text) send({ text: chunk.text });
+          for (const c of chunk.functionCalls ?? []) actions.push({ name: c.name, args: (c.args as Record<string, unknown>) || {} });
+        }
+        send({ actions });
+      } catch (error) {
+        console.error('Dr. Curie request failed:', error);
+        send({ error: 'Dr. Curie could not respond.' });
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, { headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' } });
 }

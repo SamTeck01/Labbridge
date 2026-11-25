@@ -7,7 +7,7 @@ const w = (ms) => p.waitForTimeout(ms);
 await p.goto('http://localhost:3100');
 await p.evaluate(() => { localStorage.clear(); localStorage.setItem('labbridge.tutorial.v1', '1'); });
 await p.reload(); await w(4000);
-await p.getByText('Enter Lab').first().click();
+await p.getByText('Enter the lab').first().click();
 for (let i = 0; i < 90; i++) { if (await p.evaluate(() => !!window.__sitDownAt && !!window.__curie && !!window.__titrationSim)) break; await w(2000); }
 await w(8000);
 await p.evaluate(() => window.__curie.labStore.update('player', { goggles: true }));

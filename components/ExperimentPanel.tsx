@@ -164,7 +164,7 @@ export default function ExperimentPanel({
             }}
             className="w-full py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-semibold"
           >
-            🥽 Put on safety goggles first
+            Put on safety goggles first
           </button>
         )}
       </div>

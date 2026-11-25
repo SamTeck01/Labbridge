@@ -47,7 +47,7 @@ await p.goto('http://localhost:3100');
 await p.evaluate(() => localStorage.clear());
 await p.reload(); await w(4000);
 await snap('landing');
-await p.getByText('Enter Lab').first().click();
+await p.getByText('Enter the lab').first().click();
 for (let i = 0; i < 90; i++) { if (await p.evaluate(() => !!window.__sitDownAt && !!window.__benches?.chemistry)) break; await w(2000); }
 check('orientation greets a first-time student', await p.getByText('Your first visit').waitFor({ timeout: 60000 }).then(() => true, () => false));
 await p.getByText('Hello, Dr. Curie').click();

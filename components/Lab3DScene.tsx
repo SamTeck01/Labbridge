@@ -19,7 +19,10 @@ import {
   Play,
   Pause,
   LogOut,
-  Hand
+  Hand,
+  ArrowLeft,
+  ListChecks,
+  MessageCircle
 } from 'lucide-react';
 import { soundFx } from '@/lib/soundEffects';
 import { isMobileOrTouchDevice } from '@/lib/orientation';
@@ -43,6 +46,7 @@ import ExperimentPanel from '@/components/ExperimentPanel';
 import LabOrientation from '@/components/LabOrientation';
 import PracticalLibrary from '@/components/PracticalLibrary';
 import CuriePrompt from '@/components/CuriePrompt';
+import CurieDrawer from '@/components/CurieDrawer';
 import MiniMapRadar from '@/components/MiniMapRadar';
 import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
@@ -89,6 +93,7 @@ const EYE_HEIGHT_SITTING = 1.28;
 
 // Furniture the student can't walk through: [centre x, centre z, half-width x, half-depth z]
 const PLAYER_RADIUS = 0.3;
+const HUD_BTN = 'min-h-10 min-w-10 inline-flex items-center justify-center rounded-xl bg-[#0e1525]/90 hover:bg-[#162036] border border-white/10 text-[13px] font-medium text-slate-100';
 /** Practicals that share a table; the first is what the table shows until another is chosen. */
 const TABLES: Station[][] = [['biology', 'osmosis'], ['chemistry', 'rates', 'chroma'], ['physics', 'pendulum']];
 /** Hidden apparatus (another practical's kit on the same table) must not catch clicks. */
@@ -311,6 +316,7 @@ export default function Lab3DScene({
   const [nearCurie, setNearCurie] = useState(false);
   const nearCurieRef = useRef(false);
   const [metCurie, setMetCurie] = useState(false);
+  const [showCurie, setShowCurie] = useState(false);
   const [libraryOpened, setLibraryOpened] = useState(false);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
   const [phoneAIPrompt, setPhoneAIPrompt] = useState<string | undefined>(undefined);
@@ -539,10 +545,9 @@ export default function Lab3DScene({
       const title = data.label || 'Lab Instructional Guide';
       const prompt = `Can you explain the principles shown on the "${title}" lab poster on the classroom wall, and provide clear step-by-step guidance on how to perform experiments using the equipment here in the lab?`;
       const context = `The student clicked on the framed educational wall poster "${title}" in the 3D science classroom. Provide concise, high-yield scientific explanations and practical laboratory procedures.`;
-      setPhoneInitialTab('ai');
-      setPhoneAIPrompt(prompt);
-      setPhoneAIContext(context);
-      setIsPhoneOpen(true);
+      void context;
+      setShowCurie(true);
+      void curie.ask(prompt);
       return;
     }
 
@@ -1191,6 +1196,16 @@ export default function Lab3DScene({
       scheduleMerge();
     });
 
+    // Frame Dr. Curie draws around the apparatus she is pointing at
+    const hlBox = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: '#2dd4bf', transparent: true, depthTest: false })
+    );
+    hlBox.renderOrder = 999;
+    hlBox.visible = false;
+    scene.add(hlBox);
+    let hlKey = '';
+
     // Raycaster for Center Reticle Hover & Click
     const raycaster = new THREE.Raycaster();
     const centerScreen = new THREE.Vector2(0, 0);
@@ -1344,7 +1359,8 @@ export default function Lab3DScene({
         lab.flame.lit ||
         curieMoving ||
         c.operating ||
-        c.loading
+        c.loading ||
+        (!!c.highlight && Date.now() - c.highlight.at < 8500)
       );
     };
     if (process.env.NODE_ENV !== 'production') {
@@ -1601,6 +1617,30 @@ export default function Lab3DScene({
       const rotor = resEquipmentRef.current?.userData.rotor as THREE.Object3D | undefined;
       if (rotor && labStore.get().research.centrifugeRunning) rotor.rotation.y += 40 * delta;
 
+      // Dr. Curie pointing at a piece of apparatus: a pulsing teal frame around it for 8 s
+      const hl = curie.get().highlight;
+      if (hl && Date.now() - hl.at < 8000) {
+        if (hlKey !== hl.station + hl.part) {
+          hlKey = hl.station + hl.part;
+          let target: THREE.Object3D | null = null;
+          for (const o of interactiveObjectsRef.current) {
+            o.traverse((c) => { if (!target && c.userData?.interactId === hl.part && isShown(c)) target = c; });
+            if (target) break;
+          }
+          hlBox.visible = !!target;
+          if (target) {
+            const box = new THREE.Box3().setFromObject(target).expandByScalar(0.015);
+            box.getCenter(hlBox.position);
+            box.getSize(hlBox.scale);
+          }
+        }
+        (hlBox.material as THREE.LineBasicMaterial).opacity = 0.45 + 0.45 * Math.sin(performance.now() / 180);
+      } else if (hlKey) {
+        hlKey = '';
+        hlBox.visible = false;
+        if (hl) curie.clearHighlight();
+      }
+
       if (curieNPC) {
         const c = curie.get();
         // Real time (not the capped physics delta) so she never walks in slow motion on slow devices
@@ -1707,16 +1747,14 @@ export default function Lab3DScene({
           }}
         />
       )}
-      {nearCurie && !showLibrary && !isSeated && <CuriePrompt isTouch={isTouch} onChoose={() => { setShowLibrary(true); setLibraryOpened(true); }} onAsk={() => { setPhoneInitialTab('ai'); setPhoneAIPrompt(undefined); setIsPhoneOpen(true); }} />}
+      {nearCurie && !showLibrary && !showCurie && !isSeated && <CuriePrompt isTouch={isTouch} onChoose={() => { setShowLibrary(true); setLibraryOpened(true); }} onAsk={() => setShowCurie(true)} />}
+      {showCurie && <CurieDrawer onClose={() => setShowCurie(false)} />}
 
       {/* Dr. Curie speech bubble */}
-      {curieSpeech && !isPhoneOpen && (
+      {curieSpeech && !isPhoneOpen && !showCurie && (
         <button
-          onClick={() => {
-            setPhoneInitialTab('ai');
-            setPhoneAIPrompt(undefined);
-            setIsPhoneOpen(true);
-          }}
+          onClick={() => setShowCurie(true)}
+          aria-label={`Dr. Curie says: ${curieSpeech}. Open the chat`}
           className={`absolute ${atWorkbench ? 'top-3 max-w-[min(60vw,520px)] py-2' : 'bottom-24'} [@media(max-height:500px)]:bottom-auto [@media(max-height:500px)]:top-3 [@media(max-height:500px)]:max-w-[42vw] [@media(max-height:500px)]:py-2 left-1/2 -translate-x-1/2 z-40 max-w-[min(92vw,520px)] text-left bg-white/95 text-slate-900 rounded-2xl px-4 py-3 shadow-2xl border border-slate-200 animate-in fade-in slide-in-from-bottom-2`}
         >
           <span className="block text-xs font-semibold text-teal-700 mb-0.5">Dr. Curie · Lab Manager</span>
@@ -1757,32 +1795,16 @@ export default function Lab3DScene({
         )}
       </div>
 
-      {/* Top Left Clean Status Pill & Home Button */}
-      <div className="absolute top-4 left-4 z-40 pointer-events-auto flex items-center gap-2">
-        <button
-          onClick={onExitToLanding}
-          className="flex items-center gap-2.5 bg-slate-950/85 hover:bg-slate-900/90 backdrop-blur-xl px-3.5 py-2 rounded-full border border-slate-700/80 hover:border-emerald-500/50 shadow-2xl transition-all group"
-          title="Exit 3D Lab and Return to Landing Page"
-        >
-          <div className="w-6 h-6 rounded-full bg-emerald-500/20 group-hover:bg-emerald-500/30 border border-emerald-500/40 flex items-center justify-center text-xs text-emerald-400 font-bold transition-transform group-hover:scale-105">
-            🔬
-          </div>
-          <div className="text-left">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-white tracking-tight">LabBridge 3D</span>
-              <span className="text-[10px] text-slate-400 group-hover:text-emerald-300 font-medium">← Home</span>
-            </div>
-            <span className="text-[9px] text-emerald-400 block font-mono">
-              {isSeated && seatedStation ? `Seated @ ${seatedStation.toUpperCase()}` : 'Exploring Laboratory'}
-            </span>
-          </div>
+      {/* Top-left: leave, the practical list, and Dr. Curie */}
+      <div className="absolute top-3 left-3 z-40 pointer-events-auto flex items-center gap-1.5">
+        <button onClick={onExitToLanding} className={HUD_BTN} aria-label="Leave the lab" title="Leave the lab">
+          <ArrowLeft className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => { setShowLibrary(true); setLibraryOpened(true); }}
-          className={`min-h-11 flex items-center gap-2 ${atWorkbench ? '[@media(max-height:500px)]:hidden' : ''} bg-slate-950/85 hover:bg-slate-900/90 backdrop-blur-xl px-3.5 py-2 rounded-full border border-slate-700/80 hover:border-teal-500/50 shadow-2xl text-xs font-semibold text-white`}
-          title="All practicals"
-        >
-          🧪 <span>Practicals</span>
+        <button onClick={() => { setShowLibrary(true); setLibraryOpened(true); }} className={`${HUD_BTN} px-3.5 gap-2 ${atWorkbench ? '[@media(max-height:500px)]:hidden' : ''}`}>
+          <ListChecks className="w-4 h-4" /> <span>Practicals</span>
+        </button>
+        <button onClick={() => setShowCurie(true)} className={`${HUD_BTN} px-3.5 gap-2 [@media(max-height:500px)]:hidden`}>
+          <MessageCircle className="w-4 h-4" /> <span>Dr. Curie</span>
         </button>
       </div>
 
@@ -1817,7 +1839,7 @@ export default function Lab3DScene({
           className="relative w-14 h-14 rounded-full bg-slate-950/80 backdrop-blur-2xl border-2 border-emerald-500/40 hover:border-emerald-400 text-emerald-400 flex items-center justify-center shadow-[0_8px_30px_rgba(0,0,0,0.8)] active:scale-95 transition-all group"
           title="Open Scientist Smartphone (AI, Teleport, Protocols, Calculator)"
         >
-          <div className="absolute inset-0 rounded-full bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors animate-pulse" />
+          
           <Smartphone className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform" />
           <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-indigo-500 border-2 border-slate-950 animate-bounce" />
         </button>
