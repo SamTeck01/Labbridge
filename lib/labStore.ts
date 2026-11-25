@@ -112,7 +112,7 @@ export interface LabState {
 
 const initialState: LabState = {
   player: { station: null, seated: false, goggles: false },
-  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.5, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false, stageX: 0, stageY: 0, cracked: false },
+  biology: { slideIndex: 0, objective: '10x', coarseFocus: 0.2, fineFocus: 0.5, lightIntensity: 1.0, immersionOil: false, stageX: 0, stageY: 0, cracked: false },
   chemistry: { buretteML: 50, flaskAcidML: 25, buretteOpen: false, dispensedML: 0, stirrerRPM: 0, indicatorAdded: false, phValue: 1.0 },
   physics: { wired: true, switchClosed: false, resistance: 25, voltage: 12.0 },
   flame: { gasOn: false, lit: false, airOpen: false, loop: 'clean', sashDown: false },

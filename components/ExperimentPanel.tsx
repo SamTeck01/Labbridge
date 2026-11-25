@@ -149,12 +149,15 @@ export default function ExperimentPanel({
           {available.safety.map((s) => <li key={s}>⚠ {s}</li>)}
         </ul>
         {goggles ? (
+          <>
+          <p className="text-xs text-teal-300 mb-2">✓ Goggles on. You’re ready.</p>
           <button
             onClick={() => { soundFx.playClick(); experiments.start(available.id); }}
             className="w-full py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-sm font-medium"
           >
-            Start with Dr. Curie
+            Start the practical
           </button>
+          </>
         ) : (
           <button
             onClick={() => {

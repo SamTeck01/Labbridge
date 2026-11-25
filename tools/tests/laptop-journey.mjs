@@ -64,7 +64,7 @@ check('seated at the titration bench', await until(async () => (await lab('playe
 await w(6000);
 await snap('titration_brief');
 await p.getByText('Put on safety goggles first').click(); await w(500);
-await p.getByRole('button', { name: 'Start with Dr. Curie' }).click(); await w(2500);
+await p.getByRole('button', { name: 'Start the practical' }).click(); await w(2500);
 check('practical started', await p.evaluate(() => window.__curie.experiments.get().run?.experimentId === 'titration'));
 await snap('titration_started');
 
@@ -124,7 +124,7 @@ await p.getByRole('button', { name: /Practicals/ }).click(); await w(800);
 await p.getByText("Verifying Ohm's Law").click(); await w(400);
 await p.getByRole('button', { name: /Go to bench/ }).click();
 await until(async () => (await lab('player')).station === 'physics', 30000); await w(6000);
-await p.getByRole('button', { name: 'Start with Dr. Curie' }).click(); await w(2000);
+await p.getByRole('button', { name: 'Start the practical' }).click(); await w(2000);
 await snap('ohms_started');
 check('clicked the return lead', await clickThing('phys_return_lead'));
 check('circuit wired', await until(async () => (await lab('physics')).wired, 240000));
