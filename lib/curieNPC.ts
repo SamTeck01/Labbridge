@@ -9,7 +9,9 @@ import type { Station } from '@/lib/labStore';
  * otherwise a stylised procedural placeholder with the same behaviour.
  */
 
-const HOME = new THREE.Vector3(1.8, 0, 9.2);
+// Her desk spot: the middle of the room, facing the door, so a new student walks straight up to her
+export const CURIE_HOME = new THREE.Vector3(0, 0, 2.4);
+const HOME = CURIE_HOME;
 // Standing spots across the bench from the student, so she demonstrates face-to-face and stays in view.
 const STATION_SPOTS: Record<Station, THREE.Vector3> = {
   biology: new THREE.Vector3(-4.0, 0, -4.75),
@@ -19,10 +21,10 @@ const STATION_SPOTS: Record<Station, THREE.Vector3> = {
   // Beside the student at the fume hood (the hood is against the back wall)
   hood: new THREE.Vector3(1.0, 0, -10.05),
   // Side benches: across the bench from the student
-  pendulum: new THREE.Vector3(8.3, 0, -1.25),
-  rates: new THREE.Vector3(10.1, 0, -1.25),
-  osmosis: new THREE.Vector3(-10.1, 0, -1.25),
-  chroma: new THREE.Vector3(-8.3, 0, -1.25),
+  pendulum: new THREE.Vector3(-4.0, 0, 2.25),
+  rates: new THREE.Vector3(5.0, 0, -4.75),
+  osmosis: new THREE.Vector3(-4.0, 0, -4.75),
+  chroma: new THREE.Vector3(5.0, 0, -4.75),
 };
 const BENCH_CENTRES: Record<Station, THREE.Vector3> = {
   biology: new THREE.Vector3(-4.5, 0, -3.5),
@@ -30,10 +32,10 @@ const BENCH_CENTRES: Record<Station, THREE.Vector3> = {
   physics: new THREE.Vector3(-4.5, 0, 3.5),
   research: new THREE.Vector3(4.5, 0, 3.5),
   hood: new THREE.Vector3(0, 0, -11.3),
-  pendulum: new THREE.Vector3(8.3, 0, 0.45),
-  rates: new THREE.Vector3(10.1, 0, 0.45),
-  osmosis: new THREE.Vector3(-10.1, 0, 0.45),
-  chroma: new THREE.Vector3(-8.3, 0, 0.45),
+  pendulum: new THREE.Vector3(-4.5, 0, 3.5),
+  rates: new THREE.Vector3(4.5, 0, -3.5),
+  osmosis: new THREE.Vector3(-4.5, 0, -3.5),
+  chroma: new THREE.Vector3(4.5, 0, -3.5),
 };
 const AISLE_X = 1.5; // benches occupy |x| >= 2.7, so |x| <= 1.5 is always clear
 

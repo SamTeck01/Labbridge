@@ -12,7 +12,7 @@ const KEY = 'labbridge.orientation.v1';
  * itself off when the student actually does it (looks around, opens the practical list, sits at a
  * bench with goggles on, starts a practical). It never blocks the lab and can be skipped.
  */
-export default function LabOrientation({ isTouch, libraryOpened, onOpenLibrary }: { isTouch: boolean; libraryOpened: boolean; onOpenLibrary: () => void }) {
+export default function LabOrientation({ isTouch, libraryOpened, metCurie, onOpenLibrary }: { isTouch: boolean; libraryOpened: boolean; metCurie: boolean; onOpenLibrary: () => void }) {
   const [show, setShow] = useState(() => {
     try {
       return !localStorage.getItem(KEY);
@@ -20,7 +20,6 @@ export default function LabOrientation({ isTouch, libraryOpened, onOpenLibrary }
       return true;
     }
   });
-  const [metCurie, setMetCurie] = useState(false);
   const [looked, setLooked] = useState(false);
   const seatedWithGoggles = useLab((s) => s.player.seated && !!s.player.station && s.player.goggles);
   const started = useExperiments((s) => !!s.run || s.history.length > 0);
@@ -52,27 +51,26 @@ export default function LabOrientation({ isTouch, libraryOpened, onOpenLibrary }
 
   const tasks: { done: boolean; title: string; body: React.ReactNode }[] = [
     {
-      done: metCurie,
-      title: 'Meet Dr. Curie',
-      body: (
-        <>
-          She runs this lab. She shows you what to do, explains <i>why</i>, and steps in if something goes wrong or unsafe.{' '}
-          <button onClick={() => setMetCurie(true)} className="underline text-teal-300">Hello, Dr. Curie</button>
-        </>
-      ),
-    },
-    {
       done: looked,
       title: 'Look around',
       body: isTouch ? 'Drag on the screen to look around. Use the joystick to walk.' : 'Click the lab, then move the mouse to look. W A S D to walk. Esc gives you the mouse back.',
+    },
+    {
+      done: metCurie || libraryOpened,
+      title: 'Walk up to Dr. Curie',
+      body: (
+        <>
+          She runs this lab: the woman in the white coat in the middle of the room. Walk up to her and she will help you choose a practical.{' '}
+          <button onClick={onOpenLibrary} className="underline text-teal-300">Or open the list now</button>
+        </>
+      ),
     },
     {
       done: libraryOpened,
       title: 'Choose a practical',
       body: (
         <>
-          Every practical is in one list. New here? Start with the microscope.{' '}
-          <button onClick={onOpenLibrary} className="underline text-teal-300">Open the practical list</button>
+          Pick one from her list. New here? Start with the microscope.
         </>
       ),
     },

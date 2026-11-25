@@ -42,6 +42,7 @@ import ScientistPhoneModal, { PhoneAppTab } from '@/components/ScientistPhoneMod
 import ExperimentPanel from '@/components/ExperimentPanel';
 import LabOrientation from '@/components/LabOrientation';
 import PracticalLibrary from '@/components/PracticalLibrary';
+import CuriePrompt from '@/components/CuriePrompt';
 import MiniMapRadar from '@/components/MiniMapRadar';
 import VirtualJoystick from '@/components/VirtualJoystick';
 import { SnapshotItem } from '@/components/LabNotebookModal';
@@ -67,7 +68,7 @@ import { PendulumBench } from '@/lib/workbench/pendulumBench';
 import { RatesBench } from '@/lib/workbench/ratesBench';
 import { OsmosisBench } from '@/lib/workbench/osmosisBench';
 import { ChromaBench } from '@/lib/workbench/chromaBench';
-import { experiments } from '@/lib/experiments';
+import { experiments, EXPERIMENTS } from '@/lib/experiments';
 import { getGraphics, type GraphicsSetting } from '@/lib/graphicsSetting';
 
 export type StationType = Station | null;
@@ -88,6 +89,13 @@ const EYE_HEIGHT_SITTING = 1.28;
 
 // Furniture the student can't walk through: [centre x, centre z, half-width x, half-depth z]
 const PLAYER_RADIUS = 0.3;
+/** Practicals that share a table; the first is what the table shows until another is chosen. */
+const TABLES: Station[][] = [['biology', 'osmosis'], ['chemistry', 'rates', 'chroma'], ['physics', 'pendulum']];
+/** Hidden apparatus (another practical's kit on the same table) must not catch clicks. */
+const isShown = (o: THREE.Object3D | null) => {
+  for (let x = o; x; x = x.parent) if (!x.visible) return false;
+  return true;
+};
 const OBSTACLES: [number, number, number, number][] = [
   [-4.5, -3.5, 1.8, 0.9], // biology bench
   [4.5, -3.5, 1.8, 0.9], // chemistry bench
@@ -95,8 +103,6 @@ const OBSTACLES: [number, number, number, number][] = [
   [4.5, 3.5, 1.8, 0.9], // analytical bench
   [0, -11.3, 1.2, 0.6], // fume hood
   [11.2, 4.0, 0.5, 0.5], // safety shower
-  [-9.2, 0, 1.8, 0.9], // side bench: osmosis / chromatography
-  [9.2, 0, 1.8, 0.9], // side bench: pendulum / rates
 ];
 
 interface CameraTransition {
@@ -301,6 +307,10 @@ export default function Lab3DScene({
   // Phone State
   const [isPhoneOpen, setIsPhoneOpen] = useState<boolean>(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  // True while the student stands within talking distance of Dr. Curie
+  const [nearCurie, setNearCurie] = useState(false);
+  const nearCurieRef = useRef(false);
+  const [metCurie, setMetCurie] = useState(false);
   const [libraryOpened, setLibraryOpened] = useState(false);
   const [phoneInitialTab, setPhoneInitialTab] = useState<PhoneAppTab>('home');
   const [phoneAIPrompt, setPhoneAIPrompt] = useState<string | undefined>(undefined);
@@ -357,6 +367,26 @@ export default function Lab3DScene({
   // Camera Smooth Cinematic Transition Ref
   const transitionRef = useRef<CameraTransition | null>(null);
 
+  // ---- Four tables: each shows only the apparatus of the practical chosen on it ----
+  const stationObjectsRef = useRef(new Map<Station, THREE.Object3D[]>());
+  const tableShowsRef = useRef<Partial<Record<Station, Station>>>({});
+  /** Run `make` and remember every object it added to the scene as belonging to `st`. */
+  const trackStation = (scene: THREE.Scene, st: Station, make: () => void) => {
+    const before = new Set(scene.children);
+    make();
+    const added = scene.children.filter((c) => !before.has(c));
+    added.forEach((c) => (c.userData.keepSeparate = true));
+    stationObjectsRef.current.set(st, [...(stationObjectsRef.current.get(st) ?? []), ...added]);
+    const shown = tableShowsRef.current[TABLES.find((t) => t.includes(st))?.[0] ?? st];
+    if (shown && shown !== st) for (const o of stationObjectsRef.current.get(st) ?? []) o.visible = false;
+  };
+  const showStation = useCallback((station: Station) => {
+    const table = TABLES.find((t) => t.includes(station));
+    if (!table) return;
+    for (const st of table) for (const o of stationObjectsRef.current.get(st) ?? []) { o.userData.keepSeparate = true; o.visible = st === station; }
+    tableShowsRef.current[table[0]] = station;
+  }, []);
+
   // Bench Seating Anchor Coordinates (Eye-Level 1st-Person Operating Vantage)
   const seatAnchors = useRef<{
     [key in Station]: {
@@ -392,25 +422,26 @@ export default function Lab3DScene({
       lookAt: new THREE.Vector3(0, 1.02, -11.0),
       baseYaw: 0,
     },
-    // Side benches (kits at the +z front edge; the student stands in the aisle facing -z)
-    pendulum: {
-      pos: new THREE.Vector3(8.3, 1.44, 1.55),
-      lookAt: new THREE.Vector3(8.3, 1.0, 0.45),
+    // Four tables: the other practicals load onto a main table in place of its usual apparatus
+    // (kits sit at the table's front edge; the student stands facing -z)
+    osmosis: {
+      pos: new THREE.Vector3(-4.5, 1.44, -1.5),
+      lookAt: new THREE.Vector3(-4.5, 1.0, -2.6),
       baseYaw: 0,
     },
     rates: {
-      pos: new THREE.Vector3(10.1, 1.44, 1.55),
-      lookAt: new THREE.Vector3(10.1, 1.0, 0.45),
-      baseYaw: 0,
-    },
-    osmosis: {
-      pos: new THREE.Vector3(-10.1, 1.44, 1.55),
-      lookAt: new THREE.Vector3(-10.1, 1.0, 0.45),
+      pos: new THREE.Vector3(4.5, 1.44, -1.5),
+      lookAt: new THREE.Vector3(4.5, 1.0, -2.6),
       baseYaw: 0,
     },
     chroma: {
-      pos: new THREE.Vector3(-8.3, 1.44, 1.55),
-      lookAt: new THREE.Vector3(-8.3, 1.0, 0.45),
+      pos: new THREE.Vector3(4.5, 1.44, -1.5),
+      lookAt: new THREE.Vector3(4.5, 1.0, -2.6),
+      baseYaw: 0,
+    },
+    pendulum: {
+      pos: new THREE.Vector3(-4.5, 1.44, 5.5),
+      lookAt: new THREE.Vector3(-4.5, 1.0, 4.4),
       baseYaw: 0,
     },
   });
@@ -418,6 +449,7 @@ export default function Lab3DScene({
   // Sitting down mechanic with smooth transition
   const sitDownAt = useCallback((station: Station) => {
     soundFx.playSitDown();
+    showStation(station);
     const anchor = seatAnchors.current[station];
     if (anchor && cameraRef.current) {
       const startPos = cameraRef.current.position.clone();
@@ -442,7 +474,7 @@ export default function Lab3DScene({
       setSeatedStation(station);
       labStore.update('player', { station, seated: true });
     }
-  }, []);
+  }, [showStation]);
 
   // Auto-seat at requested initialStation on entry
   useEffect(() => {
@@ -457,6 +489,7 @@ export default function Lab3DScene({
   // Standing up mechanic with smooth step-back
   const standUp = useCallback(() => {
     soundFx.playStandUp();
+    if (!curie.get().pending.length) curie.walkTo(null);
     setIsSeated(false);
     setSeatedStation(null);
     labStore.update('player', { station: null, seated: false });
@@ -491,9 +524,8 @@ export default function Lab3DScene({
 
     if (data.interactId === 'npc_curie') {
       soundFx.playClick();
-      setPhoneInitialTab('ai');
-      setPhoneAIPrompt(undefined);
-      setIsPhoneOpen(true);
+      setShowLibrary(true);
+      setLibraryOpened(true);
       return;
     }
 
@@ -655,6 +687,11 @@ export default function Lab3DScene({
         soundFx.playClick();
       }
 
+      if (e.code === 'KeyE' && nearCurieRef.current && !isSeated) {
+        setShowLibrary(true);
+        setLibraryOpened(true);
+        return;
+      }
       // 'E' key interacts with hovered action
       if (e.code === 'KeyE' && hoveredAction) {
         if (hoveredAction.category === 'stool') {
@@ -1029,10 +1066,12 @@ export default function Lab3DScene({
     createReadyMadeMicroscope('biology').then((microscope) => {
       microscope.position.set(-4.5, 0.94, -2.98); // front edge, within reach
       scene.add(microscope);
+      microscope.userData.keepSeparate = true; // swapped with other practicals on this table, so never baked into the room
+      stationObjectsRef.current.set('biology', [...(stationObjectsRef.current.get('biology') ?? []), microscope]);
       microEquipmentRef.current = microscope;
       handsPromise.then((ok) => {
         if (ok && !disposed) {
-          benchesRef.current.biology = new MicroscopeBench(scene, microscope, hands, setFocus, () => setIsViewingEyepieces(true));
+          trackStation(scene, 'biology', () => (benchesRef.current.biology = new MicroscopeBench(scene, microscope, hands, setFocus, () => setIsViewingEyepieces(true))));
           collectInteractives();
         }
       });
@@ -1047,6 +1086,8 @@ export default function Lab3DScene({
     createReadyMadeChemistryStation('chemistry').then((chemRig) => {
       chemRig.position.set(4.5, 0.94, -2.98); // front edge of the bench, within reach
       scene.add(chemRig);
+      chemRig.userData.keepSeparate = true; // swapped with other practicals on this table, so never baked into the room
+      stationObjectsRef.current.set('chemistry', [...(stationObjectsRef.current.get('chemistry') ?? []), chemRig]);
       chemEquipmentRef.current = chemRig;
       chemRig.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
@@ -1072,8 +1113,10 @@ export default function Lab3DScene({
     createReadyMadePhysicsBench('physics').then((physBench) => {
       physBench.position.set(-4.5, 0.94, 4.0);
       scene.add(physBench);
+      physBench.userData.keepSeparate = true; // swapped with other practicals on this table, so never baked into the room
+      stationObjectsRef.current.set('physics', [...(stationObjectsRef.current.get('physics') ?? []), physBench]);
       handsPromise.then((ok) => {
-        if (ok && !disposed) benchesRef.current.physics = new CircuitBench(scene, physBench, hands, setFocus);
+        if (ok && !disposed) trackStation(scene, 'physics', () => (benchesRef.current.physics = new CircuitBench(scene, physBench, hands, setFocus)));
       });
       setPhysicsVersion((v) => v + 1);
       physEquipmentRef.current = physBench;
@@ -1103,10 +1146,13 @@ export default function Lab3DScene({
     handsPromise.then((ok) => {
       if (!ok || disposed) return;
       const top = 0.94;
-      benchesRef.current.pendulum = new PendulumBench(scene, new THREE.Vector3(8.3, top, 0.45), hands, setFocus);
-      benchesRef.current.rates = new RatesBench(scene, new THREE.Vector3(10.1, top, 0.45), hands, setFocus);
-      benchesRef.current.osmosis = new OsmosisBench(scene, new THREE.Vector3(-10.1, top, 0.45), hands, setFocus);
-      benchesRef.current.chroma = new ChromaBench(scene, new THREE.Vector3(-8.3, top, 0.45), hands, setFocus);
+      const track = (st: Station, make: () => void) => trackStation(scene, st, make);
+      track('pendulum', () => (benchesRef.current.pendulum = new PendulumBench(scene, new THREE.Vector3(-4.5, top, 4.4), hands, setFocus)));
+      track('rates', () => (benchesRef.current.rates = new RatesBench(scene, new THREE.Vector3(4.5, top, -2.6), hands, setFocus)));
+      track('osmosis', () => (benchesRef.current.osmosis = new OsmosisBench(scene, new THREE.Vector3(-4.5, top, -2.6), hands, setFocus)));
+      track('chroma', () => (benchesRef.current.chroma = new ChromaBench(scene, new THREE.Vector3(4.5, top, -2.6), hands, setFocus)));
+      // Each table starts with its first practical; re-apply what the student last chose
+      for (const t of TABLES) showStation(tableShowsRef.current[t[0]] ?? t[0]);
       collectInteractives();
       scheduleMerge();
     });
@@ -1171,7 +1217,7 @@ export default function Lab3DScene({
     const actAt = (ndc: THREE.Vector2) => {
       if (!cameraRef.current) return;
       raycaster.setFromCamera(ndc, cameraRef.current);
-      const hit = raycaster.intersectObjects(interactiveObjectsRef.current, true).find((h) => h.object.userData?.isInteractive);
+      const hit = raycaster.intersectObjects(interactiveObjectsRef.current, true).find((h) => h.object.userData?.isInteractive && isShown(h.object));
       if (hit) {
         lastHitPointRef.current = hit.point.clone();
         handleObjectClickRef.current(hit.object);
@@ -1500,7 +1546,7 @@ export default function Lab3DScene({
         if (coordUpdateCounter % 3 === 0) {
           const atBench = isSeatedRef.current && !!seatedStationRef.current;
           raycaster.setFromCamera(atBench ? pointerRef.current : centerScreen, cameraRef.current);
-          const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true).filter((h) => h.object.userData?.isInteractive);
+          const hits = raycaster.intersectObjects(interactiveObjectsRef.current, true).filter((h) => h.object.userData?.isInteractive && isShown(h.object));
           if (hits.length > 0) {
             const hit = hits[0].object;
             if (hit.userData && hit.userData.isInteractive && hoveredIdRef.current !== hit.userData.interactId) {
@@ -1560,6 +1606,14 @@ export default function Lab3DScene({
         // Real time (not the capped physics delta) so she never walks in slow motion on slow devices
         const atTarget = curieNPC.update(Math.min(frameMs / 1000, 0.5), camera.position, c.targetStation, c.operating);
         curieMoving = !atTarget;
+        // Talking distance: close to her, standing, and she is at her desk spot (not busy at a bench)
+        const dx = camera.position.x - curieNPC.root.position.x, dz = camera.position.z - curieNPC.root.position.z;
+        const near = !isSeatedRef.current && !c.targetStation && atTarget && dx * dx + dz * dz < 2.4 * 2.4;
+        if (near !== nearCurieRef.current) {
+          nearCurieRef.current = near;
+          setNearCurie(near);
+          if (near) setMetCurie(true);
+        }
         if (atTarget && c.pending.length && !c.operating) curie.arrived();
       }
 
@@ -1611,7 +1665,7 @@ export default function Lab3DScene({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [isTouch]);
+  }, [isTouch, showStation]);
 
 
   return (
@@ -1641,8 +1695,19 @@ export default function Lab3DScene({
       <ExperimentPanel station={isSeated ? seatedStation : null} compact={atWorkbench} onGoTo={sitDownAt} />
 
       <GogglesFrame />
-      {labReady && <LabOrientation isTouch={isTouch} libraryOpened={libraryOpened} onOpenLibrary={() => { setShowLibrary(true); setLibraryOpened(true); }} />}
-      {showLibrary && <PracticalLibrary onClose={() => setShowLibrary(false)} onGo={sitDownAt} />}
+      {labReady && !nearCurie && <LabOrientation isTouch={isTouch} libraryOpened={libraryOpened} metCurie={metCurie} onOpenLibrary={() => { setShowLibrary(true); setLibraryOpened(true); }} />}
+      {showLibrary && (
+        <PracticalLibrary
+          onClose={() => setShowLibrary(false)}
+          onGo={(station, id) => {
+            const title = EXPERIMENTS.find((x) => x.id === id)?.title ?? 'this practical';
+            curie.walkTo(station);
+            curie.say(`${title}. I'll meet you at the bench — goggles on first.`);
+            sitDownAt(station);
+          }}
+        />
+      )}
+      {nearCurie && !showLibrary && !isSeated && <CuriePrompt isTouch={isTouch} onChoose={() => { setShowLibrary(true); setLibraryOpened(true); }} onAsk={() => { setPhoneInitialTab('ai'); setPhoneAIPrompt(undefined); setIsPhoneOpen(true); }} />}
 
       {/* Dr. Curie speech bubble */}
       {curieSpeech && !isPhoneOpen && (
@@ -1677,7 +1742,7 @@ export default function Lab3DScene({
         />
 
         {/* Hover Action Badge */}
-        {hoveredAction && (
+        {hoveredAction && !(nearCurie && hoveredAction.id === 'npc_curie') && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
             <div className="bg-slate-900/90 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-emerald-500/50 shadow-2xl flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
@@ -1760,7 +1825,7 @@ export default function Lab3DScene({
 
       {/* Contextual Action Buttons (Sit / Stand / Eyepieces) */}
       <div className="absolute bottom-6 right-6 z-40 pointer-events-auto flex items-center gap-3">
-        {!isSeated && hoveredAction && (
+        {!isSeated && hoveredAction && !nearCurie && (
           <button
             onClick={() => {
               if (hoveredAction.category === 'stool') {
