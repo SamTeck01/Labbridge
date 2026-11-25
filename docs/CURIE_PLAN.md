@@ -84,10 +84,42 @@ Replace the operate-equipment tools with teaching tools:
 - **Now:** a localStorage profile (mistakes per practical, levels, the last debrief). Curie opens with "Last time you overshot the endpoint, so go dropwise from 24 mL".
 - **Later:** this syncs to a backend when teacher mode exists (Supabase or AWS DynamoDB; the AWS option is relevant to the pitch-a-thon).
 
+### 3.10 Curie is how you choose a practical (your request)
+- She stands at a **front desk**, near where the student spawns, and walks back there between jobs.
+- **Walk up to her** (within about 2 m and facing her): a small glassy prompt fades in above her head with the label **"Talk to Dr. Curie"**. On a laptop it's a button plus `E`; on a phone it's a big tap target.
+- **The button opens the Practical modal**, the library rebuilt around her:
+  - a left rail with subjects;
+  - cards with difficulty, time and best score;
+  - a short "why this matters" line;
+  - one primary button, **"Start with Dr. Curie"**.
+- **On Start:**
+  - she says one line ("Titration. Follow me.");
+  - she walks to the right table, and the camera follows her there and seats the student;
+  - she checks goggles, then the brief begins.
+- The floating "Practicals" HUD button stays as a shortcut, but it opens the same modal, so there is one place to choose.
+- **Also from the prompt:** "Ask a question", which opens her chat drawer, and "Where was I?", which resumes the last unfinished practical.
+
+### 3.11 Four tables instead of ten
+There are currently 4 main benches, 4 side benches and the fume hood, all built at once. The new layout has **4 tables**:
+
+| Table | Practicals that load on it |
+|---|---|
+| Biology | Microscopy, Osmosis |
+| Chemistry | Titration, Rates, Chromatography |
+| Physics | Ohm's law, Pendulum |
+| Analytical | Weighing, plus Flame tests in a bench-top fume cupboard on the same table |
+
+- Each table shows only the apparatus for the **chosen** practical. The other rigs aren't built until they're needed, and are disposed of when you switch.
+- This removes the side benches and the back-wall hood, so the room feels like a real teaching lab, with less walking and fewer things to click by mistake.
+- **Performance bonus:** only one practical's geometry, textures and hand targets are live at a time, so expect roughly 60–70% fewer draw calls and much less GPU memory. This is a big win for cheap phones.
+- With no practical chosen, each table shows a neat "tidy bench" (tray and stool), and Curie's desk is the obvious place to go.
+
 ## 4. Delivery phases
 
 | Phase | Contents | Size |
 |---|---|---|
+| **0. Curie desk and 4 tables** | NPC desk, proximity prompt, Practical modal, walk-and-seat flow (3.10); 4-table layout with per-practical apparatus loaded and disposed (3.11) | ~1–2 days |
+
 | **1. Foundations** | Generated prompt with all 9 practicals (P1, P2); local coach with offline fallback (P4, P5); rate limit and input checks (P7); answer-withholding and off-topic rules (P10) | ~1 day |
 | **2. Teaching tools** | `highlight`, `walk_to` (9 stations), `show_close_up`, `safety_stop`; remove operate tools (P3); idle nudges | ~1 day |
 | **3. Voice and surface** | `speechSynthesis` with mute; bubble-to-drawer conversation; streaming (P6, P9, P11) | ~1 day |
@@ -104,4 +136,4 @@ Replace the operate-equipment tools with teaching tools:
 1. Remove her ability to operate equipment, except safety stops? (Recommended: yes.)
 2. Voice on by default, or off by default with a speaker button? (Recommended: on, with one tap to mute.)
 3. Keep Gemini, or move the remote brain to Amazon Bedrock for the AWS pitch? (Recommended: keep Gemini now and design a swappable provider.)
-4. Start with phases 1–3 now? (Recommended: yes.)
+4. Start with phases 0–3 now? Phase 0 (the Curie desk and the 4 tables) comes first. (Recommended: yes.)
