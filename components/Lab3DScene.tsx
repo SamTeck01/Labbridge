@@ -96,6 +96,10 @@ const PLAYER_RADIUS = 0.3;
 const HUD_BTN = 'min-h-10 min-w-10 inline-flex items-center justify-center rounded-xl bg-[#0e1525]/90 hover:bg-[#162036] border border-white/10 text-[13px] font-medium text-slate-100';
 /** Practicals that share a table; the first is what the table shows until another is chosen. */
 const TABLES: Station[][] = [['biology', 'osmosis'], ['chemistry', 'rates', 'chroma'], ['physics', 'pendulum']];
+/** Hide the stool right under the student's work position (it would fill the bottom of the view). */
+function showStools(stools: THREE.Object3D[], seat: THREE.Vector3 | null) {
+  for (const st of stools) st.visible = !seat || Math.hypot(st.position.x - seat.x, st.position.z - seat.z) > 1.4;
+}
 /** Hidden apparatus (another practical's kit on the same table) must not catch clicks. */
 const isShown = (o: THREE.Object3D | null) => {
   for (let x = o; x; x = x.parent) if (!x.visible) return false;
@@ -459,8 +463,7 @@ export default function Lab3DScene({
   const sitDownAt = useCallback((station: Station) => {
     soundFx.playSitDown();
     showStation(station);
-    const seat = seatAnchors.current[station]?.pos;
-    for (const st of stoolsRef.current) st.visible = !seat || Math.hypot(st.position.x - seat.x, st.position.z - seat.z) > 1.4;
+    showStools(stoolsRef.current, seatAnchors.current[station]?.pos ?? null);
     const anchor = seatAnchors.current[station];
     if (anchor && cameraRef.current) {
       const startPos = cameraRef.current.position.clone();
@@ -512,7 +515,7 @@ export default function Lab3DScene({
   // Standing up mechanic with smooth step-back
   const standUp = useCallback(() => {
     soundFx.playStandUp();
-    for (const st of stoolsRef.current) st.visible = true;
+    showStools(stoolsRef.current, null);
     if (!curie.get().pending.length) curie.walkTo(null);
     setIsSeated(false);
     setSeatedStation(null);
