@@ -316,6 +316,11 @@ export class MicroscopeBench extends BenchBase {
 
 export class CircuitBench extends BenchBase {
   protected ids = ['phys_knife_switch', 'phys_potentiometer', 'phys_voltage_knob', 'phys_return_lead', 'phys_bulb', 'phys_ammeter_needle', 'phys_voltmeter'];
+  constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus) {
+    super(scene, rig, hands, focus);
+    // Built now (not on the first frame) so the table switch hides it with the rest of the kit
+    this.buildResistor();
+  }
   private voltSpin = 0;
   private needle = 0.87;
   private needleVel = 0;

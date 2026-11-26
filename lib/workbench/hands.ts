@@ -66,6 +66,7 @@ export class FirstPersonHands {
         for (const mat of Array.isArray(m.material) ? m.material : [m.material]) mat.side = THREE.DoubleSide;
       }
     });
+    trimToForearms(model);
     this.root.add(model);
     this.camera.add(this.root);
     this.root.updateMatrixWorld(true);
@@ -246,4 +247,55 @@ export class FirstPersonHands {
     for (let i = 0; i < h.fingers.length; i++) h.fingers[i].quaternion.copy(h.fingerRest[i]).multiply(this.q2.setFromAxisAngle(FirstPersonHands.X, curl));
     for (let i = 0; i < h.thumbs.length; i++) h.thumbs[i].quaternion.copy(h.thumbRest[i]).multiply(this.q2.setFromAxisAngle(FirstPersonHands.X, curl * 0.5));
   }
+}
+
+/**
+ * Only the forearms and hands are driven; the upper arms stay in their rest pose, so their skin
+ * stretched into a huge open tube whenever a hand reached far (e.g. up to the microscope turret).
+ * Drop every triangle that isn't mostly carried by a forearm/hand bone: what's left is a glove and a
+ * sleeve cuff that always moves with the hand.
+ */
+function trimToForearms(model: THREE.Object3D) {
+  model.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (!mesh.isSkinnedMesh || !mesh.skeleton) return;
+    const keep = mesh.skeleton.bones.map((b) => /(ForeArm|Hand)/.test(b.name));
+    const handBone = mesh.skeleton.bones.map((b) => /Hand/.test(b.name));
+    const g = mesh.geometry;
+    const si = g.getAttribute('skinIndex');
+    const sw = g.getAttribute('skinWeight');
+    if (!si || !sw) return;
+    // Bind-pose positions of the hand and forearm bones (mesh space): keep only a short cuff of sleeve
+    // above each glove, so the cut end of the arm never comes into view
+    const bindPos = (i: number) => new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert());
+    const hands: THREE.Vector3[] = [];
+    let reach = Infinity;
+    mesh.skeleton.bones.forEach((b, i) => {
+      if (!/Hand$/.test(b.name)) return;
+      const h = bindPos(i);
+      hands.push(h);
+      const fi = mesh.skeleton.bones.findIndex((x) => x.name === b.name.replace(/Hand$/, 'ForeArm'));
+      if (fi >= 0) reach = Math.min(reach, h.distanceTo(bindPos(fi)) * 0.45);
+    });
+    const pos = g.getAttribute('position');
+    const v3 = new THREE.Vector3();
+    const ok = new Uint8Array(si.count);
+    for (let v = 0; v < si.count; v++) {
+      let w = 0;
+      let hw = 0; // weight on the hand and finger bones
+      for (let k = 0; k < 4; k++) {
+        const b = si.getComponent(v, k);
+        if (keep[b]) w += sw.getComponent(v, k);
+        if (handBone[b]) hw += sw.getComponent(v, k);
+      }
+      v3.fromBufferAttribute(pos, v);
+      // The whole hand always stays; of the sleeve, only a short cuff next to the glove
+      const near = !hands.length || !isFinite(reach) || hands.some((h) => h.distanceTo(v3) < reach);
+      ok[v] = hw >= 0.5 || (w >= 0.5 && near) ? 1 : 0;
+    }
+    const src = g.index ? Array.from(g.index.array as ArrayLike<number>) : Array.from({ length: si.count }, (_, i) => i);
+    const out: number[] = [];
+    for (let t = 0; t + 2 < src.length; t += 3) if (ok[src[t]] && ok[src[t + 1]] && ok[src[t + 2]]) out.push(src[t], src[t + 1], src[t + 2]);
+    if (out.length && out.length < src.length) g.setIndex(out);
+  });
 }

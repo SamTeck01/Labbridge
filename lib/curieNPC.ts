@@ -209,6 +209,16 @@ export async function createCurieNPC(): Promise<CurieNPC> {
     head = parts.head;
   }
   addHitbox(root);
+  // Cloth, not latex: the model's trousers and coat came in far too glossy
+  root.traverse((o) => {
+    const mats = (o as THREE.Mesh).material;
+    for (const m of (Array.isArray(mats) ? mats : mats ? [mats] : []) as THREE.MeshStandardMaterial[]) {
+      if (m && 'roughness' in m) {
+        m.roughness = Math.max(m.roughness ?? 0, 0.75);
+        m.metalness = Math.min(m.metalness ?? 0, 0.05);
+      }
+    }
+  });
 
   let t = 0;
   let walkBlend = 0;
