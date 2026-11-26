@@ -62,6 +62,8 @@ export class FirstPersonHands {
         m.frustumCulled = false;
         m.castShadow = false;
         m.renderOrder = 5;
+        // The coat sleeve is an open tube: draw its inside too, so reaching arms never look hollow
+        for (const mat of Array.isArray(m.material) ? m.material : [m.material]) mat.side = THREE.DoubleSide;
       }
     });
     this.root.add(model);

@@ -80,7 +80,7 @@ export default function PracticalLibrary({ onClose, onGo }: { onClose: () => voi
                         {done && <Check className="w-3 h-3" strokeWidth={3} />}
                       </span>
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm truncate">{x.title}</span>
+                        <span className="block text-sm leading-snug">{x.title}</span>
                         <span className="block text-[11px] text-slate-400">
                           {running === x.id ? 'In progress' : done ? `Best ${best[x.id]}/100` : `${PRACTICAL_META[x.id].difficulty} · ${PRACTICAL_META[x.id].minutes} min`}
                           {x.id === START_HERE && !done && firstTime && <span className="text-teal-300"> · start here</span>}

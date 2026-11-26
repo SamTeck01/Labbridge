@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { tagInteractive } from '@/lib/lab3dEquipment';
 import { labStore, SALTS, type SaltKey } from '@/lib/labStore';
+import { label } from '@/lib/workbench/kit';
 import { experiments } from '@/lib/experiments';
 import { soundFx } from '@/lib/soundEffects';
 import { curie } from '@/lib/curie';
@@ -67,6 +68,17 @@ export class FlameBench extends BenchBase {
     this.flame.visible = false;
     this.flame.userData.keepSeparate = true;
     scene.add(this.flame);
+    // Name card in front of each sample well, so students can tell the samples apart
+    const FORMULA: Record<SaltKey, string> = { li: 'LiCl', na: 'NaCl', k: 'KCl', ca: 'CaCl₂', cu: 'CuCl₂' };
+    for (const key of Object.keys(SALTS) as SaltKey[]) {
+      const well = this.pos(`anchor_salt_${key}`);
+      if (!well) continue;
+      const card = label(FORMULA[key], 0.05, 0.018);
+      card.rotation.x = -Math.PI / 2;
+      card.position.copy(well).add(new THREE.Vector3(0, 0.012, 0.05));
+      card.userData.keepSeparate = true;
+      scene.add(card);
+    }
     // A light for the flame glow on desktop; phones skip it (every light costs shading on every surface)
     if (!isMobileOrTouchDevice()) {
       this.light = new THREE.PointLight('#ffb35c', 0, 1.4, 2);

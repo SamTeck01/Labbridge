@@ -432,17 +432,17 @@ export default function Lab3DScene({
     // Four tables: the other practicals load onto a main table in place of its usual apparatus
     // (kits sit at the table's front edge; the student stands facing -z)
     osmosis: {
-      pos: new THREE.Vector3(-4.5, 1.44, -1.5),
+      pos: new THREE.Vector3(-4.5, 1.44, -1.85),
       lookAt: new THREE.Vector3(-4.5, 1.0, -2.6),
       baseYaw: 0,
     },
     rates: {
-      pos: new THREE.Vector3(4.5, 1.44, -1.5),
+      pos: new THREE.Vector3(4.5, 1.44, -1.85),
       lookAt: new THREE.Vector3(4.5, 1.0, -2.6),
       baseYaw: 0,
     },
     chroma: {
-      pos: new THREE.Vector3(4.5, 1.44, -1.5),
+      pos: new THREE.Vector3(4.5, 1.44, -1.85),
       lookAt: new THREE.Vector3(4.5, 1.0, -2.6),
       baseYaw: 0,
     },
