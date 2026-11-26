@@ -108,13 +108,13 @@ export const EXPERIMENTS: ExperimentDef[] = [
       { id: 'acid', text: 'Pour 25.0 mL of 0.1 M HCl into the flask', coach: 'Now the measuring cylinder of HCl. Pour all 25 mL into the conical flask.', done: (l) => l.chemistry.flaskAcidML >= 24.5 },
       { id: 'indicator', text: 'Add 2–3 drops of phenolphthalein to the flask', coach: 'Take the dropper from the indicator bottle and squeeze a few drops into the flask.', done: (l) => l.chemistry.indicatorAdded },
       { id: 'stir', text: 'Mix: switch on the stirrer, or swirl the flask', coach: 'Each addition has to mix in. Switch on the stirrer, or hold the flask and swirl it by hand (tap the flask).', done: (l, r) => l.chemistry.stirrerRPM > 0 || (r.events.swirled ?? 0) > 0 },
-      { id: 'initial', text: 'Read and record the initial burette reading', coach: 'Before any alkali goes in, read the burette at eye level: the bottom of the meniscus, to the nearest 0.05 mL. It is rarely exactly 0.00.', done: (_l, r) => r.readings.some((x) => x.label === 'Initial') },
+      { id: 'initial', text: 'Read the burette before you start (the initial reading)', coach: 'Before any alkali goes in, read the burette at eye level: the bottom of the meniscus, to the nearest 0.05 mL. It is rarely exactly 0.00.', done: (_l, r) => r.readings.some((x) => x.label === 'Initial') },
       { id: 'titrate', text: 'Open the burette and titrate', coach: 'Open the stopcock. Run it steadily at first; the endpoint is near 25 mL.', done: (l) => l.chemistry.dispensedML > 0.5 },
       { id: 'endpoint', text: 'Close the burette at the first permanent pink', coach: 'Near 24 mL, close it and add single drops. Stop at the first faint pink that stays.', done: (l) => l.chemistry.phValue >= 8.2 && !l.chemistry.buretteOpen },
-      { id: 'record', text: 'Read the final burette reading (titre = final − initial)', coach: 'Read the burette again at eye level. Your titre is the final reading minus the initial reading.', done: (_l, r) => r.readings.some((x) => x.label === 'Titre') },
+      { id: 'record', text: 'Read the burette again. Your titre (volume used) = final − initial', coach: 'Read the burette again at eye level. Your titre is the final reading minus the initial reading.', done: (_l, r) => r.readings.some((x) => x.label === 'Titre') },
       {
         id: 'concordant',
-        text: 'Repeat until two titres agree within 0.10 mL',
+        text: 'Do it again until two titres agree (within 0.10 mL)',
         coach: 'One titre could be a fluke. Press “New run”, refill, and titrate again, slowing to single drops about 1 mL before your last titre. Two titres within 0.10 mL finish the practical.',
         done: (_l, r) => concordantPair(r.readings.filter((x) => x.label === 'Titre').map((x) => x.value)) !== null,
       },
@@ -195,7 +195,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
       { id: 'close', text: 'Close the knife switch', coach: 'Close the knife switch to complete the circuit. Both needles should move.', done: (l) => l.physics.switchClosed },
       {
         id: 'measure',
-        text: 'Read both meters at 4 or more rheostat settings',
+        text: 'Read both meters at 4 or more rheostat (variable resistor) settings',
         coach: 'Click a meter to read it. Record the current and voltage, turn the rheostat, and repeat. Four settings at least.',
         done: (_l, r) => new Set(r.readings.filter((x) => x.extra?.R !== undefined).map((x) => x.extra!.R)).size >= 4,
       },
@@ -236,10 +236,10 @@ export const EXPERIMENTS: ExperimentDef[] = [
     safety: ['Keep the draft shield closed while reading.', 'Never weigh chemicals directly on the pan.'],
     intro: 'Accurate weighing today. With the draft shield closed and the empty boat on the pan, press TARE.',
     steps: [
-      { id: 'tare', text: 'Close the shield and TARE the empty boat', coach: 'Shield closed, empty boat on the pan, then press TARE. The display should read 0.0000 g.', done: (l) => !l.research.doorsOpen && l.research.tareOffset > 0 && Math.abs(l.research.massOnPan - l.research.tareOffset) < 1e-6 },
-      { id: 'open', text: 'Open the draft shield', coach: 'Slide the draft shield open to add your sample.', done: (l) => l.research.doorsOpen },
+      { id: 'tare', text: 'Close the glass door, then press TARE (set to zero) with the empty boat on', coach: 'Shield closed, empty boat on the pan, then press TARE. The display should read 0.0000 g.', done: (l) => !l.research.doorsOpen && l.research.tareOffset > 0 && Math.abs(l.research.massOnPan - l.research.tareOffset) < 1e-6 },
+      { id: 'open', text: 'Open the glass door (draught shield)', coach: 'Slide the glass door open so you can add your sample.', done: (l) => l.research.doorsOpen },
       { id: 'add', text: 'Add sample until you reach 0.10–0.15 g', coach: 'Add small amounts by clicking the weighing boat. Aim for 0.10–0.15 g.', done: (l) => l.research.massOnPan - l.research.tareOffset >= 0.1 },
-      { id: 'close', text: 'Close the shield and let the reading settle', coach: 'Close the shield. Air currents make the last digits drift.', done: (l) => !l.research.doorsOpen && l.research.massOnPan - l.research.tareOffset >= 0.1 },
+      { id: 'close', text: 'Close the glass door and wait for the number to stop changing', coach: 'Close the shield. Air currents make the last digits drift.', done: (l) => !l.research.doorsOpen && l.research.massOnPan - l.research.tareOffset >= 0.1 },
       { id: 'record', text: 'Record the mass', coach: 'Stable reading. Record it to four decimal places.', done: (_l, r) => r.readings.length >= 1 },
     ],
     mistakes: [
@@ -271,7 +271,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     steps: [
       { id: 'sash', text: 'Lower the fume hood sash to working height', coach: 'First, pull the fume hood sash down to working height. It shields your face and keeps the fumes in the hood.', done: (l) => l.flame.sashDown },
       { id: 'light', text: 'Turn on the gas and light the Bunsen burner', coach: 'Gas tap on, then the lighter to the top of the barrel. Never leave gas running unlit.', done: (l) => l.flame.lit },
-      { id: 'blue', text: 'Open the air hole for a blue, non-luminous flame', coach: 'Turn the air collar to open the air hole. A yellow flame would hide the colours.', done: (l) => l.flame.lit && l.flame.airOpen },
+      { id: 'blue', text: 'Open the air hole to get a blue flame', coach: 'Turn the air collar to open the air hole. A yellow flame would hide the colours.', done: (l) => l.flame.lit && l.flame.airOpen },
       { id: 'tests', text: 'Test all five samples, cleaning the loop between each', coach: 'For each sample: dip the loop in acid and heat it until the flame shows no colour (clean). Dip it in acid again, then into the sample, and hold it at the edge of the flame.', done: (_l, r) => new Set(r.readings.map((x) => x.label)).size >= 5 },
       { id: 'off', text: 'Turn the gas off', coach: "All five done. Turn the gas off at the tap, and don't touch the barrel: it stays hot.", done: (l, r) => !l.flame.gasOn && r.readings.length >= 5 },
     ],
@@ -422,7 +422,7 @@ export const EXPERIMENTS: ExperimentDef[] = [
     safety: ['Use a pencil baseline: pen ink would run with the solvent.', 'Keep the baseline above the solvent level.'],
     intro: 'Chromatography today. Draw a pencil baseline, spot the three inks on it, then hang the paper in the solvent.',
     steps: [
-      { id: 'baseline', text: 'Draw a pencil baseline', coach: 'Pencil, not pen: graphite doesn’t dissolve, so it won’t run up the paper.', done: (l) => l.chroma.baseline },
+      { id: 'baseline', text: 'Draw a pencil line near the bottom (the baseline)', coach: 'Pencil, not pen: graphite doesn’t dissolve, so it won’t run up the paper.', done: (l) => l.chroma.baseline },
       { id: 'spots', text: 'Spot the three inks on the baseline', coach: 'Small, concentrated spots on the line: A, B and the unknown.', done: (l) => l.chroma.spots >= 3 },
       { id: 'run', text: 'Hang the paper in the solvent', coach: 'Choose how deep to hang it, then lower it in. The baseline must sit just above the solvent.', done: (l) => l.chroma.inSolvent || l.chroma.removed },
       { id: 'remove', text: 'Remove the paper near the top and let it dry', coach: 'Take it out before the front reaches the top.', done: (l) => l.chroma.removed },

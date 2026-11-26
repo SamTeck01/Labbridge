@@ -57,8 +57,13 @@ export class FlameBench extends BenchBase {
   constructor(scene: THREE.Scene, rig: THREE.Object3D, hands: FirstPersonHands, focus: Focus) {
     super(scene, rig, hands, focus);
     const base = this.pos('anchor_flame') ?? rig.getWorldPosition(new THREE.Vector3());
-    const cone = new THREE.ConeGeometry(1, 1, 20, 6, true);
-    cone.translate(0, 0.5, 0);
+    // Teardrop flame profile (round base, tapering tip) instead of a flat cone
+    const profile: THREE.Vector2[] = [];
+    for (let i = 0; i <= 16; i++) {
+      const t = i / 16;
+      profile.push(new THREE.Vector2(Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.15 + 0.02)), 0.8) * Math.pow(1 - t, 0.55) * 1.1, t));
+    }
+    const cone = new THREE.LatheGeometry(profile, 20);
     this.outer = new THREE.Mesh(cone, flameMaterial('#ff9d2e', 0.8));
     this.inner = new THREE.Mesh(cone, flameMaterial('#8fd3ff', 0.8));
     this.outer.renderOrder = 6;

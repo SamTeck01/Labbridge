@@ -1841,6 +1841,7 @@ export default function Lab3DScene({
               touchMoveVector.current = vec;
             }}
           />
+          <span className="block text-center text-[11px] text-slate-200 mt-1 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">Drag to walk</span>
         </div>
       )}
 
@@ -1851,12 +1852,13 @@ export default function Lab3DScene({
             soundFx.playClick();
             setIsPhoneOpen(true);
           }}
-          className="relative w-14 h-14 rounded-full bg-slate-950/80 backdrop-blur-2xl border-2 border-emerald-500/40 hover:border-emerald-400 text-emerald-400 flex items-center justify-center shadow-[0_8px_30px_rgba(0,0,0,0.8)] active:scale-95 transition-all group"
-          title="Open Scientist Smartphone (AI, Teleport, Protocols, Calculator)"
+          className="flex flex-col items-center gap-1"
+          aria-label="Lab phone: calculator, notes and quick travel"
         >
-          
-          <Smartphone className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform" />
-          <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-indigo-500 border-2 border-slate-950 animate-bounce" />
+          <span className="w-12 h-12 rounded-full bg-[#0e1525]/90 border border-white/15 hover:border-teal-400/60 grid place-items-center">
+            <Smartphone className="w-5 h-5 text-slate-100" />
+          </span>
+          <span className="text-[11px] text-slate-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">Lab phone</span>
         </button>
       </div>
 

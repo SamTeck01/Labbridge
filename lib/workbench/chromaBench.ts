@@ -123,7 +123,7 @@ export class ChromaBench extends BenchBase {
     }
     if (s.baseline) {
       g.strokeStyle = '#555';
-      g.lineWidth = 1.5;
+      g.lineWidth = 2.5;
       g.beginPath();
       g.moveTo(6, y(BASELINE));
       g.lineTo(W - 6, y(BASELINE));
@@ -140,22 +140,30 @@ export class ChromaBench extends BenchBase {
           g.globalAlpha = fade;
           g.fillStyle = d.colour;
           g.beginPath();
-          g.ellipse(W * SPOT_X[i], y(BASELINE), 5, 4, 0, 0, Math.PI * 2);
+          g.ellipse(W * SPOT_X[i], y(BASELINE), 8, 6, 0, 0, Math.PI * 2);
           g.fill();
           g.globalAlpha = 1;
           return;
         }
         const run = Math.max(0, s.front - BASELINE);
         const at = BASELINE + d.rf * run;
-        const spread = 4 + run * 10;
+        const spread = 7 + run * 14;
         const grad = g.createRadialGradient(W * SPOT_X[i], y(at), 0, W * SPOT_X[i], y(at), spread);
         grad.addColorStop(0, d.colour);
+        grad.addColorStop(0.55, d.colour + 'cc');
         grad.addColorStop(1, d.colour + '00');
         g.fillStyle = grad;
         g.beginPath();
         g.ellipse(W * SPOT_X[i], y(at), spread, spread * 0.8, 0, 0, Math.PI * 2);
         g.fill();
       });
+    }
+    // Pencil letters under each spot, as a student would write them
+    if (s.spots > 0) {
+      g.fillStyle = '#444';
+      g.font = 'bold 13px sans-serif';
+      g.textAlign = 'center';
+      ['A', 'B', 'U'].slice(0, s.spots).forEach((t, i) => g.fillText(t, W * SPOT_X[i], y(BASELINE) + 18));
     }
     this.tex.needsUpdate = true;
   }

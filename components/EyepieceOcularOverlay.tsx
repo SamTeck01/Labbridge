@@ -242,10 +242,10 @@ export default function EyepieceOcularOverlay({
         onPointerDown={() => startHold(kind, -1)}
         onPointerUp={stopHold}
         onPointerLeave={stopHold}
-        className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-teal-700 text-sm font-bold"
+        className="h-9 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-teal-700 text-xs font-semibold"
         aria-label={`${label} down`}
       >
-        ▼
+        ▼ Down
       </button>
       <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
         <div className="h-full bg-teal-500" style={{ width: `${(kind === 'coarse' ? coarseFocus : fineFocus) * 100}%` }} />
@@ -254,10 +254,10 @@ export default function EyepieceOcularOverlay({
         onPointerDown={() => startHold(kind, 1)}
         onPointerUp={stopHold}
         onPointerLeave={stopHold}
-        className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-teal-700 text-sm font-bold"
+        className="h-9 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-teal-700 text-xs font-semibold"
         aria-label={`${label} up`}
       >
-        ▲
+        Up ▲
       </button>
     </div>
   );
