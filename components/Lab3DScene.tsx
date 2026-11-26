@@ -365,7 +365,7 @@ export default function Lab3DScene({
   const touchLookId = useRef<number | null>(null);
   const touchLookLastPos = useRef<{ x: number; y: number } | null>(null);
   const playerVelocity = useRef<THREE.Vector3>(new THREE.Vector3());
-  const cameraEuler = useRef<THREE.Euler>(new THREE.Euler(0, 0, 0, 'YXZ') // facing into the room, towards Dr. Curie);
+  const cameraEuler = useRef<THREE.Euler>(new THREE.Euler(0, 0, 0, 'YXZ')); // facing into the room, towards Dr. Curie
   const isWalkingRef = useRef<boolean>(false);
   const stepTimerRef = useRef<number>(0);
   const walkTimerRef = useRef<number>(0);
