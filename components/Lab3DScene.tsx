@@ -365,7 +365,7 @@ export default function Lab3DScene({
   const touchLookId = useRef<number | null>(null);
   const touchLookLastPos = useRef<{ x: number; y: number } | null>(null);
   const playerVelocity = useRef<THREE.Vector3>(new THREE.Vector3());
-  const cameraEuler = useRef<THREE.Euler>(new THREE.Euler(0, Math.PI, 0, 'YXZ'));
+  const cameraEuler = useRef<THREE.Euler>(new THREE.Euler(0, 0, 0, 'YXZ') // facing into the room, towards Dr. Curie);
   const isWalkingRef = useRef<boolean>(false);
   const stepTimerRef = useRef<number>(0);
   const walkTimerRef = useRef<number>(0);
@@ -658,7 +658,7 @@ export default function Lab3DScene({
     if (dest === 'center') {
       standUp();
       cameraRef.current.position.set(0, EYE_HEIGHT_STANDING, 5.5);
-      cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
+      cameraEuler.current.set(0, 0, 0, 'YXZ');
     } else {
       sitDownAt(dest);
     }
@@ -793,7 +793,7 @@ export default function Lab3DScene({
     const height = container.clientHeight;
     const camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 100);
     camera.position.set(0, EYE_HEIGHT_STANDING, 5.5);
-    cameraEuler.current.set(0, Math.PI, 0, 'YXZ');
+    cameraEuler.current.set(0, 0, 0, 'YXZ');
     camera.quaternion.setFromEuler(cameraEuler.current);
     cameraRef.current = camera;
 
@@ -1748,6 +1748,13 @@ export default function Lab3DScene({
         <PracticalLibrary
           onClose={() => setShowLibrary(false)}
           onGo={(station, id) => {
+            // Switching practicals mid-way: say so, and only switch if the student agrees
+            const running = experiments.get().run;
+            if (running && running.experimentId !== id) {
+              const was = EXPERIMENTS.find((x) => x.id === running.experimentId)?.title ?? 'your practical';
+              if (!window.confirm(`Stop ${was}? Your progress on it will be lost.`)) return;
+              experiments.abandon();
+            }
             const title = EXPERIMENTS.find((x) => x.id === id)?.title ?? 'this practical';
             curie.walkTo(station);
             curie.say(`${title}. I'll meet you at the bench — goggles on first.`);
