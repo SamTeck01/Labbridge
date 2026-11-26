@@ -29,7 +29,7 @@ await p.getByRole('button', { name: /Observing Cells/ }).click(); await w(400);
 await p.getByRole('button', { name: /Start with Dr. Curie/ }).click(); await w(9000);
 const station = await p.evaluate(() => window.__curie.labStore.get().player.station);
 check('“Go to bench” seats the student at the microscope', station === 'biology', String(station));
-check('orientation moved on to goggles', await p.getByText('Go to the bench, goggles on').isVisible());
+check('orientation steps aside at the bench', !(await p.getByText('Your first visit').isVisible()));
 
 // ---- Titration logic: initial/final readings, overshoot -> new run -> concordant -> result
 const T = await p.evaluate(async () => {
