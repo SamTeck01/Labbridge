@@ -495,14 +495,17 @@ export class CircuitBench extends BenchBase {
     if (!this.resistor) this.buildResistor();
     const { current, vResistor } = circuit(s.voltage, s.resistance, s.switchClosed, s.wired);
     const target = 0.87 - Math.min(1, current) * 1.74;
-    this.needleVel += ((target - this.needle) * 60 - this.needleVel * 9) * delta;
-    this.needle += this.needleVel * delta;
+    this.needleVel += ((target - this.needle) * 60 - this.needleVel * 9) * Math.min(delta, 0.05);
+    this.needle += this.needleVel * Math.min(delta, 0.05);
+    // A real needle stops at the end stops: never past the scale, even when a slow frame overshoots
+    if (Math.abs(this.needle) > 0.9) { this.needle = Math.sign(this.needle) * 0.9; this.needleVel = 0; }
     const needle = u.ammeterNeedle as THREE.Object3D | undefined;
     if (needle) needle.rotation.z = this.needle;
     // Voltmeter (0-10 V full scale) swings the same way
     const vt = 0.87 - Math.min(1, vResistor / 10) * 1.74;
-    this.vNeedleVel += ((vt - this.vNeedle) * 60 - this.vNeedleVel * 9) * delta;
-    this.vNeedle += this.vNeedleVel * delta;
+    this.vNeedleVel += ((vt - this.vNeedle) * 60 - this.vNeedleVel * 9) * Math.min(delta, 0.05);
+    this.vNeedle += this.vNeedleVel * Math.min(delta, 0.05);
+    if (Math.abs(this.vNeedle) > 0.9) { this.vNeedle = Math.sign(this.vNeedle) * 0.9; this.vNeedleVel = 0; }
     if (this.voltmeterNeedle) this.voltmeterNeedle.rotation.z = this.vNeedle;
     // A resistor carrying too much current gets hot: a faint glow at the body
     this.glow = damp(this.glow, current > 0.5 ? 1 : 0, 2, delta);

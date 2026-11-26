@@ -377,6 +377,8 @@ export default function Lab3DScene({
   // ---- Four tables: each shows only the apparatus of the practical chosen on it ----
   const stationObjectsRef = useRef(new Map<Station, THREE.Object3D[]>());
   const tableShowsRef = useRef<Partial<Record<Station, Station>>>({});
+  // Stools: the one in front of a bench is hidden while the student works there (it would fill the bottom of the view)
+  const stoolsRef = useRef<THREE.Object3D[]>([]);
   /** Run `make` and remember every object it added to the scene as belonging to `st`. */
   const trackStation = (scene: THREE.Scene, st: Station, make: () => void) => {
     const before = new Set(scene.children);
@@ -447,8 +449,8 @@ export default function Lab3DScene({
       baseYaw: 0,
     },
     pendulum: {
-      pos: new THREE.Vector3(-4.5, 1.44, 4.8),
-      lookAt: new THREE.Vector3(-4.5, 1.0, 4.0),
+      pos: new THREE.Vector3(-4.5, 1.5, 5.0),
+      lookAt: new THREE.Vector3(-4.5, 1.25, 4.0),
       baseYaw: 0,
     },
   });
@@ -457,6 +459,8 @@ export default function Lab3DScene({
   const sitDownAt = useCallback((station: Station) => {
     soundFx.playSitDown();
     showStation(station);
+    const seat = seatAnchors.current[station]?.pos;
+    for (const st of stoolsRef.current) st.visible = !seat || Math.hypot(st.position.x - seat.x, st.position.z - seat.z) > 1.4;
     const anchor = seatAnchors.current[station];
     if (anchor && cameraRef.current) {
       const startPos = cameraRef.current.position.clone();
@@ -483,6 +487,18 @@ export default function Lab3DScene({
     }
   }, [showStation]);
 
+  // Starting a practical (from anywhere) puts its apparatus on the table
+  useEffect(() => {
+    const off = experiments.onEvent((e) => {
+      if (e.type !== 'started') return;
+      const st = EXPERIMENTS.find((x) => x.id === experiments.get().run?.experimentId)?.station;
+      if (st) showStation(st);
+    });
+    return () => {
+      off();
+    };
+  }, [showStation]);
+
   // Auto-seat at requested initialStation on entry
   useEffect(() => {
     if (initialStation && seatAnchors.current[initialStation]) {
@@ -496,6 +512,7 @@ export default function Lab3DScene({
   // Standing up mechanic with smooth step-back
   const standUp = useCallback(() => {
     soundFx.playStandUp();
+    for (const st of stoolsRef.current) st.visible = true;
     if (!curie.get().pending.length) curie.walkTo(null);
     setIsSeated(false);
     setSeatedStation(null);
@@ -1060,6 +1077,8 @@ export default function Lab3DScene({
 
       // Add Swivel Lab Stool (Seat cushion at 0.62m)
       const stool = createLabStool(cfg.station, cfg.x, cfg.stoolZ, cfg.stoolZ > 0 ? Math.PI : 0);
+      stoolsRef.current.push(stool);
+      stool.userData.keepSeparate = true;
       scene.add(stool);
       swapInModel(stool, 'lab-stool', (model) => {
         model.traverse((o) => tagInteractive(o, `stool_${cfg.station}`, 'Lab Swivel Stool', 'Sit Down on Chair', cfg.station, 'stool'));
@@ -1079,6 +1098,7 @@ export default function Lab3DScene({
       scene.add(microscope);
       microscope.userData.keepSeparate = true; // swapped with other practicals on this table, so never baked into the room
       stationObjectsRef.current.set('biology', [...(stationObjectsRef.current.get('biology') ?? []), microscope]);
+      if ((tableShowsRef.current['biology'] ?? 'biology') !== 'biology') microscope.visible = false;
       microEquipmentRef.current = microscope;
       handsPromise.then((ok) => {
         if (ok && !disposed) {
@@ -1099,6 +1119,7 @@ export default function Lab3DScene({
       scene.add(chemRig);
       chemRig.userData.keepSeparate = true; // swapped with other practicals on this table, so never baked into the room
       stationObjectsRef.current.set('chemistry', [...(stationObjectsRef.current.get('chemistry') ?? []), chemRig]);
+      if ((tableShowsRef.current['chemistry'] ?? 'chemistry') !== 'chemistry') chemRig.visible = false;
       chemEquipmentRef.current = chemRig;
       chemRig.traverse((c) => {
         if (c.userData && c.userData.isInteractive) interactiveList.push(c);
@@ -1134,6 +1155,7 @@ export default function Lab3DScene({
       scene.add(physBench);
       physBench.userData.keepSeparate = true; // swapped with other practicals on this table, so never baked into the room
       stationObjectsRef.current.set('physics', [...(stationObjectsRef.current.get('physics') ?? []), physBench]);
+      if ((tableShowsRef.current['physics'] ?? 'physics') !== 'physics') physBench.visible = false;
       handsPromise.then((ok) => {
         if (ok && !disposed) trackStation(scene, 'physics', () => (benchesRef.current.physics = new CircuitBench(scene, physBench, hands, setFocus)));
       });
