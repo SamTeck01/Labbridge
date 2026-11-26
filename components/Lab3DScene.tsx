@@ -432,23 +432,23 @@ export default function Lab3DScene({
     // Four tables: the other practicals load onto a main table in place of its usual apparatus
     // (kits sit at the table's front edge; the student stands facing -z)
     osmosis: {
-      pos: new THREE.Vector3(-4.5, 1.44, -1.85),
-      lookAt: new THREE.Vector3(-4.5, 1.0, -2.6),
+      pos: new THREE.Vector3(-4.5, 1.44, -2.2),
+      lookAt: new THREE.Vector3(-4.5, 1.0, -3.0),
       baseYaw: 0,
     },
     rates: {
-      pos: new THREE.Vector3(4.5, 1.44, -1.85),
-      lookAt: new THREE.Vector3(4.5, 1.0, -2.6),
+      pos: new THREE.Vector3(4.5, 1.44, -2.2),
+      lookAt: new THREE.Vector3(4.5, 1.0, -3.0),
       baseYaw: 0,
     },
     chroma: {
-      pos: new THREE.Vector3(4.5, 1.44, -1.85),
-      lookAt: new THREE.Vector3(4.5, 1.0, -2.6),
+      pos: new THREE.Vector3(4.5, 1.44, -2.2),
+      lookAt: new THREE.Vector3(4.5, 1.0, -3.0),
       baseYaw: 0,
     },
     pendulum: {
-      pos: new THREE.Vector3(-4.5, 1.44, 5.5),
-      lookAt: new THREE.Vector3(-4.5, 1.0, 4.4),
+      pos: new THREE.Vector3(-4.5, 1.44, 4.8),
+      lookAt: new THREE.Vector3(-4.5, 1.0, 4.0),
       baseYaw: 0,
     },
   });
@@ -1108,9 +1108,17 @@ export default function Lab3DScene({
       // Hands-on titration once the hands are ready
       handsPromise.then((ok) => {
         if (!ok || disposed) return;
+        const beforeTitration = new Set(scene.children);
         TitrationBench.create(scene, chemRig, hands, setFocus)
           .then((bench) => {
             if (disposed) return;
+            // Its bottle and cylinder are added straight to the scene: they belong to the titration
+            // practical, so they hide when rates or chromatography use this table
+            const added = scene.children.filter((c) => !beforeTitration.has(c) && c.position.x > 2 && c.position.z < -1.5);
+            added.forEach((c) => (c.userData.keepSeparate = true));
+            stationObjectsRef.current.set('chemistry', [...(stationObjectsRef.current.get('chemistry') ?? []), ...added]);
+            const shown = tableShowsRef.current.chemistry;
+            if (shown && shown !== 'chemistry') added.forEach((c) => (c.visible = false));
             titrationBenchRef.current = bench;
             benchesRef.current.chemistry = bench;
             if (process.env.NODE_ENV !== 'production') Object.assign(window, { __titration: bench });
@@ -1158,10 +1166,10 @@ export default function Lab3DScene({
       if (!ok || disposed) return;
       const top = 0.94;
       const track = (st: Station, make: () => void) => trackStation(scene, st, make);
-      track('pendulum', () => (benchesRef.current.pendulum = new PendulumBench(scene, new THREE.Vector3(-4.5, top, 4.4), hands, setFocus)));
-      track('rates', () => (benchesRef.current.rates = new RatesBench(scene, new THREE.Vector3(4.5, top, -2.6), hands, setFocus)));
-      track('osmosis', () => (benchesRef.current.osmosis = new OsmosisBench(scene, new THREE.Vector3(-4.5, top, -2.6), hands, setFocus)));
-      track('chroma', () => (benchesRef.current.chroma = new ChromaBench(scene, new THREE.Vector3(4.5, top, -2.6), hands, setFocus)));
+      track('pendulum', () => (benchesRef.current.pendulum = new PendulumBench(scene, new THREE.Vector3(-4.5, top, 4.0), hands, setFocus)));
+      track('rates', () => (benchesRef.current.rates = new RatesBench(scene, new THREE.Vector3(4.5, top, -3.0), hands, setFocus)));
+      track('osmosis', () => (benchesRef.current.osmosis = new OsmosisBench(scene, new THREE.Vector3(-4.5, top, -3.0), hands, setFocus)));
+      track('chroma', () => (benchesRef.current.chroma = new ChromaBench(scene, new THREE.Vector3(4.5, top, -3.0), hands, setFocus)));
       // Each table starts with its first practical; re-apply what the student last chose
       for (const t of TABLES) showStation(tableShowsRef.current[t[0]] ?? t[0]);
       collectInteractives();
